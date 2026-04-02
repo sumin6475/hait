@@ -118,8 +118,9 @@ const Overview = () => {
               <BarChart data={condProgress} barSize={32}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis dataKey="condition" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} />
                 <Tooltip />
+                <ReferenceLine y={5} stroke="hsl(var(--muted-foreground))" strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "target: 5 teams", position: "right", fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                 <Legend />
                 <Bar dataKey="completed" stackId="a" fill="hsl(var(--brand-purple))" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="remaining" stackId="a" fill="hsl(var(--brand-purple-light))" radius={[4, 4, 0, 0]} />
