@@ -86,9 +86,8 @@ const ChatRoom = () => {
     simulatePartner();
   };
 
-  const handleDecision = (candidate: string) => {
-    sessionStorage.setItem("teamDecision", candidate);
-    navigate("/chat/post-survey");
+  const handleTimerExpired = () => {
+    navigate("/chat/team-decision");
   };
 
   return (
