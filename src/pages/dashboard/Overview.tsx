@@ -132,7 +132,7 @@ const Overview = () => {
         <div className="col-span-2 rounded-xl bg-card p-6 shadow-card space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Conditions</h3>
-            <span className="text-xs text-muted-foreground">Weekly</span>
+            
           </div>
           <div className="space-y-3">
             {stats.map((s) => (

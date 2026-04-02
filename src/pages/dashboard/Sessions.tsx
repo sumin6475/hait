@@ -50,8 +50,8 @@ const Sessions = () => (
               </td>
               <td className="px-5 py-3">
                 {s.teamDecision ? (
-                  <span className={cn("font-mono font-bold text-sm", s.teamDecision === "C" ? "text-status-success" : "text-foreground")}>{s.teamDecision}</span>
-                ) : "—"}
+                  <span className={cn("font-mono font-bold text-sm", s.teamDecision === "C" ? "text-status-success" : "text-destructive")}>{s.teamDecision}</span>
+                ) : <span className="text-muted-foreground">—</span>}
               </td>
             </tr>
           ))}
