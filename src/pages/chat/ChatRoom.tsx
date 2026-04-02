@@ -22,7 +22,6 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
   const [startTime] = useState(new Date());
-  const [showDecision, setShowDecision] = useState(false);
   const aiResponseIdx = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -86,9 +85,8 @@ const ChatRoom = () => {
     simulatePartner();
   };
 
-  const handleDecision = (candidate: string) => {
-    sessionStorage.setItem("teamDecision", candidate);
-    navigate("/chat/post-survey");
+  const handleTimerExpired = () => {
+    navigate("/chat/team-decision");
   };
 
   return (
@@ -98,7 +96,7 @@ const ChatRoom = () => {
           <FlaskConical className="w-5 h-5 text-primary" />
           <span className="font-semibold">HAIT Experiment</span>
         </div>
-        <Timer durationMinutes={20} startTime={startTime} onExpired={() => setShowDecision(true)} />
+        <Timer durationMinutes={20} startTime={startTime} onExpired={handleTimerExpired} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
@@ -113,30 +111,10 @@ const ChatRoom = () => {
         <div ref={bottomRef} />
       </div>
 
-      {showDecision && (
-        <div className="absolute inset-0 bg-foreground/60 flex items-center justify-center z-50">
-          <div className="bg-card rounded-xl border p-8 w-full max-w-sm space-y-4 text-center">
-            <h2 className="text-lg font-semibold">Final Team Decision</h2>
-            <p className="text-sm text-muted-foreground">Discussion complete. Select the team's final choice:</p>
-            <div className="grid grid-cols-2 gap-3">
-              {(["A", "B", "C", "D"] as const).map((c) => (
-                <button
-                  key={c}
-                  onClick={() => handleDecision(c)}
-                  className="rounded-lg border-2 border-input hover:border-primary py-4 text-lg font-mono font-bold transition-colors hover:bg-primary/5"
-                >
-                  {c}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {messages.length > 6 && !showDecision && (
+      {messages.length > 6 && (
         <div className="px-6 py-2 flex justify-center">
           <button
-            onClick={() => setShowDecision(true)}
+            onClick={() => navigate("/chat/team-decision")}
             className="text-xs text-muted-foreground hover:text-primary transition-colors underline"
           >
             End discussion & make team decision
@@ -144,7 +122,7 @@ const ChatRoom = () => {
         </div>
       )}
 
-      {!showDecision && <MessageInput onSend={handleSend} />}
+      <MessageInput onSend={handleSend} />
     </div>
   );
 };

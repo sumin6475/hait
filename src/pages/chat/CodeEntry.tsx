@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { FlaskConical } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const CodeEntry = () => {
   const [code, setCode] = useState("");
@@ -14,9 +15,14 @@ const CodeEntry = () => {
   };
 
   const handleSubmit = () => {
-    const upper = code.trim().toUpperCase();
+    const trimmed = code.trim();
+    if (!trimmed) {
+      setError("Please enter your participant code.");
+      return;
+    }
+    const upper = trimmed.toUpperCase();
     if (!validateCode(upper)) {
-      setError("Invalid code format. Expected: EXP-C1-T01-X");
+      setError("Invalid participant code. Please check your code and try again.");
       return;
     }
     sessionStorage.setItem("participantCode", upper);
@@ -45,10 +51,13 @@ const CodeEntry = () => {
               onChange={(e) => { setCode(e.target.value); setError(""); }}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
               placeholder="EXP-C1-T01-X"
-              className="w-full rounded-lg border border-input bg-card px-4 py-3 text-center font-mono text-lg tracking-widest placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring"
+              className={cn(
+                "w-full rounded-lg border bg-card px-4 py-3 text-center font-mono text-lg tracking-widest placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring",
+                error ? "border-destructive focus:ring-destructive" : "border-input"
+              )}
             />
             {error && <p className="text-sm text-destructive text-center">{error}</p>}
-            <Button onClick={handleSubmit} className="w-full" size="lg" disabled={!code.trim()}>
+            <Button onClick={handleSubmit} className="w-full" size="lg">
               Continue
             </Button>
           </div>

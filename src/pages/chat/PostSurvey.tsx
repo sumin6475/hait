@@ -68,7 +68,7 @@ const PostSurvey = () => {
 
   const handleFinish = () => {
     sessionStorage.setItem("surveyCompleted", "true");
-    navigate("/chat/complete");
+    navigate("/chat/debrief");
   };
 
   return (

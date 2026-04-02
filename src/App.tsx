@@ -15,6 +15,8 @@ import PreDiscussion from "./pages/chat/PreDiscussion.tsx";
 import WaitingRoom from "./pages/chat/WaitingRoom.tsx";
 import ChatRoom from "./pages/chat/ChatRoom.tsx";
 import PostSurvey from "./pages/chat/PostSurvey.tsx";
+import TeamDecision from "./pages/chat/TeamDecision.tsx";
+import Debrief from "./pages/chat/Debrief.tsx";
 import Complete from "./pages/chat/Complete.tsx";
 
 // Dashboard
@@ -45,7 +47,9 @@ const App = () => (
           <Route path="/chat/pre-discussion" element={<PreDiscussion />} />
           <Route path="/chat/waiting" element={<WaitingRoom />} />
           <Route path="/chat/room" element={<ChatRoom />} />
+          <Route path="/chat/team-decision" element={<TeamDecision />} />
           <Route path="/chat/post-survey" element={<PostSurvey />} />
+          <Route path="/chat/debrief" element={<Debrief />} />
           <Route path="/chat/complete" element={<Complete />} />
 
           {/* Researcher Dashboard */}
