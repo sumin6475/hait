@@ -47,7 +47,9 @@ const App = () => (
           <Route path="/chat/pre-discussion" element={<PreDiscussion />} />
           <Route path="/chat/waiting" element={<WaitingRoom />} />
           <Route path="/chat/room" element={<ChatRoom />} />
+          <Route path="/chat/team-decision" element={<TeamDecision />} />
           <Route path="/chat/post-survey" element={<PostSurvey />} />
+          <Route path="/chat/debrief" element={<Debrief />} />
           <Route path="/chat/complete" element={<Complete />} />
 
           {/* Researcher Dashboard */}
