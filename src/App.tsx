@@ -15,6 +15,8 @@ import PreDiscussion from "./pages/chat/PreDiscussion.tsx";
 import WaitingRoom from "./pages/chat/WaitingRoom.tsx";
 import ChatRoom from "./pages/chat/ChatRoom.tsx";
 import PostSurvey from "./pages/chat/PostSurvey.tsx";
+import TeamDecision from "./pages/chat/TeamDecision.tsx";
+import Debrief from "./pages/chat/Debrief.tsx";
 import Complete from "./pages/chat/Complete.tsx";
 
 // Dashboard
