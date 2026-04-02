@@ -1,7 +1,7 @@
 import { sessions, conditions, conditionLabel } from "@/lib/mockData";
 import { Activity, Users, CheckCircle, Clock, Circle, TrendingUp, TrendingDown, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts";
 
 const statusIcon = (s: string) => {
   if (s === "completed" || s === "data_ready") return <CheckCircle className="w-3.5 h-3.5 text-status-success" />;
