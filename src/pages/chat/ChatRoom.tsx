@@ -22,7 +22,6 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [aiTyping, setAiTyping] = useState(false);
   const [startTime] = useState(new Date());
-  const [showDecision, setShowDecision] = useState(false);
   const aiResponseIdx = useRef(0);
   const bottomRef = useRef<HTMLDivElement>(null);
 
