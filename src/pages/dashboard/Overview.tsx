@@ -1,7 +1,7 @@
 import { sessions, conditions, conditionLabel } from "@/lib/mockData";
 import { Activity, Users, CheckCircle, Clock, Circle, TrendingUp, TrendingDown, ArrowUpRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine } from "recharts";
 
 const statusIcon = (s: string) => {
   if (s === "completed" || s === "data_ready") return <CheckCircle className="w-3.5 h-3.5 text-status-success" />;
@@ -118,8 +118,9 @@ const Overview = () => {
               <BarChart data={condProgress} barSize={32}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis dataKey="condition" tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 12 }} axisLine={false} tickLine={false} domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} />
                 <Tooltip />
+                <ReferenceLine y={5} stroke="hsl(var(--muted-foreground))" strokeDasharray="6 4" strokeOpacity={0.5} label={{ value: "target: 5 teams", position: "right", fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
                 <Legend />
                 <Bar dataKey="completed" stackId="a" fill="hsl(var(--brand-purple))" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="remaining" stackId="a" fill="hsl(var(--brand-purple-light))" radius={[4, 4, 0, 0]} />
@@ -131,7 +132,7 @@ const Overview = () => {
         <div className="col-span-2 rounded-xl bg-card p-6 shadow-card space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold">Conditions</h3>
-            <span className="text-xs text-muted-foreground">Weekly</span>
+            
           </div>
           <div className="space-y-3">
             {stats.map((s) => (
