@@ -1,20 +1,20 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Vote, Check } from "lucide-react";
+import { Users, Check } from "lucide-react";
 import type { Candidate } from "@/types";
 import { cn } from "@/lib/utils";
 
 const candidates: Candidate[] = ["A", "B", "C", "D"];
 
-const PreDiscussion = () => {
+const TeamDecision = () => {
   const [selected, setSelected] = useState<Candidate | null>(null);
   const navigate = useNavigate();
 
   const handleSubmit = () => {
     if (selected) {
-      sessionStorage.setItem("preChoice", selected);
-      navigate("/chat/waiting");
+      sessionStorage.setItem("teamDecision", selected);
+      navigate("/chat/post-survey");
     }
   };
 
@@ -22,10 +22,12 @@ const PreDiscussion = () => {
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md bg-card rounded-xl border p-8 space-y-6">
         <div className="flex items-center gap-3">
-          <Vote className="w-6 h-6 text-primary" />
-          <h1 className="text-xl font-semibold">Pre-Discussion Preference</h1>
+          <Users className="w-6 h-6 text-primary" />
+          <h1 className="text-xl font-semibold">Team Decision</h1>
         </div>
-        <p className="text-sm text-muted-foreground">Based on the information you've reviewed, which candidate do you currently prefer? This is your initial choice before group discussion.</p>
+        <p className="text-sm text-muted-foreground">
+          Based on your team's discussion, which candidate has your team selected as the best fit for the airline pilot position? Please confirm the decision your team agreed upon.
+        </p>
 
         <div className="space-y-3">
           {candidates.map((c) => (
@@ -54,11 +56,14 @@ const PreDiscussion = () => {
         </div>
 
         <Button onClick={handleSubmit} className="w-full" size="lg" disabled={!selected}>
-          Confirm Selection
+          Confirm Team Decision
         </Button>
+        <p className="text-xs text-muted-foreground text-center">
+          This should reflect your team's consensus, not just your personal preference.
+        </p>
       </div>
     </div>
   );
 };
 
-export default PreDiscussion;
+export default TeamDecision;
