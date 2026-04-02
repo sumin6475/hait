@@ -97,7 +97,7 @@ const ChatRoom = () => {
           <FlaskConical className="w-5 h-5 text-primary" />
           <span className="font-semibold">HAIT Experiment</span>
         </div>
-        <Timer durationMinutes={20} startTime={startTime} onExpired={() => setShowDecision(true)} />
+        <Timer durationMinutes={20} startTime={startTime} onExpired={handleTimerExpired} />
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
