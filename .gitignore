@@ -7,12 +7,26 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+client/node_modules
+server/node_modules
+
+# Build
 dist
 dist-ssr
+server/dist
+
+# Env — 실제 비밀 값은 커밋하지 않음 (.env.example 만 올림)
+server/.env
+.env
+.env.local
 *.local
 
-# Editor directories and files
+# Vite
+client/.vite
+
+# Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
