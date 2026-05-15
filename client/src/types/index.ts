@@ -29,7 +29,6 @@ export interface Participant {
   conditionCode: ConditionCode;
   sessionId: string;
   role: ParticipantRole;
-  profile: string;
   preDiscussionChoice?: Candidate;
   demographics?: { age: number; gender: string; major: string };
   connectedAt?: string;
