@@ -1,3 +1,6 @@
+import { useEffect } from "react";
+import { socket } from "./lib/socket";
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -30,43 +33,62 @@ import Surveys from "./pages/dashboard/Surveys.tsx";
 
 const queryClient = new QueryClient();
 
-const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
+const App = () => {
+  useEffect(() => {
+    socket.connect();
 
-          {/* Participant Chat Flow */}
-          <Route path="/chat" element={<CodeEntry />} />
-          <Route path="/chat/consent" element={<Consent />} />
-          <Route path="/chat/demographics" element={<Demographics />} />
-          <Route path="/chat/info-cards" element={<InfoCards />} />
-          <Route path="/chat/pre-discussion" element={<PreDiscussion />} />
-          <Route path="/chat/waiting" element={<WaitingRoom />} />
-          <Route path="/chat/room" element={<ChatRoom />} />
-          <Route path="/chat/team-decision" element={<TeamDecision />} />
-          <Route path="/chat/post-survey" element={<PostSurvey />} />
-          <Route path="/chat/debrief" element={<Debrief />} />
-          <Route path="/chat/complete" element={<Complete />} />
+    socket.on("connect", () => {
+      console.log(`[client] connected to server`, socket.id);
+    });
 
-          {/* Researcher Dashboard */}
-          <Route path="/dashboard" element={<DashboardLayout />}>
-            <Route index element={<Overview />} />
-            <Route path="conditions" element={<Conditions />} />
-            <Route path="sessions" element={<Sessions />} />
-            <Route path="chat-logs" element={<ChatLogs />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="surveys" element={<Surveys />} />
-          </Route>
+    socket.on("disconnect", (reason) => {
+      console.log(`[client] disconnected: `, reason);
+    });
 
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
-);
+    return () => {
+      socket.disconnect();
+      socket.off("connect");
+      socket.off("disconnet");
+    };
+  }, []);
 
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Index />} />
+
+            {/* Participant Chat Flow */}
+            <Route path="/chat" element={<CodeEntry />} />
+            <Route path="/chat/consent" element={<Consent />} />
+            <Route path="/chat/demographics" element={<Demographics />} />
+            <Route path="/chat/info-cards" element={<InfoCards />} />
+            <Route path="/chat/pre-discussion" element={<PreDiscussion />} />
+            <Route path="/chat/waiting" element={<WaitingRoom />} />
+            <Route path="/chat/room" element={<ChatRoom />} />
+            <Route path="/chat/team-decision" element={<TeamDecision />} />
+            <Route path="/chat/post-survey" element={<PostSurvey />} />
+            <Route path="/chat/debrief" element={<Debrief />} />
+            <Route path="/chat/complete" element={<Complete />} />
+
+            {/* Researcher Dashboard */}
+            <Route path="/dashboard" element={<DashboardLayout />}>
+              <Route index element={<Overview />} />
+              <Route path="conditions" element={<Conditions />} />
+              <Route path="sessions" element={<Sessions />} />
+              <Route path="chat-logs" element={<ChatLogs />} />
+              <Route path="analytics" element={<Analytics />} />
+              <Route path="surveys" element={<Surveys />} />
+            </Route>
+
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+};
 export default App;
