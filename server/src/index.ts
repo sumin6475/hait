@@ -6,6 +6,8 @@ import { config } from "./config.js";
 import { connectDB } from "./db.js";
 import { healthRouter } from "./routes/health.js";
 import { testRouter } from "./routes/test.js";
+import { registerSocketHandlers } from "./sockets/index.js";
+import type { ClientToServerEvents, ServerToClientEvents } from "./sockets/events.js";
 
 async function start() {
   await connectDB();
@@ -19,19 +21,14 @@ async function start() {
   // HTTP 서버 생성 - Socket.io 부착 위해
   const httpServer = http.createServer(app);
   // Socket.io 서버 생성
-  const io = new Server(httpServer, {
+  const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     cors: {
       origin: "http://localhost:8080", //Vite origin
       credentials: true,
     },
   });
   // Socket.io 연결 이벤트 핸들러
-  io.on("connection", (socket) => {
-    console.log(`[socket] connected: ${socket.id}`);
-    socket.on("disconnect", (reason) => {
-      console.log(`[socket] disconnected: ${socket.id} (${reason})`);
-    });
-  });
+  registerSocketHandlers(io);
 
   // httpServer로 listen (app.listen 아님))
   httpServer.listen(config.port, () => {

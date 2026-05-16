@@ -37,8 +37,34 @@ const App = () => {
   useEffect(() => {
     socket.connect();
 
+    //디버깅
+    (window as any).socket = socket;
+
     socket.on("connect", () => {
       console.log(`[client] connected to server`, socket.id);
+
+      // URL에서 코드 읽기
+      // 예: http://localhost:8080?session=S-Test-...&participant=P-X-001
+      const params = new URLSearchParams(window.location.search);
+      const sessionCode = params.get("session");
+      const participantCode = params.get("participant");
+
+      if (!sessionCode || !participantCode) {
+        console.warn("[client] URL에 session/participant 쿼리 없음");
+        return;
+      }
+      socket.emit("join-session", {
+        sessionCode,
+        participantCode,
+      });
+    });
+
+    socket.on("session-ready", ({ sessionCode, participantCount }) => {
+      console.log(`[clinet] session-ready! ${sessionCode} (${participantCount} participants)`);
+    });
+
+    socket.on("join-error", ({ reason }) => {
+      console.log(`[client] join-error: ${reason}`);
     });
 
     socket.on("disconnect", (reason) => {
@@ -48,7 +74,9 @@ const App = () => {
     return () => {
       socket.disconnect();
       socket.off("connect");
-      socket.off("disconnet");
+      socket.off("session-ready");
+      socket.off("join-error");
+      socket.off("disconnect");
     };
   }, []);
 
