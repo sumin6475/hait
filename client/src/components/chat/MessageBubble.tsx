@@ -12,7 +12,9 @@ export const MessageBubble = ({ message, senderName }: MessageBubbleProps) => {
   const isAI = message.senderRole === "ai";
 
   return (
-    <div className={cn("flex flex-col gap-1 max-w-[75%]", isYou ? "items-end ml-auto" : "items-start")}>
+    <div
+      className={cn("flex flex-col gap-1 max-w-[75%]", isYou ? "items-end ml-auto" : "items-start")}
+    >
       <div className="flex items-center gap-2 px-1">
         {isAI && (
           <span className="inline-flex items-center gap-1 text-xs font-medium text-chat-ai-badge">
@@ -29,11 +31,13 @@ export const MessageBubble = ({ message, senderName }: MessageBubbleProps) => {
           "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
           isYou && "bg-chat-user text-chat-user-foreground rounded-br-md",
           !isYou && !isAI && "bg-chat-other text-chat-other-foreground rounded-bl-md",
-          isAI && "bg-chat-ai text-chat-ai-foreground rounded-bl-md border border-chat-ai-badge/20"
+          isAI && "bg-chat-ai text-chat-ai-foreground rounded-bl-md border border-chat-ai-badge/20",
         )}
       >
         {message.content}
-        {message.isStreaming && <span className="inline-block w-1.5 h-4 ml-1 bg-chat-ai-badge/60 animate-pulse rounded-sm" />}
+        {message.isStreaming && (
+          <span className="inline-block w-1.5 h-4 ml-1 bg-chat-ai-badge/60 animate-pulse rounded-sm" />
+        )}
       </div>
     </div>
   );

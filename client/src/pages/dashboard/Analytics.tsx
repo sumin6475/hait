@@ -1,4 +1,13 @@
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 import { conditionLabel } from "@/lib/mockData";
 
 const decisionData = [
@@ -42,7 +51,9 @@ const ChartCard = ({ title, children }: { title: string; children: React.ReactNo
 const Analytics = () => (
   <div className="p-8 space-y-6">
     <h1 className="text-2xl font-semibold">Analytics</h1>
-    <p className="text-sm text-muted-foreground">Key metrics across experiment conditions (mock data)</p>
+    <p className="text-sm text-muted-foreground">
+      Key metrics across experiment conditions (mock data)
+    </p>
 
     <div className="grid grid-cols-2 gap-6">
       <ChartCard title="Decision Accuracy (% choosing Candidate C)">

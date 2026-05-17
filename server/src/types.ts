@@ -12,7 +12,7 @@ export type SessionStatus = "waiting" | "in_progress" | "completed" | "data_read
 // 후보 (Candidate A/B/C/D)
 export type Candidate = "A" | "B" | "C" | "D";
 
-// 프로필 슬롯 
+// 프로필 슬롯
 export type ProfileSlot = "X" | "Y" | "Z";
 
 // 메시지 발신자 역할

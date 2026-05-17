@@ -42,18 +42,23 @@ const CodeEntry = () => {
           </div>
           <div className="text-center">
             <h1 className="text-2xl font-semibold tracking-tight">HAIT Experiment</h1>
-            <p className="mt-2 text-sm text-muted-foreground">Enter your participant code to begin</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Enter your participant code to begin
+            </p>
           </div>
           <div className="w-full space-y-4">
             <input
               type="text"
               value={code}
-              onChange={(e) => { setCode(e.target.value); setError(""); }}
+              onChange={(e) => {
+                setCode(e.target.value);
+                setError("");
+              }}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
               placeholder="EXP-C1-T01-X"
               className={cn(
                 "w-full rounded-lg border bg-card px-4 py-3 text-center font-mono text-lg tracking-widest placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring",
-                error ? "border-destructive focus:ring-destructive" : "border-input"
+                error ? "border-destructive focus:ring-destructive" : "border-input",
               )}
             />
             {error && <p className="text-sm text-destructive text-center">{error}</p>}
@@ -62,7 +67,8 @@ const CodeEntry = () => {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground text-center max-w-xs">
-            Your code was provided by the research team. It contains your condition and team assignment.
+            Your code was provided by the research team. It contains your condition and team
+            assignment.
           </p>
         </div>
       </div>

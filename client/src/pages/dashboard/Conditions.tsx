@@ -5,7 +5,10 @@ import { Save, Play, Settings2, X, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ConditionCode } from "@/types";
 
-const matrix: [ConditionCode, ConditionCode][] = [["C1", "C2"], ["C3", "C4"]];
+const matrix: [ConditionCode, ConditionCode][] = [
+  ["C1", "C2"],
+  ["C3", "C4"],
+];
 
 const timingLabels: Record<string, string> = {
   opening: "t = 0:00",
@@ -60,7 +63,9 @@ const Conditions = () => {
         </div>
         {(["XAI", "ACI"] as const).map((strat, ri) => (
           <div key={strat} className="grid grid-cols-[120px_1fr_1fr] gap-2">
-            <div className="flex items-center justify-center text-xs font-semibold text-muted-foreground uppercase">{strat} Strategy</div>
+            <div className="flex items-center justify-center text-xs font-semibold text-muted-foreground uppercase">
+              {strat} Strategy
+            </div>
             {matrix[ri].map((code) => (
               <button
                 key={code}
@@ -69,25 +74,29 @@ const Conditions = () => {
                   "rounded-lg border-2 p-4 text-left transition-all",
                   selected === code
                     ? "border-primary bg-primary/10 ring-2 ring-primary/30 shadow-md"
-                    : "border-input hover:border-primary/40"
+                    : "border-input hover:border-primary/40",
                 )}
               >
                 <div className="font-mono font-bold text-sm">{code}</div>
                 <div className="text-xs text-muted-foreground mt-1">{conditionLabel[code]}</div>
-                <div className="text-xs text-muted-foreground/60 mt-1">v{conditions.find((c) => c.code === code)?.version}</div>
+                <div className="text-xs text-muted-foreground/60 mt-1">
+                  v{conditions.find((c) => c.code === code)?.version}
+                </div>
               </button>
             ))}
           </div>
         ))}
         <div className="grid grid-cols-[120px_1fr] gap-2">
-          <div className="flex items-center justify-center text-xs font-semibold text-muted-foreground uppercase">Control</div>
+          <div className="flex items-center justify-center text-xs font-semibold text-muted-foreground uppercase">
+            Control
+          </div>
           <button
             onClick={() => handleSelect("CTRL")}
             className={cn(
               "rounded-lg border-2 p-4 text-left transition-all",
               selected === "CTRL"
                 ? "border-primary bg-primary/10 ring-2 ring-primary/30 shadow-md"
-                : "border-input hover:border-primary/40"
+                : "border-input hover:border-primary/40",
             )}
           >
             <div className="font-mono font-bold text-sm">CTRL</div>
@@ -104,7 +113,9 @@ const Conditions = () => {
             <Button variant="outline" size="sm" onClick={() => setTestOpen(true)}>
               <Play className="w-3.5 h-3.5 mr-1.5" /> Test Chat
             </Button>
-            <Button size="sm"><Save className="w-3.5 h-3.5 mr-1.5" /> Save v{(cond.version || 0) + 1}</Button>
+            <Button size="sm">
+              <Save className="w-3.5 h-3.5 mr-1.5" /> Save v{(cond.version || 0) + 1}
+            </Button>
           </div>
         </div>
         <textarea
@@ -119,14 +130,21 @@ const Conditions = () => {
         <div className="rounded-xl border bg-card p-6 shadow-card space-y-4">
           <div>
             <h2 className="font-medium">Leader Intervention Scripts</h2>
-            <p className="text-xs text-muted-foreground mt-1">These scripts are triggered at specific times during the discussion. Only applicable to Leader conditions (C2, C4).</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              These scripts are triggered at specific times during the discussion. Only applicable
+              to Leader conditions (C2, C4).
+            </p>
           </div>
           <div className="grid gap-3">
             {Object.entries(cond.leaderScripts).map(([key, val]) => (
               <div key={key} className="rounded-lg border p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{scriptLabels[key] || key}</label>
-                  <span className="text-xs font-mono text-primary/70 bg-primary/5 px-2 py-0.5 rounded">{timingLabels[key] || ""}</span>
+                  <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    {scriptLabels[key] || key}
+                  </label>
+                  <span className="text-xs font-mono text-primary/70 bg-primary/5 px-2 py-0.5 rounded">
+                    {timingLabels[key] || ""}
+                  </span>
                 </div>
                 <textarea
                   defaultValue={val}
@@ -145,8 +163,12 @@ const Conditions = () => {
           <div className="relative w-full max-w-md bg-card border-l shadow-xl flex flex-col animate-in slide-in-from-right">
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
-                <h3 className="font-semibold text-sm">Test Chat — {selected}: {conditionLabel[selected]}</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">Testing with current system prompt (unsaved changes included) · gpt-4o-mini</p>
+                <h3 className="font-semibold text-sm">
+                  Test Chat — {selected}: {conditionLabel[selected]}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Testing with current system prompt (unsaved changes included) · gpt-4o-mini
+                </p>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setTestOpen(false)}>
                 <X className="w-4 h-4" />
@@ -155,7 +177,9 @@ const Conditions = () => {
 
             <div className="flex-1 overflow-y-auto p-5 space-y-3">
               <div className="flex gap-3">
-                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">A</div>
+                <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary shrink-0">
+                  A
+                </div>
                 <div className="rounded-lg bg-muted/50 px-4 py-2.5 text-sm max-w-[85%]">
                   {isLeader
                     ? "Hi everyone! I'm Alex, your team moderator today. We'll be evaluating four candidates for the pilot position. Let's start with Candidate A — what information do each of you have?"
@@ -176,7 +200,9 @@ const Conditions = () => {
                   <Send className="w-4 h-4" />
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground text-center">AI responses are simulated in preview. Connect OpenAI API in production.</p>
+              <p className="text-xs text-muted-foreground text-center">
+                AI responses are simulated in preview. Connect OpenAI API in production.
+              </p>
             </div>
           </div>
         </div>

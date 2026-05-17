@@ -10,7 +10,10 @@ const WaitingRoom = () => {
   useEffect(() => {
     const t1 = setTimeout(() => setPartner(true), 3000);
     const t2 = setTimeout(() => navigate("/chat/room"), 5000);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [navigate]);
 
   useEffect(() => {
@@ -46,8 +49,12 @@ const WaitingRoom = () => {
             ) : (
               <Circle className="w-5 h-5 text-muted-foreground/40" />
             )}
-            <span className="text-sm font-medium text-muted-foreground">Participant {otherRole}</span>
-            <span className={`ml-auto text-xs font-medium ${partner ? "text-status-success" : "text-muted-foreground"}`}>
+            <span className="text-sm font-medium text-muted-foreground">
+              Participant {otherRole}
+            </span>
+            <span
+              className={`ml-auto text-xs font-medium ${partner ? "text-status-success" : "text-muted-foreground"}`}
+            >
               {partner ? "Connected" : "Waiting..."}
             </span>
           </div>

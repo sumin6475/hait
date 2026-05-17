@@ -23,7 +23,9 @@ const Demographics = () => {
           <UserCircle className="w-6 h-6 text-primary" />
           <h1 className="text-xl font-semibold">Background Survey</h1>
         </div>
-        <p className="text-sm text-muted-foreground">Please provide some basic information about yourself.</p>
+        <p className="text-sm text-muted-foreground">
+          Please provide some basic information about yourself.
+        </p>
 
         <div className="space-y-4">
           <div className="space-y-1.5">

@@ -25,7 +25,10 @@ const PreDiscussion = () => {
           <Vote className="w-6 h-6 text-primary" />
           <h1 className="text-xl font-semibold">Pre-Discussion Preference</h1>
         </div>
-        <p className="text-sm text-muted-foreground">Based on the information you've reviewed, which candidate do you currently prefer? This is your initial choice before group discussion.</p>
+        <p className="text-sm text-muted-foreground">
+          Based on the information you've reviewed, which candidate do you currently prefer? This is
+          your initial choice before group discussion.
+        </p>
 
         <div className="space-y-3">
           {candidates.map((c) => (
@@ -36,13 +39,17 @@ const PreDiscussion = () => {
                 "w-full flex items-center gap-4 rounded-lg border p-4 text-left transition-all",
                 selected === c
                   ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                  : "border-input hover:border-primary/40 hover:bg-muted/50"
+                  : "border-input hover:border-primary/40 hover:bg-muted/50",
               )}
             >
-              <span className={cn(
-                "w-10 h-10 rounded-lg flex items-center justify-center font-mono font-bold text-lg",
-                selected === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-              )}>
+              <span
+                className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center font-mono font-bold text-lg",
+                  selected === c
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
                 {c}
               </span>
               <div className="flex-1">

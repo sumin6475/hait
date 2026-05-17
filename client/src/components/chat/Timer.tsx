@@ -25,9 +25,13 @@ export const Timer = ({ durationMinutes, startTime, onExpired }: TimerProps) => 
   const isLow = remaining < 120;
 
   return (
-    <div className={`flex items-center gap-1.5 text-sm font-mono font-medium ${isLow ? "text-destructive" : "text-muted-foreground"}`}>
+    <div
+      className={`flex items-center gap-1.5 text-sm font-mono font-medium ${isLow ? "text-destructive" : "text-muted-foreground"}`}
+    >
       <Clock className="w-4 h-4" />
-      <span>{String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}</span>
+      <span>
+        {String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}
+      </span>
       <span className="text-xs font-sans">remaining</span>
     </div>
   );

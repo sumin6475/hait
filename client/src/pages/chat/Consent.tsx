@@ -45,8 +45,9 @@ const Consent = () => {
         </div>
 
         <p className="text-sm text-muted-foreground leading-relaxed">
-          You are being invited to participate in a research study on team decision-making with AI assistance.
-          Please read the following information carefully before deciding whether to participate.
+          You are being invited to participate in a research study on team decision-making with AI
+          assistance. Please read the following information carefully before deciding whether to
+          participate.
         </p>
 
         <div className="space-y-3">

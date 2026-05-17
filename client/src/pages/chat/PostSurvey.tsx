@@ -23,7 +23,7 @@ const LikertItem = ({ question, name, value, onChange }: LikertItemProps) => (
             "w-10 h-10 rounded-lg border text-sm font-medium transition-all",
             value === n
               ? "bg-primary text-primary-foreground border-primary"
-              : "border-input hover:border-primary/50 hover:bg-muted/50"
+              : "border-input hover:border-primary/50 hover:bg-muted/50",
           )}
         >
           {n}
@@ -81,7 +81,10 @@ const PostSurvey = () => {
 
         <div className="flex gap-2">
           {[0, 1, 2].map((p) => (
-            <div key={p} className={cn("flex-1 h-1.5 rounded-full", page >= p ? "bg-primary" : "bg-muted")} />
+            <div
+              key={p}
+              className={cn("flex-1 h-1.5 rounded-full", page >= p ? "bg-primary" : "bg-muted")}
+            />
           ))}
         </div>
 
@@ -89,10 +92,15 @@ const PostSurvey = () => {
           <div className="bg-card rounded-xl border p-6 space-y-2">
             <div className="flex items-center gap-2 mb-4">
               <Star className="w-4 h-4 text-primary" />
-              <h2 className="font-medium">Trust in AI (1 = Strongly Disagree, 5 = Strongly Agree)</h2>
+              <h2 className="font-medium">
+                Trust in AI (1 = Strongly Disagree, 5 = Strongly Agree)
+              </h2>
             </div>
             {trustQuestions.map((q, i) => (
-              <LikertItem key={i} question={q} name={`t${i}`}
+              <LikertItem
+                key={i}
+                question={q}
+                name={`t${i}`}
                 value={trustResponses[`t${i}`] ?? null}
                 onChange={(v) => setTrustResponses((p) => ({ ...p, [`t${i}`]: v }))}
               />
@@ -107,7 +115,10 @@ const PostSurvey = () => {
           <div className="bg-card rounded-xl border p-6 space-y-2">
             <h2 className="font-medium mb-4">Manipulation Check</h2>
             {manipulationQuestions.map((q, i) => (
-              <LikertItem key={i} question={q} name={`m${i}`}
+              <LikertItem
+                key={i}
+                question={q}
+                name={`m${i}`}
                 value={manipResponses[`m${i}`] ?? null}
                 onChange={(v) => setManipResponses((p) => ({ ...p, [`m${i}`]: v }))}
               />
@@ -121,11 +132,15 @@ const PostSurvey = () => {
         {page === 2 && (
           <div className="bg-card rounded-xl border p-6 space-y-4">
             <h2 className="font-medium">Tool vs. Teammate Perception</h2>
-            <LikertItem question="I perceived AI Alex as a tool." name="tool"
+            <LikertItem
+              question="I perceived AI Alex as a tool."
+              name="tool"
               value={toolTeam.tool ?? null}
               onChange={(v) => setToolTeam((p) => ({ ...p, tool: v }))}
             />
-            <LikertItem question="I perceived AI Alex as a team member." name="teammate"
+            <LikertItem
+              question="I perceived AI Alex as a team member."
+              name="teammate"
               value={toolTeam.teammate ?? null}
               onChange={(v) => setToolTeam((p) => ({ ...p, teammate: v }))}
             />

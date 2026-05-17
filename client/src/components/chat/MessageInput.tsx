@@ -35,7 +35,12 @@ export const MessageInput = ({ onSend, disabled }: MessageInputProps) => {
         disabled={disabled}
         className="flex-1 rounded-full border border-input bg-background px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
       />
-      <Button onClick={handleSend} disabled={!value.trim() || disabled} size="icon" className="rounded-full shrink-0">
+      <Button
+        onClick={handleSend}
+        disabled={!value.trim() || disabled}
+        size="icon"
+        className="rounded-full shrink-0"
+      >
         <Send className="w-4 h-4" />
       </Button>
     </div>

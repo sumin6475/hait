@@ -26,7 +26,8 @@ const TeamDecision = () => {
           <h1 className="text-xl font-semibold">Team Decision</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Based on your team's discussion, which candidate has your team selected as the best fit for the airline pilot position? Please confirm the decision your team agreed upon.
+          Based on your team's discussion, which candidate has your team selected as the best fit
+          for the airline pilot position? Please confirm the decision your team agreed upon.
         </p>
 
         <div className="space-y-3">
@@ -38,13 +39,17 @@ const TeamDecision = () => {
                 "w-full flex items-center gap-4 rounded-lg border p-4 text-left transition-all",
                 selected === c
                   ? "border-primary bg-primary/5 ring-2 ring-primary/20"
-                  : "border-input hover:border-primary/40 hover:bg-muted/50"
+                  : "border-input hover:border-primary/40 hover:bg-muted/50",
               )}
             >
-              <span className={cn(
-                "w-10 h-10 rounded-lg flex items-center justify-center font-mono font-bold text-lg",
-                selected === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-              )}>
+              <span
+                className={cn(
+                  "w-10 h-10 rounded-lg flex items-center justify-center font-mono font-bold text-lg",
+                  selected === c
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
                 {c}
               </span>
               <div className="flex-1">

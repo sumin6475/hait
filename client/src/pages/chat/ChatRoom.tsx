@@ -39,10 +39,15 @@ const ChatRoom = () => {
     setAiTyping(true);
     const t = setTimeout(() => {
       setAiTyping(false);
-      setMessages([{
-        id: "ai-0", sender: "AI Alex", senderRole: "ai", content: firstMsg,
-        timestamp: new Date(),
-      }]);
+      setMessages([
+        {
+          id: "ai-0",
+          sender: "AI Alex",
+          senderRole: "ai",
+          content: firstMsg,
+          timestamp: new Date(),
+        },
+      ]);
     }, 2000);
     return () => clearTimeout(t);
   }, []);
@@ -50,15 +55,24 @@ const ChatRoom = () => {
   const simulateAI = useCallback(() => {
     if (aiResponseIdx.current >= aiResponses.length) return;
     setAiTyping(true);
-    setTimeout(() => {
-      setAiTyping(false);
-      const resp = aiResponses[aiResponseIdx.current];
-      aiResponseIdx.current++;
-      setMessages((prev) => [...prev, {
-        id: `ai-${Date.now()}`, sender: "AI Alex", senderRole: "ai",
-        content: resp, timestamp: new Date(),
-      }]);
-    }, 2000 + Math.random() * 2000);
+    setTimeout(
+      () => {
+        setAiTyping(false);
+        const resp = aiResponses[aiResponseIdx.current];
+        aiResponseIdx.current++;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `ai-${Date.now()}`,
+            sender: "AI Alex",
+            senderRole: "ai",
+            content: resp,
+            timestamp: new Date(),
+          },
+        ]);
+      },
+      2000 + Math.random() * 2000,
+    );
   }, []);
 
   const simulatePartner = useCallback(() => {
@@ -67,21 +81,35 @@ const ChatRoom = () => {
       "From what I've read, C seems very conscientious.",
       "That makes sense. I think C could be a strong choice.",
     ];
-    setTimeout(() => {
-      setMessages((prev) => [...prev, {
-        id: `partner-${Date.now()}`, sender: `Participant ${otherRole}`, senderRole: "other",
-        content: partnerMsgs[Math.floor(Math.random() * partnerMsgs.length)],
-        timestamp: new Date(),
-      }]);
-      setTimeout(() => simulateAI(), 1500);
-    }, 1000 + Math.random() * 2000);
+    setTimeout(
+      () => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `partner-${Date.now()}`,
+            sender: `Participant ${otherRole}`,
+            senderRole: "other",
+            content: partnerMsgs[Math.floor(Math.random() * partnerMsgs.length)],
+            timestamp: new Date(),
+          },
+        ]);
+        setTimeout(() => simulateAI(), 1500);
+      },
+      1000 + Math.random() * 2000,
+    );
   }, [otherRole, simulateAI]);
 
   const handleSend = (content: string) => {
-    setMessages((prev) => [...prev, {
-      id: `you-${Date.now()}`, sender: "You", senderRole: "you",
-      content, timestamp: new Date(),
-    }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `you-${Date.now()}`,
+        sender: "You",
+        senderRole: "you",
+        content,
+        timestamp: new Date(),
+      },
+    ]);
     simulatePartner();
   };
 
