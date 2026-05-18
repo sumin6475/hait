@@ -5,6 +5,7 @@ export type CommStrategy = "xai" | "aci";
 export type ParticipantRole = "humanX" | "humanY" | "humanZ";
 export type SessionStatus = "waiting" | "in_progress" | "completed" | "data_ready";
 export type Candidate = "A" | "B" | "C" | "D";
+export type SenderRole = ParticipantRole | "ai";
 
 export interface Condition {
   id: string;
@@ -32,6 +33,7 @@ export interface Participant {
   preDiscussionChoice?: Candidate;
   demographics?: { age: number; gender: string; major: string };
   connectedAt?: string;
+  lastSeenAt?: string;
   completedAt?: string;
 }
 
@@ -52,11 +54,12 @@ export interface Session {
   };
 }
 
+//DB에 저장되는 메시지 타입
 export interface Message {
   id: string;
   sessionId: string;
   sender: string;
-  senderRole: "humanX" | "humanY" | "humanZ" | "ai";
+  senderRole: SenderRole;
   content: string;
   timestamp: string;
 }
@@ -72,6 +75,7 @@ export interface SurveyResponse {
   completedAt: string;
 }
 
+//UI에 표시되는 메시지 타입
 export interface ChatMessage {
   id: string;
   sender: string;

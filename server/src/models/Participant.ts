@@ -50,6 +50,7 @@ const participantSchema = new mongoose.Schema(
 
     //접속/종료 시점
     connectedAt: Date,
+    lastSeenAt: Date,
     completedAt: Date,
   },
   { timestamps: true },

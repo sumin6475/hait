@@ -7,7 +7,7 @@ import { connectDB } from "./db.js";
 import { healthRouter } from "./routes/health.js";
 import { testRouter } from "./routes/test.js";
 import { registerSocketHandlers } from "./sockets/index.js";
-import type { ClientToServerEvents, ServerToClientEvents } from "./sockets/events.js";
+import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "./sockets/events.js";
 
 async function start() {
   await connectDB();
@@ -21,7 +21,7 @@ async function start() {
   // HTTP 서버 생성 - Socket.io 부착 위해
   const httpServer = http.createServer(app);
   // Socket.io 서버 생성
-  const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
+  const io = new Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>(httpServer, {
     cors: {
       origin: "http://localhost:8080", //Vite origin
       credentials: true,
