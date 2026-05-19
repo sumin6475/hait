@@ -3,9 +3,43 @@ import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "./e
 import { Session } from "../models/Session.js";
 import { Participant } from "../models/Participant.js";
 import { Message } from "../models/Message.js";
+import { buildSessionContext, evaluateTriggers } from "../triggers/evaluate.js";
+import { handleAITurn } from "../lib/aiTurn.js";
+import { TRIGGER_CONFIG } from "../config/triggers.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+
+const sessionIntervals = new Map<string, NodeJS.Timeout>();
+
+function startPullEvalution(io: IO, sessionCode: string, sessionId: string) {
+  if (sessionIntervals.has(sessionCode)) return;
+
+  const interval = setInterval(async () => {
+    try {
+      const ctx = await buildSessionContext(sessionId, sessionCode);
+      const fired = await evaluateTriggers(ctx);
+      if (fired) {
+        handleAITurn(io, sessionCode, sessionId, fired, ctx).catch((e) =>
+          console.error(`[socket] AI turn error:`, e),
+        );
+      }
+    } catch (error) {
+      console.error("[pull-trigger] evalute error:", error);
+    }
+  }, TRIGGER_CONFIG.PULL_EVALUATION_INTERVAL_MS);
+  sessionIntervals.set(sessionCode, interval);
+  console.log(`[pull-trigger] started for ${sessionCode}`);
+}
+
+function stopPullEvalution(sessionCode: string) {
+  const interval = sessionIntervals.get(sessionCode);
+  if (interval) {
+    clearInterval(interval);
+    sessionIntervals.delete(sessionCode);
+    console.log(`[pull-trigger] stopped for ${sessionCode}`);
+  }
+}
 
 export function registerSocketHandlers(io: IO) {
   io.on("connection", (socket: AppSocket) => {
@@ -90,6 +124,8 @@ export function registerSocketHandlers(io: IO) {
         const newSize = currentSize + 1;
         if (newSize >= maxParticipants && !isReconnect) {
           io.to(sessionCode).emit("session-ready", { sessionCode, participantCount: newSize });
+
+          startPullEvalution(io, sessionCode, session._id.toString());
         }
       } catch (error) {
         console.error("[socket] join-session error:", error);
@@ -139,6 +175,20 @@ export function registerSocketHandlers(io: IO) {
           content: savedMessage.content,
           createdAt: savedMessage.createdAt.toISOString(),
         });
+
+        //6. Push 트리거 평가
+        try {
+          const ctx = await buildSessionContext(sessionId, sessionCode);
+          const fired = await evaluateTriggers(ctx);
+          if (fired) {
+            //트리거 : true 일때 - AI 호출은 비동기 (핸들러 안 막음)
+            handleAITurn(io, sessionCode, sessionId, fired, ctx).catch((e) =>
+              console.error(`[socket] AI turn error:`, e),
+            );
+          }
+        } catch (error) {
+          console.error("[push-trigger] evaluate error:", error);
+        }
       } catch (error) {
         console.error(`[socket] send-message error:`, error);
         socket.emit("message-failed", { reason: "Server error while saving message" });

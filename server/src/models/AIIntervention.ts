@@ -14,7 +14,7 @@ const aiInterventionSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    //평가가 일어난 시점의 메시지 순번
+    //평가가 일어난 시점의 메시지 순번 - stay_silent일때 분석 위해
     turnIndex: { type: Number, required: true },
 
     //평가 트리거 사유 (네이티브 언어 사용)
@@ -27,7 +27,7 @@ const aiInterventionSchema = new mongoose.Schema(
     generateMessageId: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
 
     //OpenAI Responses API 응답 ID
-    responseID: { type: String },
+    responseId: { type: String },
 
     //호출에 사용한 모델명 (예: "gpt-5.5")
     model: { type: String },
