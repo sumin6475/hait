@@ -11,7 +11,7 @@ export function registerSocketHandlers(io: IO) {
   io.on("connection", (socket: AppSocket) => {
     console.log(`[socket] connected: ${socket.id}`);
 
-    socket.on("join-session", async ({ sessionCode, participantCode, lastSeenSeq }) => {
+    socket.on("join-session", async ({ sessionCode, participantCode }) => {
       //console.log(`[socket] join-session received: ${sessionCode}, ${participantCode}`);
       try {
         // 1. 세션 조회
@@ -31,7 +31,6 @@ export function registerSocketHandlers(io: IO) {
         // 3. 현재 방의 인원 수 확인
         const room = io.sockets.adapter.rooms.get(sessionCode);
         const currentSize = room?.size ?? 0;
-        // CTRL은 3명, 그 외는 2명까지
         const maxParticipants = session.conditionCode === "CTRL" ? 3 : 2;
 
         // 처음 접속인지 파악 - 지금 접속한 participantCode가 이미 방에 있는지 확인
@@ -62,33 +61,30 @@ export function registerSocketHandlers(io: IO) {
         socket.data.role = participant.role;
 
         console.log(
-          `[socket] ${socket.id} (${participant.role}) joined ${sessionCode} (${currentSize + 1}/${maxParticipants}) ${lastSeenSeq != null ? "[reconnected]" : ""}`,
+          `[socket] ${socket.id} (${participant.role}) joined ${sessionCode} (${currentSize + 1}/${maxParticipants}) ${isReconnect ? "[reconnected]" : ""}`,
         );
 
-        // 7. 재접속이면 missed messages 전송
+        // 7. 세션 전체 메시지 전송
 
-        if (lastSeenSeq != null && lastSeenSeq > 0) {
-          const missed = await Message.find({
-            sessionId: session._id,
-            seq: { $gt: lastSeenSeq },
-          }).sort({ seq: 1 });
-
-          if (missed.length > 0) {
-            socket.emit("missed-messages", {
-              messages: missed.map((m) => ({
-                seq: m.seq,
-                sender: m.sender,
-                senderRole: m.senderRole,
-                content: m.content,
-                createdAt: (m as any).createdAt.toISOString(),
-              })),
-            });
-          }
-          console.log(`[socket] sent ${missed.length} missed messages to ${participant.role}`);
-        }
+        const allMessages = await Message.find({ sessionId: session._id }).sort({ seq: 1 });
+        socket.emit("session-history", {
+          messages: allMessages.map((m) => ({
+            seq: m.seq,
+            sender: m.sender,
+            senderRole: m.senderRole,
+            content: m.content,
+            createdAt: (m as any).createdAt.toISOString(),
+          })),
+        });
+        console.log(`[socket] sent ${allMessages.length} history messages to ${participant.role}`);
 
         //8. 재접속 알림
-        socket.to(sessionCode).emit("peer-reconnected", { role: participant.role });
+        if (isReconnect) {
+          socket.to(sessionCode).emit("peer-reconnected", { role: participant.role });
+          console.log(
+            `[reconnect] ${participant.role} session=${sessionCode} at=${new Date().toISOString()}`,
+          );
+        }
 
         // 9. 정원 다 차면 전원에게 ready 이벤트 전송 (broadcast) - 신규 입장일때만
         const newSize = currentSize + 1;
@@ -141,7 +137,7 @@ export function registerSocketHandlers(io: IO) {
           sender: savedMessage.sender,
           senderRole: savedMessage.senderRole,
           content: savedMessage.content,
-          createAt: savedMessage.createdAt.toISOString(),
+          createdAt: savedMessage.createdAt.toISOString(),
         });
       } catch (error) {
         console.error(`[socket] send-message error:`, error);

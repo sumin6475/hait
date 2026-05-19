@@ -1,116 +1,116 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ChatMessage } from "@/types";
+import type { SenderRole } from "@/types";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { Timer } from "@/components/chat/Timer";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { FlaskConical } from "lucide-react";
-
-const aiResponses = [
-  "That's a great observation! Based on my information, Candidate C also shows excellent concern for others and strong attention skills. These could be really important for a pilot position.",
-  "I'd like to add that from what I know, Candidate C has quite a few positive attributes. Has anyone looked into how they handle stressful situations?",
-  "Good points from both of you. Let me share — I've seen that C has attention skills that stand out. If we tally up all the positive and negative attributes, C might actually come out ahead.",
-  "Interesting discussion! I think we should make sure we consider all four candidates before making our final choice. What about Candidates B and D?",
-  "Based on everything we've discussed, it seems like Candidate C has the strongest overall profile with 7 positive attributes. I'd recommend C as our choice. What do you both think?",
-];
+import { socket } from "@/lib/socket";
 
 const ChatRoom = () => {
   const navigate = useNavigate();
-  const role = sessionStorage.getItem("role") || "X";
-  const otherRole = role === "X" ? "Y" : "X";
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [aiTyping, setAiTyping] = useState(false);
   const [startTime] = useState(new Date());
-  const aiResponseIdx = useRef(0);
+  const [myRole, setMyRole] = useState<SenderRole | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  //auto scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, aiTyping]);
+  }, [messages]);
 
+  //connect to socket
   useEffect(() => {
-    const condition = sessionStorage.getItem("condition") || "C1";
-    const isLeader = condition === "C2" || condition === "C4";
-    const firstMsg = isLeader
-      ? "Welcome everyone! I'm Alex, your moderator today. We'll be evaluating four candidates for the pilot position. Let's start by discussing Candidate A — what information do each of you have?"
-      : "Hi there! I'm Alex, a fellow member of the selection committee. Looking forward to working through these candidate profiles together.";
+    const params = new URLSearchParams(window.location.search);
+    const sessionCode = params.get("session");
+    const participantCode = params.get("participant");
 
-    setAiTyping(true);
-    const t = setTimeout(() => {
-      setAiTyping(false);
-      setMessages([
+    if (!sessionCode || !participantCode) {
+      console.warn("[chatroom] no session/participant in URL");
+      return;
+    }
+
+    // participantCode -> myrole (e.g. P-X-001 -> humanX)
+    const roleHint = participantCode.includes("X")
+      ? "humanX"
+      : participantCode.includes("Y")
+        ? "humanY"
+        : participantCode.includes("Z")
+          ? "humanZ"
+          : null;
+    setMyRole(roleHint);
+
+    socket.connect();
+    (window as any).socket = socket;
+
+    socket.on("connect", () => {
+      console.log("[chatroom] connected", socket.id);
+      socket.emit("join-session", { sessionCode, participantCode });
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("[chatroom] disconnected", reason);
+    });
+
+    socket.on("session-ready", ({ sessionCode, participantCount }) => {
+      console.log(`[chatroom] session ready: ${sessionCode} (${participantCount} participants)`);
+    });
+
+    socket.on("join-error", ({ reason }) => {
+      console.error(`[chatroom] join error: ${reason}`);
+    });
+
+    //session history
+    socket.on("session-history", ({ messages }) => {
+      console.log(`[chatroom] session-history: ${messages.length} messages`);
+      const mapped: ChatMessage[] = messages.map((m) => ({
+        id: `msg-${m.seq}`,
+        sender: m.sender,
+        senderRole: m.senderRole === roleHint ? "you" : m.senderRole === "ai" ? "ai" : "other",
+        content: m.content,
+        timestamp: new Date(m.createdAt),
+      }));
+      setMessages(mapped);
+    });
+
+    //new message
+    socket.on("new-message", (msg) => {
+      setMessages((prev) => [
+        ...prev,
         {
-          id: "ai-0",
-          sender: "AI Alex",
-          senderRole: "ai",
-          content: firstMsg,
-          timestamp: new Date(),
+          id: `msg-${msg.seq}`,
+          sender: msg.sender,
+          senderRole:
+            msg.senderRole === roleHint ? "you" : msg.senderRole === "ai" ? "ai" : "other",
+          content: msg.content,
+          timestamp: new Date(msg.createdAt),
         },
       ]);
-    }, 2000);
-    return () => clearTimeout(t);
-  }, []);
+    });
 
-  const simulateAI = useCallback(() => {
-    if (aiResponseIdx.current >= aiResponses.length) return;
-    setAiTyping(true);
-    setTimeout(
-      () => {
-        setAiTyping(false);
-        const resp = aiResponses[aiResponseIdx.current];
-        aiResponseIdx.current++;
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `ai-${Date.now()}`,
-            sender: "AI Alex",
-            senderRole: "ai",
-            content: resp,
-            timestamp: new Date(),
-          },
-        ]);
-      },
-      2000 + Math.random() * 2000,
-    );
-  }, []);
+    socket.on("message-failed", ({ reason }) => {
+      console.error("[chatroom] message-failed", reason);
+    });
 
-  const simulatePartner = useCallback(() => {
-    const partnerMsgs = [
-      "I agree, that's a good point. I also noticed some things about Candidate C.",
-      "From what I've read, C seems very conscientious.",
-      "That makes sense. I think C could be a strong choice.",
-    ];
-    setTimeout(
-      () => {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `partner-${Date.now()}`,
-            sender: `Participant ${otherRole}`,
-            senderRole: "other",
-            content: partnerMsgs[Math.floor(Math.random() * partnerMsgs.length)],
-            timestamp: new Date(),
-          },
-        ]);
-        setTimeout(() => simulateAI(), 1500);
-      },
-      1000 + Math.random() * 2000,
-    );
-  }, [otherRole, simulateAI]);
+    socket.on("peer-disconnected", ({ role }) => {
+      console.log(`[chatroom] peer-disconnected: ${role}`);
+    });
+
+    socket.on("peer-reconnected", ({ role }) => {
+      console.log(`[chatroom] peer-reconnected: ${role}`);
+    });
+
+    return () => {
+      socket.removeAllListeners();
+      socket.disconnect();
+    };
+  }, []);
 
   const handleSend = (content: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: `you-${Date.now()}`,
-        sender: "You",
-        senderRole: "you",
-        content,
-        timestamp: new Date(),
-      },
-    ]);
-    simulatePartner();
+    socket.emit("send-message", { content });
+    //ui에는 추가 안함
   };
 
   const handleTimerExpired = () => {
@@ -123,6 +123,7 @@ const ChatRoom = () => {
         <div className="flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-primary" />
           <span className="font-semibold">HAIT Experiment</span>
+          {myRole && <span className="text-xs text-muted-foreground ml-2">(you: {myRole})</span>}
         </div>
         <Timer durationMinutes={20} startTime={startTime} onExpired={handleTimerExpired} />
       </div>
@@ -135,7 +136,6 @@ const ChatRoom = () => {
             senderName={msg.senderRole === "ai" ? "Alex — AI Moderator" : msg.sender}
           />
         ))}
-        {aiTyping && <TypingIndicator name="Alex" />}
         <div ref={bottomRef} />
       </div>
 

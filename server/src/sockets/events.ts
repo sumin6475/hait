@@ -3,11 +3,7 @@
 import type { ParticipantRole, SenderRole } from "../types.js";
 
 export type ClientToServerEvents = {
-  "join-session": (payload: {
-    sessionCode: string;
-    participantCode: string;
-    lastSeenSeq?: number;
-  }) => void;
+  "join-session": (payload: { sessionCode: string; participantCode: string }) => void;
   "send-message": (payload: { content: string }) => void;
 };
 
@@ -19,12 +15,12 @@ export type ServerToClientEvents = {
     sender: string;
     senderRole: SenderRole;
     content: string;
-    createAt: string;
+    createdAt: string;
   }) => void;
   "message-failed": (payload: { reason: string }) => void;
   "peer-disconnected": (payload: { role: ParticipantRole }) => void;
   "peer-reconnected": (payload: { role: ParticipantRole }) => void;
-  "missed-messages": (payload: {
+  "session-history": (payload: {
     messages: Array<{
       seq: number;
       sender: string;
