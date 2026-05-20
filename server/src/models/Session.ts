@@ -58,7 +58,7 @@ const metadataSchema = new mongoose.Schema(
 const sessionSchema = new mongoose.Schema(
   {
     //어드민이 발급하는 세션 코드
-    sessionCode: { type: String, requried: true, unique: true, index: true },
+    sessionCode: { type: String, required: true, unique: true, index: true },
 
     //실험 조건
     conditionCode: {

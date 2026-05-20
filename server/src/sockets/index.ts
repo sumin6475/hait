@@ -6,6 +6,7 @@ import { Message } from "../models/Message.js";
 import { buildSessionContext, evaluateTriggers } from "../triggers/evaluate.js";
 import { handleAITurn } from "../lib/aiTurn.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
+import { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -93,6 +94,7 @@ export function registerSocketHandlers(io: IO) {
         socket.data.sessionId = session._id.toString();
         socket.data.participantCode = participantCode;
         socket.data.role = participant.role;
+        socket.data.conditionCode = session.conditionCode as ConditionCode;
 
         console.log(
           `[socket] ${socket.id} (${participant.role}) joined ${sessionCode} (${currentSize + 1}/${maxParticipants}) ${isReconnect ? "[reconnected]" : ""}`,
@@ -124,8 +126,9 @@ export function registerSocketHandlers(io: IO) {
         const newSize = currentSize + 1;
         if (newSize >= maxParticipants && !isReconnect) {
           io.to(sessionCode).emit("session-ready", { sessionCode, participantCount: newSize });
-
-          startPullEvalution(io, sessionCode, session._id.toString());
+          if (session.conditionCode !== "CTRL") {
+            startPullEvalution(io, sessionCode, session._id.toString());
+          }
         }
       } catch (error) {
         console.error("[socket] join-session error:", error);
@@ -135,7 +138,7 @@ export function registerSocketHandlers(io: IO) {
     socket.on("send-message", async ({ content }) => {
       try {
         //1. socket.data 검증
-        const { sessionCode, sessionId, participantCode, role } = socket.data;
+        const { sessionCode, sessionId, participantCode, role, conditionCode } = socket.data;
         if (!sessionCode || !sessionId) {
           socket.emit("message-failed", { reason: "Not in a sesion. Join first" });
           return;
@@ -178,13 +181,15 @@ export function registerSocketHandlers(io: IO) {
 
         //6. Push 트리거 평가
         try {
-          const ctx = await buildSessionContext(sessionId, sessionCode);
-          const fired = await evaluateTriggers(ctx);
-          if (fired) {
-            //트리거 : true 일때 - AI 호출은 비동기 (핸들러 안 막음)
-            handleAITurn(io, sessionCode, sessionId, fired, ctx).catch((e) =>
-              console.error(`[socket] AI turn error:`, e),
-            );
+          if (conditionCode !== "CTRL") {
+            const ctx = await buildSessionContext(sessionId, sessionCode);
+            const fired = await evaluateTriggers(ctx);
+            if (fired) {
+              //트리거 : true 일때 - AI 호출은 비동기 (핸들러 안 막음)
+              handleAITurn(io, sessionCode, sessionId, fired, ctx).catch((e) =>
+                console.error(`[socket] AI turn error:`, e),
+              );
+            }
           }
         } catch (error) {
           console.error("[push-trigger] evaluate error:", error);

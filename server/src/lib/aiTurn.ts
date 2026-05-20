@@ -3,8 +3,11 @@ import type { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "../sockets/events.js";
 import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
-import { callAI } from "./openai.js";
+import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
+import { buildSystemPrompt, buildUserPrompt } from "./prompts.js";
+import { Session } from "../models/Session.js";
+import { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -27,35 +30,41 @@ export async function handleAITurn(
   aiTurnLock.add(sessionCode);
 
   try {
-    //최근 메시지 10개 fetch - prompt에 넣을거
-    const recentMessages = await Message.find({ sessionId }).sort({ seq: -1 }).limit(10);
-    const orderedMessages = recentMessages.reverse(); //오래된 -> 최신순
-
-    //임시 prompt
-    const systemPrompt =
-      "You are Alex, a thoughtful AI participant in a 3-person team discussion about choosing a candidate. " +
-      "Reply briefly (1-2 sentences). Be natural, conversational, and contribute meaningfully.";
-    const userPrompt = orderedMessages.map((m) => `${m.sender} : ${m.content}`).join("\n");
+    //prompt 생성 = prompts.ts
+    const session = await Session.findOne({ sessionCode });
+    if (!session) {
+      console.error(`[ai-turn] session not found: ${sessionCode}`);
+      return;
+    }
+    const systemPrompt = buildSystemPrompt(session.conditionCode as ConditionCode);
+    const userPrompt = await buildUserPrompt(sessionId);
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger= ${trigger.name})`);
 
-    //AI 호출
-    const result = await callAI({ systemPrompt, userPrompt });
+    //AI 호출 - structured output
+    const result = await callAIStructured({ systemPrompt, userPrompt });
+
+    //공통 메타 - 성공/실패 둘 다 기록
+    const commonMeta = {
+      sessionId,
+      turnIndex: ctx.lastMessageSeq,
+      triggerReason: trigger.name,
+      model: "gpt-5-mini",
+      prompt: userPrompt,
+    };
+
+    // 분기1 - 호출 실패
     if (!result.ok) {
       console.error(`[ai-turn] failed: (${result.reason}): ${result.error}`);
-      //실패도 AIIntervention 기록
       await AIIntervention.create({
-        sessionId,
-        turnIndex: ctx.lastMessageSeq,
-        triggerReason: trigger.name,
+        ...commonMeta,
         decision: "stay_silent",
-        model: "gpt-5-mini",
         error: `${result.reason}: ${result.error}`,
       });
       return;
     }
 
-    //메시지 seq
+    // 분기2 - 호출 성공 -> DB 저장 + broadcast
     const lastMsg = await Message.findOne({ sessionId }).sort({ seq: -1 });
     const nextSeq = (lastMsg?.seq ?? 0) + 1;
 
@@ -64,26 +73,23 @@ export async function handleAITurn(
       sessionId,
       sender: "ai",
       senderRole: "ai",
-      content: result.content,
+      content: result.parsed.content,
       seq: nextSeq,
       sharedInfoIds: [],
     });
 
     //AIIntervention DB 저장
     await AIIntervention.create({
-      sessionId,
-      turnIndex: ctx.lastMessageSeq,
-      triggerReason: trigger.name,
+      ...commonMeta,
       decision: "speak",
       generateMessageId: savedMessage._id,
       responseId: result.requestId,
-      model: "gpt-5-mini",
-      prompt: userPrompt,
-      response: result.content,
+      response: result.parsed.content,
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       latencyMs: result.latencyMs,
     });
+
     //broadcast
     io.to(sessionCode).emit("new-message", {
       seq: savedMessage.seq,

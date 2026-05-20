@@ -1,6 +1,8 @@
 //OpenAI Responses API
 import OpenAI from "openai";
 import { config } from "../config.js";
+import { z } from "zod";
+import { zodTextFormat } from "openai/helpers/zod";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey });
 
@@ -28,7 +30,7 @@ interface CallAIOptions {
 export async function callAI({
   systemPrompt,
   userPrompt,
-  model = "gpt-5-mini",
+  model = "gpt-4o-mini",
   timeoutMs = 15_000,
 }: CallAIOptions): Promise<AICallResult> {
   const start = Date.now();
@@ -94,5 +96,88 @@ export async function callAI({
       reason: "unknown",
       error: error.message ?? String(error),
     };
+  }
+}
+
+export const AIResponseSchema = z.object({
+  content: z.string(),
+});
+
+export type AIResponseParsed = z.infer<typeof AIResponseSchema>;
+//structured output 버전결과타입
+export type AIStructuredResult =
+  | {
+      ok: true;
+      parsed: AIResponseParsed;
+      requestId: string;
+      latencyMs: number;
+      inputTokens: number;
+      outputTokens: number;
+    }
+  | { ok: false; reason: "timeout" | "rate_limit" | "parsed_error" | "unknown"; error: string };
+
+interface CallAIStructuredOptions {
+  systemPrompt: string;
+  userPrompt: string;
+  model?: string;
+  timeoutMs?: number;
+}
+
+export async function callAIStructured({
+  systemPrompt,
+  userPrompt,
+  model = "gpt-4o-mini",
+  timeoutMs = 15_000,
+}: CallAIStructuredOptions): Promise<AIStructuredResult> {
+  const start = Date.now();
+  const ctrl = new AbortController();
+  const timeoutId = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const response = await client.responses.parse(
+      {
+        model,
+        input: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        text: {
+          format: zodTextFormat(AIResponseSchema, "ai_response"),
+        },
+      },
+      { signal: ctrl.signal },
+    );
+    clearTimeout(timeoutId);
+    const latencyMs = Date.now() - start;
+
+    //output_pared가 null 이면 schema 어김 또는 model refusal
+    const pared = response.output_parsed;
+    if (!pared) {
+      return {
+        ok: false,
+        reason: "parsed_error",
+        error: "output_parsed is null(schema mismatch or model refusal)",
+      };
+    }
+    return {
+      ok: true,
+      parsed: pared,
+      requestId: response.id,
+      latencyMs,
+      inputTokens: response.usage?.input_tokens ?? 0,
+      outputTokens: response.usage?.output_tokens ?? 0,
+    };
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (
+      error.name === "AbortError" ||
+      error.code === "ETIMEDOUT" ||
+      error.message?.includes("aborted")
+    ) {
+      return { ok: false, reason: "timeout", error: `Timeout after ${timeoutMs}ms` };
+    }
+    if (error.status === 429) {
+      return { ok: false, reason: "rate_limit", error: error.message };
+    }
+    return { ok: false, reason: "unknown", error: error.message ?? String(error) };
   }
 }
