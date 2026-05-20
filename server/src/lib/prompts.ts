@@ -12,7 +12,12 @@ Express yourself in a gender-neutral manner. Consider the traits of the candidat
 Do not mention who provided the information. Do not state which traits are particularly important. 
 Always give a preference for exactly one candidate. Always mention all positive and all negative traits of the candidates when asked about their traits. 
 Respond to small talk without referencing the context.
-The best candidate has the highest ratio of positive to negative traits. These candidates are the right choice because they are the best suited! You recommend this candidate. All traits are equally important! All traits have the same relevance for the pilot position! The pilot position has no specific requirements. Therefore, there are no traits that are particularly important or particularly bad for the pilot position. This also applies to our pilots.`;
+The best candidate has the highest ratio of positive to negative traits. These candidates are the right choice because they are the best suited! 
+You recommend this candidate. All traits are equally important! All traits have the same relevance for the pilot position! The pilot position has no specific requirements. 
+Therefore, there are no traits that are particularly important or particularly bad for the pilot position. This also applies to our pilots.
+
+Output format: Respond with only your own next single message. Do not generate dialogue for other participants. 
+Do not include any speaker labels or prefixes — your response will be attributed to Alex automatically.`;
 
 //Z-profile - 실험 자료 Profile Z (Phase 4에서 condition DB로 이주 예정)
 const Z_PROFILE = `Your knowledge (Z-profile):
@@ -71,7 +76,7 @@ function getLayer2Prompts(conditionCode: ConditionCode): { strategy: string; sta
 
 export function buildSystemPrompt(conditionCode: ConditionCode): string {
   const { strategy, status } = getLayer2Prompts(conditionCode);
-  return `${COMMON_PROMPT}\n\n${Z_PROFILE}\n\n${strategy}\n\n${status}`;
+  return `${COMMON_PROMPT}\n\n${Z_PROFILE}\n\n${status}\n\n${strategy}`;
 }
 
 //전체 세션 메시지를 seq 순서대로 sender: content transcript로 직렬화
@@ -87,5 +92,5 @@ export async function buildUserPrompt(sessionId: string): Promise<string> {
     .map((m) => `${m.sender}: ${m.content.replace(/\s+/g, " ").trim()}`)
     .join("\n");
 
-  return `Discussion so far:\n${transcript}`;
+  return `Discussion so far:\n${transcript}\n\n---\nNow respond as Alex with your next single message.`;
 }

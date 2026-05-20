@@ -6,14 +6,19 @@ import { Message } from "../models/Message.js";
 import { buildSessionContext, evaluateTriggers } from "../triggers/evaluate.js";
 import { handleAITurn } from "../lib/aiTurn.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
-import { ConditionCode } from "../types.js";
+import type { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
 const sessionIntervals = new Map<string, NodeJS.Timeout>();
 
-function startPullEvalution(io: IO, sessionCode: string, sessionId: string) {
+function startPullEvalution(
+  io: IO,
+  sessionCode: string,
+  sessionId: string,
+  conditionCode: ConditionCode,
+) {
   if (sessionIntervals.has(sessionCode)) return;
 
   const interval = setInterval(async () => {
@@ -21,7 +26,7 @@ function startPullEvalution(io: IO, sessionCode: string, sessionId: string) {
       const ctx = await buildSessionContext(sessionId, sessionCode);
       const fired = await evaluateTriggers(ctx);
       if (fired) {
-        handleAITurn(io, sessionCode, sessionId, fired, ctx).catch((e) =>
+        handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode).catch((e) =>
           console.error(`[socket] AI turn error:`, e),
         );
       }
@@ -127,7 +132,12 @@ export function registerSocketHandlers(io: IO) {
         if (newSize >= maxParticipants && !isReconnect) {
           io.to(sessionCode).emit("session-ready", { sessionCode, participantCount: newSize });
           if (session.conditionCode !== "CTRL") {
-            startPullEvalution(io, sessionCode, session._id.toString());
+            startPullEvalution(
+              io,
+              sessionCode,
+              session._id.toString(),
+              session.conditionCode as ConditionCode,
+            );
           }
         }
       } catch (error) {
@@ -186,7 +196,7 @@ export function registerSocketHandlers(io: IO) {
             const fired = await evaluateTriggers(ctx);
             if (fired) {
               //트리거 : true 일때 - AI 호출은 비동기 (핸들러 안 막음)
-              handleAITurn(io, sessionCode, sessionId, fired, ctx).catch((e) =>
+              handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode).catch((e) =>
                 console.error(`[socket] AI turn error:`, e),
               );
             }

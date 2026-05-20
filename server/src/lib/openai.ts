@@ -121,6 +121,7 @@ interface CallAIStructuredOptions {
   userPrompt: string;
   model?: string;
   timeoutMs?: number;
+  previousResponseId?: string;
 }
 
 export async function callAIStructured({
@@ -128,6 +129,7 @@ export async function callAIStructured({
   userPrompt,
   model = "gpt-4o-mini",
   timeoutMs = 15_000,
+  previousResponseId,
 }: CallAIStructuredOptions): Promise<AIStructuredResult> {
   const start = Date.now();
   const ctrl = new AbortController();
@@ -140,6 +142,7 @@ export async function callAIStructured({
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
         ],
+        previous_response_id: previousResponseId,
         text: {
           format: zodTextFormat(AIResponseSchema, "ai_response"),
         },
