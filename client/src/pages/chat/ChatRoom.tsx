@@ -23,23 +23,26 @@ const ChatRoom = () => {
 
   //connect to socket
   useEffect(() => {
+    //1. sessionStorage 우선 (정상 흐름: CodeEntry → ... → ChatRoom)
+    //2. URL 파라미터 fallback (테스트/직접 URL 접속 시: ?session=...&participant=...)
     const params = new URLSearchParams(window.location.search);
-    const sessionCode = params.get("session");
-    const participantCode = params.get("participant");
+    const sessionCode = sessionStorage.getItem("sessionCode") ?? params.get("session") ?? undefined;
+    const participantCode =
+      sessionStorage.getItem("participantCode") ?? params.get("participant") ?? undefined;
 
     if (!sessionCode || !participantCode) {
-      console.warn("[chatroom] no session/participant in URL");
+      console.warn("[chatroom] no session/participant in sessionStorage or URL");
       return;
     }
 
-    // participantCode -> myrole (e.g. P-X-001 -> humanX)
-    const roleHint = participantCode.includes("X")
-      ? "humanX"
-      : participantCode.includes("Y")
-        ? "humanY"
-        : participantCode.includes("Z")
-          ? "humanZ"
-          : null;
+    console.log(`[chatroom] joining ${sessionCode} as ${participantCode}`);
+
+    //participantCode → myRole 파싱
+    //형식: P-X-C1-001 또는 TP-X-C1-001
+    //X/Y/Z는 두번째 토큰 (split("-")[1])
+    const slot = participantCode.split("-")[1]; //X|Y|Z
+    const roleHint: SenderRole | null =
+      slot === "X" ? "humanX" : slot === "Y" ? "humanY" : slot === "Z" ? "humanZ" : null;
     setMyRole(roleHint);
 
     socket.connect();

@@ -1,72 +1,71 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { UserCircle } from "lucide-react";
+import { ClipboardList, ExternalLink } from "lucide-react";
+
+//Qualtrics 사전 설문 URL (환경변수)
+const DEMOGRAPHICS_URL =
+  import.meta.env.VITE_QUALTRICS_DEMOGRAPHICS_URL ?? "https://qualtrics.com/CHANGE_ME_DEMOGRAPHICS";
 
 const Demographics = () => {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ age: "", gender: "", major: "" });
+  const participantCode = sessionStorage.getItem("participantCode") ?? "";
 
-  const isValid = form.age && form.gender && form.major;
+  const demoLinkWithCode = `${DEMOGRAPHICS_URL}?ParticipantCode=${encodeURIComponent(participantCode)}`;
 
-  const handleSubmit = () => {
-    if (isValid) {
-      sessionStorage.setItem("demographics", JSON.stringify(form));
+  const handleContinue = () => {
+    const confirmed = window.confirm(
+      "Have you finished the pre-discussion survey on Qualtrics?\n\nClick OK only if you have submitted your responses.",
+    );
+    if (confirmed) {
       navigate("/chat/info-cards");
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md bg-card rounded-xl border p-8 space-y-6">
-        <div className="flex items-center gap-3">
-          <UserCircle className="w-6 h-6 text-primary" />
-          <h1 className="text-xl font-semibold">Background Survey</h1>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          Please provide some basic information about yourself.
-        </p>
-
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Age</label>
-            <input
-              type="number"
-              value={form.age}
-              onChange={(e) => setForm({ ...form, age: e.target.value })}
-              placeholder="e.g. 22"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
+      <div className="w-full max-w-xl">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <ClipboardList className="w-7 h-7 text-primary" />
           </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Gender</label>
-            <select
-              value={form.gender}
-              onChange={(e) => setForm({ ...form, gender: e.target.value })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Step 2 of 3</p>
+            <h1 className="text-2xl font-semibold tracking-tight">Pre-Discussion Survey</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Please complete the pre-discussion survey in a new tab.
+            </p>
+          </div>
+
+          <div className="w-full rounded-xl bg-card shadow-card p-6 space-y-4">
+            <div className="rounded-lg bg-muted/40 p-4 space-y-1">
+              <p className="text-xs text-muted-foreground">Your participant code</p>
+              <p className="font-mono text-sm font-medium">{participantCode || "—"}</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                This code will be auto-filled in the Qualtrics form. If asked, do not change it.
+              </p>
+            </div>
+
+            <a
+              href={demoLinkWithCode}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-3 text-sm font-medium hover:opacity-90 transition-opacity"
             >
-              <option value="">Select...</option>
-              <option value="male">Male</option>
-              <option value="female">Female</option>
-              <option value="non-binary">Non-binary</option>
-              <option value="prefer-not">Prefer not to say</option>
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Major / Field of Study</label>
-            <input
-              type="text"
-              value={form.major}
-              onChange={(e) => setForm({ ...form, major: e.target.value })}
-              placeholder="e.g. Psychology"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-            />
-          </div>
-        </div>
+              Open pre-discussion survey
+              <ExternalLink className="w-4 h-4" />
+            </a>
 
-        <Button onClick={handleSubmit} className="w-full" size="lg" disabled={!isValid}>
-          Continue
-        </Button>
+            <Button onClick={handleContinue} variant="outline" className="w-full" size="lg">
+              I've completed the survey
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground text-center max-w-md">
+            The survey opens in a new tab. After you submit it on Qualtrics, return here and click
+            "I've completed the survey" to continue.
+          </p>
+        </div>
       </div>
     </div>
   );

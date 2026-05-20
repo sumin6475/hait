@@ -29,7 +29,7 @@ const conditionSchema = new mongoose.Schema(
     },
 
     //AI 지위 - leader / peer
-    //CTRL은 AI없으므로 requried 제외
+    //CTRL은 AI없으므로 required 제외
     status: {
       type: String,
       enum: ["leader", "peer"] as AIStatus[],
@@ -45,7 +45,7 @@ const conditionSchema = new mongoose.Schema(
     systemPrompt: { type: String, default: "" },
 
     //리더 조건일 떄만 사용
-    leaderScritps: leaderScriptsSchema,
+    leaderScripts: leaderScriptsSchema,
   },
   { timestamps: true },
 );

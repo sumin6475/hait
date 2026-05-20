@@ -1,35 +1,67 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+//참가자 코드 형식:
+//  실제: P-X-C1-001, P-Y-CTRL-001
+//  테스트: TP-X-C1-001, TP-Z-CTRL-001
+const CODE_PATTERN = /^T?P-[XYZ]-(C[1-4]|CTRL)-\d{3}$/;
+
 const CodeEntry = () => {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
+  const [autoFilled, setAutoFilled] = useState(false);
   const navigate = useNavigate();
 
-  const validateCode = (code: string) => {
-    const pattern = /^EXP-(C[1-4]|CT)-T\d{2}-[XYZ]$/;
-    return pattern.test(code.toUpperCase());
+  //URL에 ?code=... 있으면 자동 채움 (어드민이 배포한 링크 클릭 시)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const codeParam = params.get("code");
+    if (codeParam) {
+      setCode(codeParam.toUpperCase());
+      setAutoFilled(true);
+    }
+  }, []);
+
+  const validateCode = (c: string) => CODE_PATTERN.test(c);
+
+  //코드 파싱 → sessionStorage 저장
+  //예: TP-X-C1-001 → { role: "humanX", condition: "C1", isTest: true, seq: "001", sessionCode: "T-C1-001" }
+  const parseAndStore = (raw: string) => {
+    const upper = raw.toUpperCase();
+    //prefix(T?P), slot, condition, seq
+    const parts = upper.split("-");
+    //TP-X-C1-001 → ["TP","X","C1","001"]
+    //P-X-C1-001  → ["P","X","C1","001"]
+    const isTest = parts[0] === "TP";
+    const slot = parts[1]; //X|Y|Z
+    const condition = parts[2]; //C1|C2|C3|C4|CTRL
+    const seq = parts[3];
+    const sessionPrefix = isTest ? "T" : "S";
+    const sessionCode = `${sessionPrefix}-${condition}-${seq}`;
+    const role = `human${slot}`;
+
+    sessionStorage.setItem("participantCode", upper);
+    sessionStorage.setItem("sessionCode", sessionCode);
+    sessionStorage.setItem("condition", condition);
+    sessionStorage.setItem("role", role);
+    sessionStorage.setItem("assignedProfile", slot);
+    sessionStorage.setItem("isTest", String(isTest));
   };
 
   const handleSubmit = () => {
-    const trimmed = code.trim();
+    const trimmed = code.trim().toUpperCase();
     if (!trimmed) {
       setError("Please enter your participant code.");
       return;
     }
-    const upper = trimmed.toUpperCase();
-    if (!validateCode(upper)) {
-      setError("Invalid participant code. Please check your code and try again.");
+    if (!validateCode(trimmed)) {
+      setError("Invalid code format. Example: P-X-C1-001");
       return;
     }
-    sessionStorage.setItem("participantCode", upper);
-    const parts = upper.split("-");
-    sessionStorage.setItem("condition", parts[1]);
-    sessionStorage.setItem("team", parts[2]);
-    sessionStorage.setItem("role", parts[3]);
+    parseAndStore(trimmed);
     navigate("/chat/consent");
   };
 
@@ -43,7 +75,9 @@ const CodeEntry = () => {
           <div className="text-center">
             <h1 className="text-2xl font-semibold tracking-tight">HAIT Experiment</h1>
             <p className="mt-2 text-sm text-muted-foreground">
-              Enter your participant code to begin
+              {autoFilled
+                ? "Your code has been filled in. Please confirm and continue."
+                : "Enter your participant code to begin"}
             </p>
           </div>
           <div className="w-full space-y-4">
@@ -55,7 +89,7 @@ const CodeEntry = () => {
                 setError("");
               }}
               onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              placeholder="EXP-C1-T01-X"
+              placeholder="P-X-C1-001"
               className={cn(
                 "w-full rounded-lg border bg-card px-4 py-3 text-center font-mono text-lg tracking-widest placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring",
                 error ? "border-destructive focus:ring-destructive" : "border-input",
@@ -67,8 +101,8 @@ const CodeEntry = () => {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground text-center max-w-xs">
-            Your code was provided by the research team. It contains your condition and team
-            assignment.
+            Your code was provided by the research team. It identifies your role and experimental
+            condition.
           </p>
         </div>
       </div>

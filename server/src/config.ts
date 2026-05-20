@@ -17,4 +17,5 @@ export const config = {
   port: Number(process.env.PORT) || 3001,
   mongodbUri: requireEnv("MONGODB_URI"),
   openaiApiKey: requireEnv("OPENAI_API_KEY"),
+  adminToken: requireEnv("ADMIN_TOKEN"),
 };

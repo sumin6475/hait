@@ -1,154 +1,73 @@
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ClipboardCheck, Star } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { FileText, ExternalLink } from "lucide-react";
 
-interface LikertItemProps {
-  question: string;
-  name: string;
-  value: number | null;
-  onChange: (v: number) => void;
-}
-
-const LikertItem = ({ question, name, value, onChange }: LikertItemProps) => (
-  <div className="space-y-2 py-3 border-b last:border-0">
-    <p className="text-sm">{question}</p>
-    <div className="flex gap-2">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <button
-          key={n}
-          onClick={() => onChange(n)}
-          className={cn(
-            "w-10 h-10 rounded-lg border text-sm font-medium transition-all",
-            value === n
-              ? "bg-primary text-primary-foreground border-primary"
-              : "border-input hover:border-primary/50 hover:bg-muted/50",
-          )}
-        >
-          {n}
-        </button>
-      ))}
-    </div>
-  </div>
-);
-
-const trustQuestions = [
-  "AI Alex was competent in its role.",
-  "AI Alex performed its task well.",
-  "AI Alex showed good capability in the discussion.",
-  "AI Alex acted in my best interest.",
-  "AI Alex was concerned about my welfare.",
-  "AI Alex's intentions were good.",
-  "AI Alex tried to help us make a good decision.",
-  "AI Alex was truthful in its communication.",
-  "AI Alex was honest about its information.",
-  "AI Alex made fair judgments.",
-  "AI Alex was consistent in its behavior.",
-];
-
-const manipulationQuestions = [
-  "AI Alex acted as a leader in the discussion.",
-  "AI Alex directed the flow of conversation.",
-  "AI Alex took charge of the group process.",
-  "AI Alex explained its reasoning clearly.",
-  "AI Alex asked questions to draw out information.",
-];
+//Qualtrics 사후 설문 URL (환경변수)
+const POSTSURVEY_URL =
+  import.meta.env.VITE_QUALTRICS_POSTSURVEY_URL ?? "https://qualtrics.com/CHANGE_ME_POSTSURVEY";
 
 const PostSurvey = () => {
   const navigate = useNavigate();
-  const [trustResponses, setTrustResponses] = useState<Record<string, number>>({});
-  const [manipResponses, setManipResponses] = useState<Record<string, number>>({});
-  const [toolTeam, setToolTeam] = useState<Record<string, number>>({});
-  const [page, setPage] = useState(0);
+  const participantCode = sessionStorage.getItem("participantCode") ?? "";
 
-  const allTrustDone = trustQuestions.every((_, i) => trustResponses[`t${i}`] !== undefined);
-  const allManipDone = manipulationQuestions.every((_, i) => manipResponses[`m${i}`] !== undefined);
-  const allToolDone = toolTeam.tool !== undefined && toolTeam.teammate !== undefined;
+  const surveyLinkWithCode = `${POSTSURVEY_URL}?ParticipantCode=${encodeURIComponent(participantCode)}`;
 
-  const handleFinish = () => {
-    sessionStorage.setItem("surveyCompleted", "true");
-    navigate("/chat/debrief");
+  const handleContinue = () => {
+    const confirmed = window.confirm(
+      "Have you finished the post-discussion survey on Qualtrics?\n\nClick OK only if you have submitted your responses.",
+    );
+    if (confirmed) {
+      navigate("/chat/debrief");
+    }
   };
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="mx-auto max-w-2xl py-8 space-y-6">
-        <div className="flex items-center gap-3">
-          <ClipboardCheck className="w-6 h-6 text-primary" />
-          <h1 className="text-xl font-semibold">Post-Discussion Survey</h1>
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="w-full max-w-xl">
+        <div className="flex flex-col items-center gap-6">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+            <FileText className="w-7 h-7 text-primary" />
+          </div>
 
-        <div className="flex gap-2">
-          {[0, 1, 2].map((p) => (
-            <div
-              key={p}
-              className={cn("flex-1 h-1.5 rounded-full", page >= p ? "bg-primary" : "bg-muted")}
-            />
-          ))}
-        </div>
+          <div className="text-center">
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              Step 3 of 3
+            </p>
+            <h1 className="text-2xl font-semibold tracking-tight">Post-Discussion Survey</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              The discussion is complete. Please complete the post-discussion survey in a new tab.
+            </p>
+          </div>
 
-        {page === 0 && (
-          <div className="bg-card rounded-xl border p-6 space-y-2">
-            <div className="flex items-center gap-2 mb-4">
-              <Star className="w-4 h-4 text-primary" />
-              <h2 className="font-medium">
-                Trust in AI (1 = Strongly Disagree, 5 = Strongly Agree)
-              </h2>
+          <div className="w-full rounded-xl bg-card shadow-card p-6 space-y-4">
+            <div className="rounded-lg bg-muted/40 p-4 space-y-1">
+              <p className="text-xs text-muted-foreground">Your participant code</p>
+              <p className="font-mono text-sm font-medium">{participantCode || "—"}</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                This code will be auto-filled in the Qualtrics form. If asked, do not change it.
+              </p>
             </div>
-            {trustQuestions.map((q, i) => (
-              <LikertItem
-                key={i}
-                question={q}
-                name={`t${i}`}
-                value={trustResponses[`t${i}`] ?? null}
-                onChange={(v) => setTrustResponses((p) => ({ ...p, [`t${i}`]: v }))}
-              />
-            ))}
-            <Button onClick={() => setPage(1)} className="w-full mt-4" disabled={!allTrustDone}>
-              Next
-            </Button>
-          </div>
-        )}
 
-        {page === 1 && (
-          <div className="bg-card rounded-xl border p-6 space-y-2">
-            <h2 className="font-medium mb-4">Manipulation Check</h2>
-            {manipulationQuestions.map((q, i) => (
-              <LikertItem
-                key={i}
-                question={q}
-                name={`m${i}`}
-                value={manipResponses[`m${i}`] ?? null}
-                onChange={(v) => setManipResponses((p) => ({ ...p, [`m${i}`]: v }))}
-              />
-            ))}
-            <Button onClick={() => setPage(2)} className="w-full mt-4" disabled={!allManipDone}>
-              Next
-            </Button>
-          </div>
-        )}
+            <a
+              href={surveyLinkWithCode}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-3 text-sm font-medium hover:opacity-90 transition-opacity"
+            >
+              Open post-discussion survey
+              <ExternalLink className="w-4 h-4" />
+            </a>
 
-        {page === 2 && (
-          <div className="bg-card rounded-xl border p-6 space-y-4">
-            <h2 className="font-medium">Tool vs. Teammate Perception</h2>
-            <LikertItem
-              question="I perceived AI Alex as a tool."
-              name="tool"
-              value={toolTeam.tool ?? null}
-              onChange={(v) => setToolTeam((p) => ({ ...p, tool: v }))}
-            />
-            <LikertItem
-              question="I perceived AI Alex as a team member."
-              name="teammate"
-              value={toolTeam.teammate ?? null}
-              onChange={(v) => setToolTeam((p) => ({ ...p, teammate: v }))}
-            />
-            <Button onClick={handleFinish} className="w-full mt-4" disabled={!allToolDone}>
-              Submit Survey
+            <Button onClick={handleContinue} variant="outline" className="w-full" size="lg">
+              I've completed the survey
             </Button>
           </div>
-        )}
+
+          <p className="text-xs text-muted-foreground text-center max-w-md">
+            The survey opens in a new tab. After you submit it on Qualtrics, return here and click
+            "I've completed the survey" to continue.
+          </p>
+        </div>
       </div>
     </div>
   );
