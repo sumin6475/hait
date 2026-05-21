@@ -17,11 +17,17 @@ const corsOrigins = process.env.CORS_ORIGIN
       .filter(Boolean)
   : true;
 
+const corsOptions: cors.CorsOptions = {
+  origin: corsOrigins,
+  credentials: true,
+  allowedHeaders: ["Content-Type", "x-admin-token"],
+};
+
 async function start() {
   await connectDB();
   const app = express();
 
-  app.use(cors({ origin: corsOrigins, credentials: true }));
+  app.use(cors(corsOptions)); //Express HTTP API
   app.use(express.json());
   app.use(healthRouter);
   app.use(testRouter);
