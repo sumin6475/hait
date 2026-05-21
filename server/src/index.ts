@@ -10,22 +10,18 @@ import { sessionsRouter } from "./routes/sessions.js";
 import { registerSocketHandlers } from "./sockets/index.js";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "./sockets/events.js";
 
-// CORS — CORS_ORIGIN(콤마 구분). 미설정 시 전체 허용(로컬 개발용)
+//CORS origin - 환경변수로 받음, 콤마 구분 다중 지원, 미설정시 모두 허용 (dev)
 const corsOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(",").map((s) => s.trim()).filter(Boolean)
+  ? process.env.CORS_ORIGIN.split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
   : true;
-
-const corsOptions: cors.CorsOptions = {
-  origin: corsOrigins,
-  credentials: true,
-  allowedHeaders: ["Content-Type", "x-admin-token"],
-};
 
 async function start() {
   await connectDB();
   const app = express();
 
-  app.use(cors(corsOptions));
+  app.use(cors({ origin: corsOrigins, credentials: true }));
   app.use(express.json());
   app.use(healthRouter);
   app.use(testRouter);
