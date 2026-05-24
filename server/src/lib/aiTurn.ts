@@ -53,7 +53,7 @@ export async function handleAITurn(
       sessionId,
       turnIndex: ctx.lastMessageSeq,
       triggerReason: trigger.name,
-      model: "gpt-5-mini",
+      model: "gpt-4o-mini",
       prompt: userPrompt,
     };
 
@@ -92,6 +92,7 @@ export async function handleAITurn(
       inputTokens: result.inputTokens,
       outputTokens: result.outputTokens,
       latencyMs: result.latencyMs,
+      systemFingerprint: result.systemFingerprint,
     });
 
     //broadcast

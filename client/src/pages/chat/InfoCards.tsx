@@ -1,12 +1,13 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { sharedInfoCards, xExclusiveCards, yExclusiveCards } from "@/lib/mockData";
+import { sharedInfoCards, xExclusiveCards, yExclusiveCards, zExclusiveCards } from "@/lib/mockData";
 import type { InfoCard, Candidate } from "@/types";
 import { FileText, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import seedrandom from "seedrandom";
 
 const candidateColors: Record<Candidate, string> = {
   A: "bg-chart-1/15 text-chart-1",
@@ -50,7 +51,10 @@ const CandidateSection = ({ candidate, cards }: { candidate: Candidate; cards: I
       </CollapsibleTrigger>
       <CollapsibleContent>
         <div className="space-y-2 pt-2 pl-1">
-          {cards.map((card, i) => (
+          {[
+            ...cards.filter((c) => c.valence === "positive"),
+            ...cards.filter((c) => c.valence === "negative"),
+          ].map((card, i) => (
             <InfoCardItem key={i} card={card} />
           ))}
         </div>
@@ -61,8 +65,19 @@ const CandidateSection = ({ candidate, cards }: { candidate: Candidate; cards: I
 
 const InfoCards = () => {
   const navigate = useNavigate();
-  const role = sessionStorage.getItem("role") || "X";
-  const exclusiveCards = role === "X" ? xExclusiveCards : yExclusiveCards;
+  const profile = sessionStorage.getItem("assignedProfile") || "X";
+  const participantCode = sessionStorage.getItem("participantCode") || "";
+  const exclusiveCards =
+    profile === "X"
+      ? xExclusiveCards
+      : profile === "Y"
+        ? yExclusiveCards
+        : profile === "Z"
+          ? zExclusiveCards
+          : [];
+  if (exclusiveCards.length === 0) {
+    console.warn(`[InfoCards] unknown profile "${profile}", showing shared cards only`);
+  }
   const allCards = [...sharedInfoCards, ...exclusiveCards];
 
   const grouped = (["A", "B", "C", "D"] as Candidate[]).reduce(
@@ -73,6 +88,18 @@ const InfoCards = () => {
     {} as Record<Candidate, InfoCard[]>,
   );
 
+  //participantCode로 시드로 후보 순서 셔플 (같은 참가자는 항상 같은 순서로 보기)
+  const candidateOrder = useMemo(() => {
+    const rng = seedrandom(participantCode);
+    const arr: Candidate[] = ["A", "B", "C", "D"];
+    //Fisher-Yates 셔플 알고리즘
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [participantCode]);
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="mx-auto max-w-2xl space-y-6 py-8">
@@ -80,15 +107,22 @@ const InfoCards = () => {
           <FileText className="w-6 h-6 text-primary" />
           <h1 className="text-xl font-semibold">Your Candidate Information</h1>
         </div>
+        {/* 기존 경고 
         <div className="rounded-lg bg-status-warning/10 border border-status-warning/30 p-4">
           <p className="text-sm font-medium text-status-warning">
             ⚠️ Important: You will NOT be able to refer back to these cards during the discussion.
             Please study them carefully.
           </p>
         </div>
-
+        */}
+        <div className="rounded-lg bg-status-warning/10 border border-status-warning/30 p-4">
+          <p className="text-sm text-foreground">
+            <strong>Note:</strong> You may not have all the information about each candidate. Other
+            team members may hold additional information. There is one optimal candidate.
+          </p>
+        </div>
         <div className="space-y-4">
-          {(["A", "B", "C", "D"] as Candidate[]).map((c) => (
+          {candidateOrder.map((c) => (
             <CandidateSection key={c} candidate={c} cards={grouped[c]} />
           ))}
         </div>

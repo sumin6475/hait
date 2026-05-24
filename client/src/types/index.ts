@@ -86,6 +86,7 @@ export interface ChatMessage {
 }
 
 export interface InfoCard {
+  id: string;
   candidate: Candidate;
   attribute: string;
   valence: "positive" | "negative";

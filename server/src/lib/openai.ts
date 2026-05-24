@@ -100,7 +100,7 @@ export async function callAI({
 }
 
 export const AIResponseSchema = z.object({
-  content: z.string(),
+  content: z.string().max(600),
 });
 
 export type AIResponseParsed = z.infer<typeof AIResponseSchema>;
@@ -113,6 +113,7 @@ export type AIStructuredResult =
       latencyMs: number;
       inputTokens: number;
       outputTokens: number;
+      systemFingerprint: string | null;
     }
   | { ok: false; reason: "timeout" | "rate_limit" | "parsed_error" | "unknown"; error: string };
 
@@ -128,7 +129,7 @@ export async function callAIStructured({
   systemPrompt,
   userPrompt,
   model = "gpt-4o-mini",
-  timeoutMs = 15_000,
+  timeoutMs = 30_000,
   previousResponseId,
 }: CallAIStructuredOptions): Promise<AIStructuredResult> {
   const start = Date.now();
@@ -138,6 +139,7 @@ export async function callAIStructured({
     const response = await client.responses.parse(
       {
         model,
+        temperature: 0,
         input: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -168,6 +170,7 @@ export async function callAIStructured({
       latencyMs,
       inputTokens: response.usage?.input_tokens ?? 0,
       outputTokens: response.usage?.output_tokens ?? 0,
+      systemFingerprint: (response as any).system_fingerprint ?? null,
     };
   } catch (error: any) {
     clearTimeout(timeoutId);

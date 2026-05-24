@@ -41,6 +41,9 @@ const aiInterventionSchema = new mongoose.Schema(
     outputTokens: { type: Number },
     latencyMs: { type: Number },
 
+    //OpenAI 모델 버전 식별자
+    systemFingerprint: { type: String },
+
     //API 호출 실패 시 에러 메시지
     error: { type: String, default: "" },
   },

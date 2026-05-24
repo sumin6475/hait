@@ -21,8 +21,14 @@ const WaitingRoom = () => {
     return () => clearInterval(i);
   }, []);
 
-  const role = sessionStorage.getItem("role") || "X";
-  const otherRole = role === "X" ? "Y" : "X";
+  const profile = sessionStorage.getItem("assignedProfile") || "X";
+  const condition = sessionStorage.getItem("conditionCode") || "";
+  const isCTRL = condition === "CTRL";
+
+  //CTRL이면 인간 3명 (X/Y/Z) 그 외엔 인간 2명 (X/Y) + AI
+  const otherProfiles = isCTRL
+    ? ["X", "Y", "Z"].filter((p) => p !== profile)
+    : [profile === "X" ? "Y" : "X"];
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -40,29 +46,31 @@ const WaitingRoom = () => {
         <div className="space-y-3 text-left bg-card rounded-xl border p-6">
           <div className="flex items-center gap-3">
             <CheckCircle2 className="w-5 h-5 text-status-success" />
-            <span className="text-sm font-medium">You (Participant {role})</span>
+            <span className="text-sm font-medium">You (Participant {profile})</span>
             <span className="ml-auto text-xs text-status-success font-medium">Connected</span>
           </div>
-          <div className="flex items-center gap-3">
-            {partner ? (
-              <CheckCircle2 className="w-5 h-5 text-status-success" />
-            ) : (
-              <Circle className="w-5 h-5 text-muted-foreground/40" />
-            )}
-            <span className="text-sm font-medium text-muted-foreground">
-              Participant {otherRole}
-            </span>
-            <span
-              className={`ml-auto text-xs font-medium ${partner ? "text-status-success" : "text-muted-foreground"}`}
-            >
-              {partner ? "Connected" : "Waiting..."}
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <CheckCircle2 className="w-5 h-5 text-chat-ai-badge" />
-            <span className="text-sm font-medium text-muted-foreground">AI Alex</span>
-            <span className="ml-auto text-xs font-medium text-chat-ai-badge">Ready</span>
-          </div>
+          {otherProfiles.map((p) => (
+            <div key={p} className="flex items-center gap-3">
+              {partner ? (
+                <CheckCircle2 className="w-5 h-5 text-status-success" />
+              ) : (
+                <Circle className="w-5 h-5 text-muted-foreground/40" />
+              )}
+              <span className="text-sm font-medium">Participant {p}</span>
+              <span
+                className={`ml-auto text-xs font-medium ${partner ? "text-status-success" : "text-muted-foreground"}`}
+              >
+                {partner ? "Connected" : "Waiting..."}
+              </span>
+            </div>
+          ))}
+          {!isCTRL && (
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="w-5 h-5 text-chat-ai-badge" />
+              <span className="text-sm font-medium text-muted-foreground">AI Alex</span>
+              <span className="ml-auto text-xs font-medium text-chat-ai-badge">Ready</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -17,7 +17,8 @@ You recommend this candidate. All traits are equally important! All traits have 
 Therefore, there are no traits that are particularly important or particularly bad for the pilot position. This also applies to our pilots.
 
 Output format: Respond with only your own next single message. Do not generate dialogue for other participants. 
-Do not include any speaker labels or prefixes — your response will be attributed to Alex automatically.`;
+Do not include any speaker labels or prefixes — your response will be attributed to Alex automatically.
+Keep your response concise: aim for 1–3 sentences. Stay under 600 characters total.`;
 
 //Z-profile - 실험 자료 Profile Z (Phase 4에서 condition DB로 이주 예정)
 const Z_PROFILE = `Your knowledge (Z-profile):
@@ -83,7 +84,13 @@ export function buildSystemPrompt(conditionCode: ConditionCode): string {
 //줄바꿈/연속 공백은 단일 공백으로 치환 (transcript 라인 무결성)
 export async function buildUserPrompt(sessionId: string): Promise<string> {
   const messages = await Message.find({ sessionId }).sort({ seq: 1 });
+  return buildUserPromptFromMessages(messages);
+}
 
+//순수 함수 - mock 데이터로도 호출 가능 (eval 스크립트용)
+export function buildUserPromptFromMessages(
+  messages: { sender: string; content: string }[],
+): string {
   if (messages.length === 0) {
     return "[No messages yet. The discussion is about to begin.]";
   }

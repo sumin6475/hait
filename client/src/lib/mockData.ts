@@ -81,7 +81,6 @@ const makeParticipant = (
   conditionCode: cond as any,
   sessionId: sess,
   role,
-  profile: role === "humanX" ? "X" : "Y",
   demographics: { age: 22, gender: "Female", major: "Psychology" },
   preDiscussionChoice: "A",
   connectedAt: connected,
@@ -354,45 +353,160 @@ export const surveys: SurveyResponse[] = [
   },
 ];
 
+//=== Shared cards (모든 참가자 공통, 16장) ===
+//Profile X, Y, Z 모두에 공통으로 등장하는 트레이트
 export const sharedInfoCards: InfoCard[] = [
-  { candidate: "A", attribute: "Leadership skills", valence: "positive" },
-  { candidate: "A", attribute: "Communication ability", valence: "positive" },
-  { candidate: "A", attribute: "Technical knowledge", valence: "positive" },
-  { candidate: "A", attribute: "Teamwork", valence: "negative" },
-  { candidate: "B", attribute: "Problem solving", valence: "positive" },
-  { candidate: "B", attribute: "Decision making", valence: "negative" },
-  { candidate: "B", attribute: "Adaptability", valence: "positive" },
-  { candidate: "B", attribute: "Time management", valence: "negative" },
-  { candidate: "C", attribute: "Communication", valence: "negative" },
-  { candidate: "C", attribute: "Technical knowledge", valence: "negative" },
-  { candidate: "C", attribute: "Physical fitness", valence: "positive" },
-  { candidate: "C", attribute: "Safety record", valence: "negative" },
-  { candidate: "D", attribute: "Experience", valence: "positive" },
-  { candidate: "D", attribute: "Leadership", valence: "negative" },
-  { candidate: "D", attribute: "Motivation", valence: "positive" },
-  { candidate: "D", attribute: "Stress response", valence: "negative" },
+  //Candidate A — 4 positive
+  {
+    id: "A_p_01",
+    candidate: "A",
+    attribute: "Has a very good sense for recognizing dangerous situations",
+    valence: "positive",
+  },
+  {
+    id: "A_p_02",
+    candidate: "A",
+    attribute: "Has a good overview of complex contexts",
+    valence: "positive",
+  },
+  {
+    id: "A_p_03",
+    candidate: "A",
+    attribute: "Has excellent spatial awareness",
+    valence: "positive",
+  },
+  { id: "A_p_04", candidate: "A", attribute: "Is very well organized", valence: "positive" },
+
+  //Candidate B — 4 positive
+  {
+    id: "B_p_01",
+    candidate: "B",
+    attribute: "Keeps a cool head in crisis situations",
+    valence: "positive",
+  },
+  { id: "B_p_02", candidate: "B", attribute: "You can rely on him/her 100%", valence: "positive" },
+  {
+    id: "B_p_03",
+    candidate: "B",
+    attribute: "Can assess weather conditions very well",
+    valence: "positive",
+  },
+  { id: "B_p_04", candidate: "B", attribute: "Is good at multitasking", valence: "positive" },
+
+  //Candidate C — 1 positive + 3 negative
+  {
+    id: "C_p_01",
+    candidate: "C",
+    attribute: "Can make the right decisions very quickly",
+    valence: "positive",
+  },
+  { id: "C_n_01", candidate: "C", attribute: "Is not verbally skillful", valence: "negative" },
+  { id: "C_n_02", candidate: "C", attribute: "Is considered egocentric", valence: "negative" },
+  {
+    id: "C_n_03",
+    candidate: "C",
+    attribute: "Is reluctant to take part in training",
+    valence: "negative",
+  },
+
+  //Candidate D — 4 positive
+  {
+    id: "D_p_01",
+    candidate: "D",
+    attribute: "Can react adequately to unforeseen events",
+    valence: "positive",
+  },
+  { id: "D_p_02", candidate: "D", attribute: "Can concentrate very well", valence: "positive" },
+  { id: "D_p_03", candidate: "D", attribute: "Is very resilient", valence: "positive" },
+  { id: "D_p_04", candidate: "D", attribute: "Is very responsible", valence: "positive" },
 ];
 
+//=== Profile X exclusive (X 참가자만 보는 8장) ===
+//Candidate별 negative 2장씩 (단 C는 positive 2장 — Hidden Profile 핵심 단서)
 export const xExclusiveCards: InfoCard[] = [
-  { candidate: "C", attribute: "Stress handling", valence: "positive" },
-  { candidate: "C", attribute: "Quick decision-making", valence: "positive" },
-  { candidate: "A", attribute: "Conflict avoidance", valence: "negative" },
-  { candidate: "A", attribute: "Overconfidence", valence: "negative" },
-  { candidate: "B", attribute: "Creativity", valence: "positive" },
-  { candidate: "B", attribute: "Impulsiveness", valence: "negative" },
-  { candidate: "D", attribute: "Inflexibility", valence: "negative" },
-  { candidate: "D", attribute: "Punctuality", valence: "positive" },
+  {
+    id: "A_n_01",
+    candidate: "A",
+    attribute: "Sometimes does not tolerate criticism",
+    valence: "negative",
+  },
+  { id: "A_n_02", candidate: "A", attribute: "Is sometimes a bit hectic", valence: "negative" },
+  { id: "B_n_01", candidate: "B", attribute: "Is considered to be nagging", valence: "negative" },
+  {
+    id: "B_n_02",
+    candidate: "B",
+    attribute: "Is not considered very cooperative",
+    valence: "negative",
+  },
+  { id: "C_p_02", candidate: "C", attribute: "Is stress resistant", valence: "positive" },
+  {
+    id: "C_p_03",
+    candidate: "C",
+    attribute: "Promotes a good atmosphere within the crew",
+    valence: "positive",
+  },
+  { id: "D_n_01", candidate: "D", attribute: "Is considered arrogant", valence: "negative" },
+  {
+    id: "D_n_02",
+    candidate: "D",
+    attribute: "Is not very well suited for leading a team",
+    valence: "negative",
+  },
 ];
 
+//=== Profile Y exclusive (Y 참가자만 보는 8장) ===
 export const yExclusiveCards: InfoCard[] = [
-  { candidate: "C", attribute: "Conscientiousness", valence: "positive" },
-  { candidate: "C", attribute: "Emotional stability", valence: "positive" },
-  { candidate: "A", attribute: "Micromanagement tendency", valence: "negative" },
-  { candidate: "A", attribute: "Charisma", valence: "positive" },
-  { candidate: "B", attribute: "Empathy", valence: "positive" },
-  { candidate: "B", attribute: "Procrastination", valence: "negative" },
-  { candidate: "D", attribute: "Reliability", valence: "positive" },
-  { candidate: "D", attribute: "Poor delegation", valence: "negative" },
+  { id: "A_n_03", candidate: "A", attribute: "Is considered a show-off", valence: "negative" },
+  { id: "A_n_04", candidate: "A", attribute: "Is not open to new ideas", valence: "negative" },
+  {
+    id: "B_n_03",
+    candidate: "B",
+    attribute: "Has a below-average memory for numbers",
+    valence: "negative",
+  },
+  {
+    id: "B_n_04",
+    candidate: "B",
+    attribute: "Gossips about his/her coworkers",
+    valence: "negative",
+  },
+  { id: "C_p_04", candidate: "C", attribute: "Is very conscientious", valence: "positive" },
+  {
+    id: "C_p_05",
+    candidate: "C",
+    attribute: "Is very skilled in dealing with complicated technology",
+    valence: "positive",
+  },
+  {
+    id: "D_n_03",
+    candidate: "D",
+    attribute: "Is considered to be a know-all",
+    valence: "negative",
+  },
+  { id: "D_n_04", candidate: "D", attribute: "Is quick-tempered", valence: "negative" },
+];
+
+//=== Profile Z exclusive (Z 참가자만 보는 8장 - CTRL 조건의 3번째 인간) ===
+
+export const zExclusiveCards: InfoCard[] = [
+  { id: "A_n_05", candidate: "A", attribute: "Is unfriendly", valence: "negative" },
+  { id: "A_n_06", candidate: "A", attribute: "Transmits restlessness", valence: "negative" },
+  { id: "B_n_05", candidate: "B", attribute: "Is considered arrogant", valence: "negative" },
+  { id: "B_n_06", candidate: "B", attribute: "Is sometimes abusive in tone", valence: "negative" },
+  {
+    id: "C_p_06",
+    candidate: "C",
+    attribute: "Puts the safety of people in his/her care above everything else",
+    valence: "positive",
+  },
+  {
+    id: "C_p_07",
+    candidate: "C",
+    attribute: "Performs very well in terms of sustained attention",
+    valence: "positive",
+  },
+  { id: "D_n_05", candidate: "D", attribute: "Is considered moody", valence: "negative" },
+  { id: "D_n_06", candidate: "D", attribute: "Has strong prejudices", valence: "negative" },
 ];
 
 export const conditionLabel: Record<string, string> = {
