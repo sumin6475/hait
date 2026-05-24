@@ -19,10 +19,10 @@ import { cn } from "@/lib/utils";
 const CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
 
 const conditionLabel: Record<ConditionCode, string> = {
-  C1: "C1 · Peer + Explanatory",
-  C2: "C2 · Leader + Explanatory",
-  C3: "C3 · Peer + Anticipatory",
-  C4: "C4 · Leader + Anticipatory",
+  C1: "C1 · Peer + XAI",
+  C2: "C2 · Leader + XAI",
+  C3: "C3 · Peer + ACI",
+  C4: "C4 · Leader + ACI",
   CTRL: "CTRL · No AI",
 };
 
@@ -313,21 +313,23 @@ function DistributionMessage({
   baseUrl,
 }: {
   sessionCode: string;
-  participants: { participantCode: string; role: string }[];
+  participants: { participantCode: string; role: string; assignedProfile: string }[];
   baseUrl: string;
 }) {
   const message = [
-    `[HAIT 실험 안내 — ${sessionCode}]`,
+    `[HAIT Study - Session — ${sessionCode}]`,
     ``,
-    `실험은 3단계로 진행됩니다 (총 ~45분):`,
+    `The study consists of 3 parts (~45 min total):`,
     ``,
-    `1. 사전 동의 + 설문 (~10분)`,
-    `   링크: (Qualtrics 링크 — 곧 추가)`,
+    `1. Consent & pre-survey (~10 min)`,
+    `   Link: (Qualtrics link — to be added)`,
     ``,
-    `2. 채팅 실험 (~20분)`,
-    ...participants.map((p) => `   ${p.role}: ${baseUrl}?code=${p.participantCode}`),
+    `2. Chat task (~20 min)`,
+    ...participants.map(
+      (p) => `   Participant ${p.assignedProfile}: ${baseUrl}?code=${p.participantCode}`,
+    ),
     ``,
-    `3. 사후 설문 (~10분): 채팅 종료 후 안내됩니다`,
+    `3. Post-survey (~10 min): you'll be guided here after the chat ends`,
   ].join("\n");
 
   return (

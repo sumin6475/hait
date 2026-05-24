@@ -56,6 +56,7 @@ export interface CreateSessionResponse {
 }
 
 //---내부 fetch 헬퍼---
+//각 API 호출에 대한 공통 헤더 설정
 
 async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${SERVER_URL}${path}`, {

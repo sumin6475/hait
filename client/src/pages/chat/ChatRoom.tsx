@@ -32,6 +32,7 @@ const ChatRoom = () => {
 
     if (!sessionCode || !participantCode) {
       console.warn("[chatroom] no session/participant in sessionStorage or URL");
+      navigate("/chat");
       return;
     }
 

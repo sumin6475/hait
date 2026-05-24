@@ -15,7 +15,7 @@ const demographicsSchema = new mongoose.Schema(
 
 const participantSchema = new mongoose.Schema(
   {
-    //참가자 코드
+    //참가자 코드 - unique
     participantCode: { type: String, required: true, index: true, unique: true },
 
     //어느 세션에 속하는가

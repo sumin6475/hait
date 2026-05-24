@@ -101,8 +101,7 @@ const CodeEntry = () => {
             </Button>
           </div>
           <p className="text-xs text-muted-foreground text-center max-w-xs">
-            Your code was provided by the research team. It identifies your role and experimental
-            condition.
+            Your code was provided by the research team.
           </p>
         </div>
       </div>

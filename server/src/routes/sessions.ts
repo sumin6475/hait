@@ -129,7 +129,9 @@ sessionsRouter.get("/api/sessions/:code", async (req, res) => {
       return res.status(404).json({ ok: false, error: "Session not found" });
     }
 
-    const participants = await Participant.find({ sessionId: session._id }).lean();
+    const participants = await Participant.find({ sessionId: session._id })
+      .sort({ assignedProfile: 1 })
+      .lean();
 
     res.json({
       ok: true,
