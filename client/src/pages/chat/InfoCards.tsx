@@ -8,6 +8,7 @@ import { ChevronDown } from "lucide-react";
 import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import seedrandom from "seedrandom";
+import { markProgress } from "@/lib/api";
 
 const candidateColors: Record<Candidate, string> = {
   A: "bg-chart-1/15 text-chart-1",
@@ -17,13 +18,21 @@ const candidateColors: Record<Candidate, string> = {
 };
 
 const InfoCardItem = ({ card }: { card: InfoCard }) => (
-  <div className="flex items-center justify-between rounded-lg border bg-card p-3">
+  <div className="group relative flex items-center gap-3 rounded-lg border bg-card p-3">
     <span className="text-sm">{card.attribute}</span>
     {card.valence === "positive" ? (
-      <ThumbsUp className="w-4 h-4 text-status-success" />
+      <ThumbsUp className="w-4 h-4 text-status-success shrink-0 ml-auto" />
     ) : (
-      <ThumbsDown className="w-4 h-4 text-destructive" />
+      <ThumbsDown className="w-4 h-4 text-destructive shrink-0 ml-auto" />
     )}
+    <img
+      src={`/info-images/${card.id}.png`}
+      alt=""
+      className="hidden group-hover:block absolute left-full top-0 ml-2 w-48 rounded-lg border bg-card shadow-lg z-10"
+      onError={(e) => {
+        e.currentTarget.style.display = "none";
+      }}
+    />
   </div>
 );
 
@@ -100,6 +109,15 @@ const InfoCards = () => {
     return arr;
   }, [participantCode]);
 
+  const handleContinue = () => {
+    if (participantCode) {
+      markProgress(participantCode, "infoCards").catch((error) => {
+        console.error("[InfoCards] markProgress failed:", error);
+      });
+    }
+    navigate("/chat/pre-discussion");
+  };
+
   return (
     <div className="min-h-screen bg-background p-4">
       <div className="mx-auto max-w-2xl space-y-6 py-8">
@@ -127,7 +145,7 @@ const InfoCards = () => {
           ))}
         </div>
 
-        <Button onClick={() => navigate("/chat/pre-discussion")} className="w-full" size="lg">
+        <Button onClick={handleContinue} className="w-full" size="lg">
           I've reviewed all cards — Continue
         </Button>
       </div>

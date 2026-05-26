@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Vote, Check } from "lucide-react";
 import type { Candidate } from "@/types";
 import { cn } from "@/lib/utils";
+import { markProgress, setPreChoice } from "@/lib/api";
 
 const candidates: Candidate[] = ["A", "B", "C", "D"];
 
@@ -14,6 +15,17 @@ const PreDiscussion = () => {
   const handleSubmit = () => {
     if (selected) {
       sessionStorage.setItem("preChoice", selected);
+      const participantCode = sessionStorage.getItem("participantCode") ?? "";
+      if (participantCode) {
+        //pre-discussion choice 저장
+        setPreChoice(participantCode, selected).catch((error) => {
+          console.error("[PreDiscussion] setPreChoice failed:", error);
+        });
+        //progress step 마킹
+        markProgress(participantCode, "preDiscussion").catch((error) => {
+          console.error("[PreDiscussion] markProgress failed:", error);
+        });
+      }
       navigate("/chat/waiting");
     }
   };

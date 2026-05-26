@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ClipboardList, ExternalLink } from "lucide-react";
+import { markProgress } from "@/lib/api";
 
 //Qualtrics 사전 설문 URL (환경변수)
 const DEMOGRAPHICS_URL =
@@ -17,6 +18,12 @@ const Demographics = () => {
       "Have you finished the pre-discussion survey on Qualtrics?\n\nClick OK only if you have submitted your responses.",
     );
     if (confirmed) {
+      //progress step 마킹
+      if (participantCode) {
+        markProgress(participantCode, "demographics").catch((error) => {
+          console.error("[Demographics] markProgress failed:", error);
+        });
+      }
       navigate("/chat/info-cards");
     }
   };
@@ -30,7 +37,9 @@ const Demographics = () => {
           </div>
 
           <div className="text-center">
-            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">Step 2 of 3</p>
+            <p className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+              Step 2 of 3
+            </p>
             <h1 className="text-2xl font-semibold tracking-tight">Pre-Discussion Survey</h1>
             <p className="mt-2 text-sm text-muted-foreground">
               Please complete the pre-discussion survey in a new tab.

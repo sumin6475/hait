@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { FileText, ExternalLink } from "lucide-react";
+import { markProgress } from "@/lib/api";
 
 //Qualtrics 사후 설문 URL (환경변수)
 const POSTSURVEY_URL =
@@ -17,6 +18,12 @@ const PostSurvey = () => {
       "Have you finished the post-discussion survey on Qualtrics?\n\nClick OK only if you have submitted your responses.",
     );
     if (confirmed) {
+      //progress step 마킹
+      if (participantCode) {
+        markProgress(participantCode, "postSurvey").catch((error) => {
+          console.error("[PostSurvey] markProgress failed:", error);
+        });
+      }
       navigate("/chat/debrief");
     }
   };

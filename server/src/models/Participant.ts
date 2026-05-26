@@ -12,6 +12,17 @@ const demographicsSchema = new mongoose.Schema(
   },
   { _id: false },
 );
+//진행 상태 - 재접속 분기용 5개 step
+const progressSchema = new mongoose.Schema(
+  {
+    consent: { type: Boolean, default: false },
+    demographics: { type: Boolean, default: false },
+    infoCards: { type: Boolean, default: false },
+    preDiscussion: { type: Boolean, default: false },
+    postSurvey: { type: Boolean, default: false },
+  },
+  { _id: false },
+);
 
 const participantSchema = new mongoose.Schema(
   {
@@ -47,6 +58,9 @@ const participantSchema = new mongoose.Schema(
     },
     //인구통계 - Qultric 으로 진행할 경우 수정필요
     demographics: demographicsSchema,
+
+    //진행 단계 - 각 step 완료 시 true
+    progress: { type: progressSchema, default: () => ({}) },
 
     //접속/종료 시점
     connectedAt: Date,

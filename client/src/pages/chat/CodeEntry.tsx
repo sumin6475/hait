@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { resolveResumePath } from "@/lib/resumeRouter";
+import { getParticipantState } from "@/lib/api";
 
 //참가자 코드 형식:
 //  실제: P-X-C1-001, P-Y-CTRL-001
@@ -13,6 +15,7 @@ const CodeEntry = () => {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [autoFilled, setAutoFilled] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const navigate = useNavigate();
 
   //URL에 ?code=... 있으면 자동 채움 (어드민이 배포한 링크 클릭 시)
@@ -51,7 +54,7 @@ const CodeEntry = () => {
     sessionStorage.setItem("isTest", String(isTest));
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const trimmed = code.trim().toUpperCase();
     if (!trimmed) {
       setError("Please enter your participant code.");
@@ -61,8 +64,28 @@ const CodeEntry = () => {
       setError("Invalid code format. Example: P-X-C1-001");
       return;
     }
-    parseAndStore(trimmed);
-    navigate("/chat/consent");
+
+    setSubmitting(true);
+    setError("");
+    try {
+      //DB에서 상태 조회 → 재접속 시 어디로 이어갈지 결정
+      const state = await getParticipantState(trimmed);
+
+      //sessionStorage 저장 후 분기
+      parseAndStore(trimmed);
+      const nextPath = resolveResumePath(state);
+      navigate(nextPath);
+    } catch (error) {
+      console.error("[CodeEntry] getParticipantState failed:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      //participant_not_found = 코드는 형식 맞지만 DB에 없음
+      if (message === "participant_not_found") {
+        setError("Code not found. Please contact the research team.");
+      } else {
+        setError("Could not connect to the server. Please try again.");
+      }
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -96,8 +119,8 @@ const CodeEntry = () => {
               )}
             />
             {error && <p className="text-sm text-destructive text-center">{error}</p>}
-            <Button onClick={handleSubmit} className="w-full" size="lg">
-              Continue
+            <Button onClick={handleSubmit} className="w-full" size="lg" disabled={submitting}>
+              {submitting ? "Checking..." : "Continue"}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground text-center max-w-xs">

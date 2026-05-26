@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ShieldCheck, ExternalLink } from "lucide-react";
+import { markProgress } from "@/lib/api";
 
 //Qualtrics 동의서 URL (환경변수)
 //participantCode를 ?ParticipantCode= 으로 자동 전달
@@ -19,6 +20,12 @@ const Consent = () => {
       "Have you finished the consent form on Qualtrics?\n\nClick OK only if you have submitted your consent.",
     );
     if (confirmed) {
+      //progress step 마킹
+      if (participantCode) {
+        markProgress(participantCode, "consent").catch((error) => {
+          console.error("[Consent] markProgress failed:", error);
+        });
+      }
       navigate("/chat/demographics");
     }
   };

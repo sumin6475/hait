@@ -24,7 +24,7 @@ import type { ConditionCode } from "../types.js";
 
 export const sessionsRouter = Router();
 
-//전체 라우터에 admin 인증 적용
+//admin 인증
 sessionsRouter.use(requireAdmin);
 
 const VALID_CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
@@ -32,7 +32,7 @@ const VALID_CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
 //---POST /api/sessions: 세션 생성---
 //body: { conditionCode: "C1"|..., isTest?: boolean }
 //isTest 기본값 true (안전한 기본값 — 실수로 실험 번호 발급 방지)
-sessionsRouter.post("/api/sessions", async (req, res) => {
+sessionsRouter.post("/", async (req, res) => {
   try {
     const { conditionCode, isTest = true } = req.body as {
       conditionCode?: string;
@@ -93,7 +93,7 @@ sessionsRouter.post("/api/sessions", async (req, res) => {
 });
 
 //---GET /api/sessions: 목록---
-sessionsRouter.get("/api/sessions", async (_req, res) => {
+sessionsRouter.get("/", async (_req, res) => {
   try {
     const sessions = await Session.find().sort({ createdAt: -1 }).lean();
 
@@ -122,7 +122,7 @@ sessionsRouter.get("/api/sessions", async (_req, res) => {
 });
 
 //---GET /api/sessions/:code: 단건 + 참가자---
-sessionsRouter.get("/api/sessions/:code", async (req, res) => {
+sessionsRouter.get("/:code", async (req, res) => {
   try {
     const session = await Session.findOne({ sessionCode: req.params.code }).lean();
     if (!session) {
@@ -160,7 +160,7 @@ sessionsRouter.get("/api/sessions/:code", async (req, res) => {
 
 //---DELETE /api/sessions/:code: cascade 삭제---
 //단순 모드: 모든 상태 삭제 가능 (실험 데이터 보호 정책은 운영자가 직접)
-sessionsRouter.delete("/api/sessions/:code", async (req, res) => {
+sessionsRouter.delete("/:code", async (req, res) => {
   try {
     const session = await Session.findOne({ sessionCode: req.params.code });
     if (!session) {

@@ -16,6 +16,30 @@ export type ConditionCode = "C1" | "C2" | "C3" | "C4" | "CTRL";
 export type SessionStatus = "waiting" | "in_progress" | "completed" | "data_ready";
 export type ParticipantRole = "humanX" | "humanY" | "humanZ";
 export type ProfileSlot = "X" | "Y" | "Z";
+export type Candidate = "A" | "B" | "C" | "D";
+export type ProgressStep =
+  | "consent"
+  | "demographics"
+  | "infoCards"
+  | "preDiscussion"
+  | "postSurvey";
+export interface ProgressState {
+  consent?: boolean;
+  demographics?: boolean;
+  infoCards?: boolean;
+  preDiscussion?: boolean;
+  postSurvey?: boolean;
+}
+export interface ParticipantState {
+  participantCode: string;
+  role: ParticipantRole;
+  assignedProfile: ProfileSlot;
+  sessionCode: string;
+  conditionCode: ConditionCode;
+  progress: ProgressState;
+  preDiscussionChoice?: Candidate | null;
+  completedAt?: string | null;
+}
 
 export interface SessionSummary {
   sessionCode: string;
@@ -61,6 +85,7 @@ export interface CreateSessionResponse {
 async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${SERVER_URL}${path}`, {
     ...init,
+    //관리자 인증 헤더 추가
     headers: {
       "Content-Type": "application/json",
       "x-admin-token": ADMIN_TOKEN,
@@ -74,6 +99,25 @@ async function adminFetch<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(data?.error ?? `Request failed: ${res.status} ${res.statusText}`);
   }
 
+  return data as T;
+}
+
+//--public fetch (인증 없음) - 참가자 클라이언트용 ---
+async function publicFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${SERVER_URL}${path}`, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  //res.ok === false (HTTP 에러) || data?.ok === false (서버 에러)
+  if (!res.ok || data?.ok === false) {
+    throw new Error(data?.error ?? `Request failed: ${res.status} ${res.statusText}`);
+  }
   return data as T;
 }
 
@@ -114,4 +158,41 @@ export async function deleteSession(sessionCode: string): Promise<void> {
   await adminFetch(`/api/sessions/${encodeURIComponent(sessionCode)}`, {
     method: "DELETE",
   });
+}
+
+//---Participant API (public)---
+
+//progress step 마킹 - 각 페이지 완료 시점에 호출
+export async function markProgress(
+  participantCode: string,
+  step: ProgressStep,
+): Promise<ProgressState> {
+  const data = await publicFetch<{ ok: true; progress: ProgressState }>(
+    `/api/participants/${encodeURIComponent(participantCode)}/progress`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ step }),
+    },
+  );
+  return data.progress;
+}
+
+//pre-discussion choice 저장
+export async function setPreChoice(participantCode: string, choice: Candidate): Promise<Candidate> {
+  const data = await publicFetch<{ ok: true; preDiscussionChoice: Candidate }>(
+    `/api/participants/${encodeURIComponent(participantCode)}/pre-choice`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ choice }),
+    },
+  );
+  return data.preDiscussionChoice;
+}
+
+//재접속 시 현재 상태 조회
+export async function getParticipantState(participantCode: string): Promise<ParticipantState> {
+  const data = await publicFetch<{ ok: true; state: ParticipantState }>(
+    `/api/participants/${encodeURIComponent(participantCode)}/state`,
+  );
+  return data.state;
 }

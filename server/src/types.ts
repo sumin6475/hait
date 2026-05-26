@@ -23,3 +23,11 @@ export type AIDecision = "speak" | "stay_silent";
 
 // 정보 긍정/부정
 export type Valence = "positive" | "negative";
+
+//참가자 진행 단계 (재접속 분기용)
+export type ProgressStep =
+  | "consent"
+  | "demographics"
+  | "infoCards"
+  | "preDiscussion"
+  | "postSurvey";
