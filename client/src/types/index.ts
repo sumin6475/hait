@@ -45,7 +45,7 @@ export interface Session {
   status: SessionStatus;
   startedAt?: string;
   endedAt?: string;
-  teamDecision?: Candidate;
+  teamDecision?: Candidate[];
   metadata?: {
     totalTurns: number;
     humanTurns: number;

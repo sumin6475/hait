@@ -130,6 +130,13 @@ export function registerSocketHandlers(io: IO) {
         // 9. 정원 다 차면 전원에게 ready 이벤트 전송 (broadcast) - 신규 입장일때만
         const newSize = currentSize + 1;
         if (newSize >= maxParticipants && !isReconnect) {
+          //status: waiting -> in_progress
+          if (session.status === "waiting") {
+            session.status = "in_progress";
+            session.startedAt = new Date();
+            await session.save();
+            console.log(`[socket] session ${sessionCode} status: waiting -> in_progress`);
+          }
           io.to(sessionCode).emit("session-ready", { sessionCode, participantCount: newSize });
           if (session.conditionCode !== "CTRL") {
             startPullEvalution(
@@ -145,6 +152,54 @@ export function registerSocketHandlers(io: IO) {
         socket.emit("join-error", { reason: "Internal server error" });
       }
     });
+
+    //---join-waiting: 대기방 입장---
+    socket.on("join-waiting", async ({ sessionCode, participantCode }) => {
+      try {
+        //1. 세션 조회
+        const session = await Session.findOne({ sessionCode });
+        if (!session) {
+          socket.emit("join-error", { reason: "Session not found" });
+          return;
+        }
+
+        //2. 참가자 조회
+        const participant = await Participant.findOne({ sessionId: session._id, participantCode });
+        if (!participant) {
+          socket.emit("join-error", { reason: "Participant not registered" });
+          return;
+        }
+
+        //3. waiting room 입장 (ChatRoom과 분리하기 위해 prefix사용)
+        const waitingRoom = `waiting:${sessionCode}`;
+        await socket.join(waitingRoom);
+
+        //4. lastSeenAt 갱신
+        await Participant.updateOne({ _id: participant._id }, { $set: { lastSeenAt: new Date() } });
+
+        //5. 현재 대기실 인원 확인
+        const room = io.sockets.adapter.rooms.get(waitingRoom);
+        const participantsReady = room?.size ?? 0;
+        const expected = session.conditionCode === "CTRL" ? 3 : 2;
+
+        console.log(
+          `[socket] join-waiting: ${sessionCode}, ${participantCode}, ${participantsReady}/${expected}`,
+        );
+
+        //6. 모두에게 현재 인원 broadcast
+        io.to(waitingRoom).emit("waiting-update", { participantsReady, expected });
+
+        //7. 정원 차면 both-ready emit
+        if (participantsReady >= expected) {
+          io.to(waitingRoom).emit("both-ready", { sessionCode });
+          console.log(`[socket] both-ready: ${sessionCode}`);
+        }
+      } catch (error) {
+        console.error("[socket] join-waiting error:", error);
+        socket.emit("join-error", { reason: "Internal server error" });
+      }
+    });
+
     socket.on("send-message", async ({ content }) => {
       try {
         //1. socket.data 검증

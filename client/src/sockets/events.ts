@@ -5,6 +5,7 @@ import type { ParticipantRole, SenderRole } from "../types/index.js";
 export type ClientToServerEvents = {
   "join-session": (payload: { sessionCode: string; participantCode: string }) => void;
   "send-message": (payload: { content: string }) => void;
+  "join-waiting": (payload: { sessionCode: string; participantCode: string }) => void;
 };
 
 export type ServerToClientEvents = {
@@ -29,6 +30,8 @@ export type ServerToClientEvents = {
       createdAt: string;
     }>;
   }) => void;
+  "waiting-update": (payload: { participantsReady: number; expected: number }) => void;
+  "both-ready": (payload: { sessionCode: string }) => void;
 };
 
 export type SocketData = {

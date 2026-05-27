@@ -4,17 +4,44 @@ import { Button } from "@/components/ui/button";
 import { Users, Check } from "lucide-react";
 import type { Candidate } from "@/types";
 import { cn } from "@/lib/utils";
+import { submitTeamDecision, markProgress } from "@/lib/api";
 
 const candidates: Candidate[] = ["A", "B", "C", "D"];
 
 const TeamDecision = () => {
   const [selected, setSelected] = useState<Candidate | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  const handleSubmit = () => {
-    if (selected) {
+  const handleSubmit = async () => {
+    if (!selected || submitting) return;
+    const sessionCode = sessionStorage.getItem("sessionCode");
+    const participantCode = sessionStorage.getItem("participantCode");
+    if (!sessionCode || !participantCode) {
+      setError("Session info missing. Please re-enter your code.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      await submitTeamDecision(sessionCode, participantCode, selected);
+      await markProgress(participantCode, "teamDecision");
       sessionStorage.setItem("teamDecision", selected);
       navigate("/chat/post-survey");
+    } catch (error) {
+      //409 (이미 다른 참가자가 제출함)도 같이 처리
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes("409")) {
+        //다른 참가자가 먼저 제출 -> 그대로 진행
+        sessionStorage.setItem("teamDecision", selected);
+        await markProgress(participantCode, "teamDecision").catch(() => {});
+        navigate("/chat/post-survey");
+      } else {
+        console.error("[TeamDecision] submit error:", error);
+        setError("Failed to submit team decision. Please try again.");
+        setSubmitting(false);
+      }
     }
   };
 
@@ -60,9 +87,15 @@ const TeamDecision = () => {
           ))}
         </div>
 
-        <Button onClick={handleSubmit} className="w-full" size="lg" disabled={!selected}>
-          Confirm Team Decision
+        <Button
+          onClick={handleSubmit}
+          className="w-full"
+          size="lg"
+          disabled={!selected || submitting}
+        >
+          {submitting ? "Submitting..." : "Confirm Team Decision"}
         </Button>
+        {error && <p className="text-xs text-destructive text-center">{error}</p>}
         <p className="text-xs text-muted-foreground text-center">
           This should reflect your team's consensus, not just your personal preference.
         </p>

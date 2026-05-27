@@ -13,7 +13,11 @@ const VALID_STEPS: ProgressStep[] = [
   "demographics",
   "infoCards",
   "preDiscussion",
+  "waiting",
+  "teamDecision",
   "postSurvey",
+  "debrief",
+  "complete",
 ];
 
 //PATCH /api/participants/:code/progress
@@ -34,7 +38,7 @@ router.patch("/:code/progress", async (req, res) => {
     const participant = await Participant.findOneAndUpdate(
       { participantCode: code },
       { $set: { [`progress.${step}`]: true, lastSeenAt: new Date() } },
-      { new: true, lean: true },
+      { returnDocument: "after", lean: true },
     );
     if (!participant) {
       return res.status(404).json({ error: "participant_not_found" });
@@ -64,7 +68,7 @@ router.patch("/:code/pre-choice", async (req, res) => {
     const participant = await Participant.findOneAndUpdate(
       { participantCode: code },
       { $set: { preDiscussionChoice: choice, lastSeenAt: new Date() } },
-      { new: true, lean: true },
+      { returnDocument: "after", lean: true },
     );
     if (!participant) {
       return res.status(404).json({ error: "participant_not_found" });

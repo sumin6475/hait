@@ -84,7 +84,7 @@ const sessionSchema = new mongoose.Schema(
     endedAt: Date,
 
     //팀 결정 (최종 의견)
-    teamDecision: { type: String, enum: ["A", "B", "C", "D"] as Candidate[], default: null },
+    teamDecision: { type: [String], enum: ["A", "B", "C", "D"] as Candidate[], default: [] },
 
     //캐시된 통계
     revealStats: revealStatsSchema,

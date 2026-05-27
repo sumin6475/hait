@@ -19,7 +19,11 @@ const progressSchema = new mongoose.Schema(
     demographics: { type: Boolean, default: false },
     infoCards: { type: Boolean, default: false },
     preDiscussion: { type: Boolean, default: false },
+    waiting: { type: Boolean, default: false },
+    teamDecision: { type: Boolean, default: false },
     postSurvey: { type: Boolean, default: false },
+    debrief: { type: Boolean, default: false },
+    complete: { type: Boolean, default: false },
   },
   { _id: false },
 );
@@ -56,6 +60,10 @@ const participantSchema = new mongoose.Schema(
       type: String,
       enum: ["A", "B", "C", "D"] as Candidate[],
     },
+
+    //팀 결정 (최종 의견)
+    teamDecisionChoice: { type: String, enum: ["A", "B", "C", "D"] as Candidate[] },
+
     //인구통계 - Qultric 으로 진행할 경우 수정필요
     demographics: demographicsSchema,
 

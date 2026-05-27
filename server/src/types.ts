@@ -30,4 +30,8 @@ export type ProgressStep =
   | "demographics"
   | "infoCards"
   | "preDiscussion"
-  | "postSurvey";
+  | "waiting"
+  | "teamDecision"
+  | "postSurvey"
+  | "debrief"
+  | "complete";

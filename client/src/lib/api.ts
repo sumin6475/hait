@@ -22,13 +22,21 @@ export type ProgressStep =
   | "demographics"
   | "infoCards"
   | "preDiscussion"
-  | "postSurvey";
+  | "waiting"
+  | "teamDecision"
+  | "postSurvey"
+  | "debrief"
+  | "complete";
 export interface ProgressState {
   consent?: boolean;
   demographics?: boolean;
   infoCards?: boolean;
   preDiscussion?: boolean;
+  waiting?: boolean;
+  teamDecision?: boolean;
   postSurvey?: boolean;
+  debrief?: boolean;
+  complete?: boolean;
 }
 export interface ParticipantState {
   participantCode: string;
@@ -195,4 +203,48 @@ export async function getParticipantState(participantCode: string): Promise<Part
     `/api/participants/${encodeURIComponent(participantCode)}/state`,
   );
   return data.state;
+}
+
+//team-decision 저장 (참가자가 호출, status: in_progress -> completed)
+export async function submitTeamDecision(
+  sessionCode: string,
+  participantCode: string,
+  decision: Candidate,
+): Promise<{
+  teamDecision: Candidate[];
+  status: SessionStatus;
+  submittedCount: number;
+  expected: number;
+}> {
+  const data = await publicFetch<{
+    ok: true;
+    sessionCode: string;
+    teamDecision: Candidate[];
+    status: SessionStatus;
+    submittedCount: number;
+    expected: number;
+  }>(`/api/sessions/${encodeURIComponent(sessionCode)}/team-decision`, {
+    method: "PATCH",
+    body: JSON.stringify({ participantCode, decision }),
+  });
+  return {
+    teamDecision: data.teamDecision,
+    status: data.status,
+    submittedCount: data.submittedCount,
+    expected: data.expected,
+  };
+}
+
+//finalize 호출 (참가자가 호출, status: completed -> data_ready)
+export async function finalizeSession(sessionCode: string): Promise<{ status: SessionStatus }> {
+  const data = await publicFetch<{
+    ok: true;
+    sessionCode: string;
+    status: SessionStatus;
+  }>(`/api/sessions/${encodeURIComponent(sessionCode)}/finalize`, {
+    method: "PATCH",
+  });
+  return {
+    status: data.status,
+  };
 }

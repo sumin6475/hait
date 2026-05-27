@@ -20,19 +20,17 @@ import {
   buildParticipantCode,
   getParticipantSlots,
 } from "../lib/codeGen.js";
-import type { ConditionCode } from "../types.js";
+import type { ConditionCode, Candidate } from "../types.js";
+import { STATUS_CODES } from "http";
 
 export const sessionsRouter = Router();
-
-//admin 인증
-sessionsRouter.use(requireAdmin);
 
 const VALID_CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
 
 //---POST /api/sessions: 세션 생성---
 //body: { conditionCode: "C1"|..., isTest?: boolean }
 //isTest 기본값 true (안전한 기본값 — 실수로 실험 번호 발급 방지)
-sessionsRouter.post("/", async (req, res) => {
+sessionsRouter.post("/", requireAdmin, async (req, res) => {
   try {
     const { conditionCode, isTest = true } = req.body as {
       conditionCode?: string;
@@ -93,7 +91,7 @@ sessionsRouter.post("/", async (req, res) => {
 });
 
 //---GET /api/sessions: 목록---
-sessionsRouter.get("/", async (_req, res) => {
+sessionsRouter.get("/", requireAdmin, async (_req, res) => {
   try {
     const sessions = await Session.find().sort({ createdAt: -1 }).lean();
 
@@ -122,7 +120,7 @@ sessionsRouter.get("/", async (_req, res) => {
 });
 
 //---GET /api/sessions/:code: 단건 + 참가자---
-sessionsRouter.get("/:code", async (req, res) => {
+sessionsRouter.get("/:code", requireAdmin, async (req, res) => {
   try {
     const session = await Session.findOne({ sessionCode: req.params.code }).lean();
     if (!session) {
@@ -160,7 +158,7 @@ sessionsRouter.get("/:code", async (req, res) => {
 
 //---DELETE /api/sessions/:code: cascade 삭제---
 //단순 모드: 모든 상태 삭제 가능 (실험 데이터 보호 정책은 운영자가 직접)
-sessionsRouter.delete("/:code", async (req, res) => {
+sessionsRouter.delete("/:code", requireAdmin, async (req, res) => {
   try {
     const session = await Session.findOne({ sessionCode: req.params.code });
     if (!session) {
@@ -186,6 +184,125 @@ sessionsRouter.delete("/:code", async (req, res) => {
     });
   } catch (error) {
     console.error("[DELETE /api/sessions/:code]", error);
+    res.status(500).json({ ok: false, error: String(error) });
+  }
+});
+
+//---PATCH /api/sessions/:code/team-decision: 팀 결정---
+//body: { teamDecision: "A" | "B" | "C" | "D" }
+sessionsRouter.patch("/:code/team-decision", async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { participantCode, decision } = req.body as {
+      participantCode?: string;
+      decision?: string;
+    };
+    if (!participantCode) {
+      return res.status(400).json({ ok: false, error: "participantCode is required" });
+    }
+    if (!decision || !["A", "B", "C", "D"].includes(decision)) {
+      return res.status(400).json({ ok: false, error: "Invalid team decision (must be A/B/C/D)" });
+    }
+
+    const session = await Session.findOne({ sessionCode: code });
+    if (!session) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+
+    //status 가드 : in_progress 또는 completed 상태만 허용
+    if (session.status !== "in_progress") {
+      return res.status(400).json({
+        ok: false,
+        error: `Cannot submit team-decision in status="${session.status}"`,
+      });
+    }
+
+    //참가자 조회 + 중복 제출 방지
+    const participant = await Participant.findOne({ sessionId: session._id, participantCode });
+    if (!participant) {
+      return res.status(404).json({ ok: false, error: "Participant not found" });
+    }
+    if (participant.teamDecisionChoice) {
+      return res.status(409).json({ ok: false, error: "Team decision already submitted" });
+    }
+
+    //1.해당 참가자의 개인 응답 저장
+    participant.teamDecisionChoice = decision as Candidate;
+    await participant.save();
+
+    //2.Session.teamDecision 배열에 append
+    session.teamDecision = [...(session.teamDecision ?? []), decision as Candidate];
+
+    //3. 전원 제출 완료 시에만 completed 전환
+    const expected = session.conditionCode === "CTRL" ? 3 : 2;
+    const submittedCount = session.teamDecision.length;
+
+    let transitioned = false;
+    if (submittedCount >= expected) {
+      session.status = "completed";
+      session.endedAt = new Date();
+      transitioned = true;
+    }
+    await session.save();
+
+    if (transitioned) {
+      console.log(
+        `[sessions] ${code} status: in_progress -> completed (all ${expected} submitted)`,
+      );
+    }
+
+    res.json({
+      ok: true,
+      sessionCode: session.sessionCode,
+      teamDecision: session.teamDecision,
+      status: session.status,
+      submittedCount,
+      expected,
+    });
+  } catch (error) {
+    console.error("[PATCH /api/sessions/:code/team-decision]", error);
+    res.status(500).json({ ok: false, error: String(error) });
+  }
+});
+
+//---PATCH /api/participants/:code/finalize ---
+//PostSurvey + Debrief 완료 시 호출
+//status: completed -> data_ready
+sessionsRouter.patch("/:code/finalize", async (req, res) => {
+  try {
+    const { code } = req.params;
+    const session = await Session.findOne({ sessionCode: code });
+    if (!session) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+
+    //이미 data_ready면 그대로 반환
+    if (session.status === "data_ready") {
+      return res.json({
+        ok: true,
+        sessionCode: session.sessionCode,
+        status: session.status,
+      });
+    }
+
+    //status 가드 : completed 상태만 허용
+    if (session.status !== "completed") {
+      return res.status(409).json({
+        ok: false,
+        error: `Cannot finalize in status="${session.status}"`,
+      });
+    }
+
+    session.status = "data_ready";
+    await session.save();
+
+    res.json({
+      ok: true,
+      sessionCode: session.sessionCode,
+      status: session.status,
+    });
+  } catch (error) {
+    console.error("[PATCH /api/sessions/:code/finalize]", error);
     res.status(500).json({ ok: false, error: String(error) });
   }
 });

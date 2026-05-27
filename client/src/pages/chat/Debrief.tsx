@@ -1,6 +1,8 @@
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Info } from "lucide-react";
+import { markProgress } from "@/lib/api";
 
 const sections = [
   {
@@ -24,6 +26,13 @@ const sections = [
 const Debrief = () => {
   const navigate = useNavigate();
 
+  useEffect(() => {
+    const participantCode = sessionStorage.getItem("participantCode");
+    if (!participantCode) return;
+    markProgress(participantCode, "debrief").catch((e) =>
+      console.error("[Debrief] markProgress failed:", e),
+    );
+  }, []);
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-2xl bg-card rounded-xl border p-8 space-y-6">
