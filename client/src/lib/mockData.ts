@@ -113,7 +113,7 @@ export const sessions: Session[] = [
     ],
     startedAt: "2026-03-28T10:02:00Z",
     endedAt: "2026-03-28T10:22:00Z",
-    teamDecision: "C",
+    teamDecision: ["C"],
     metadata: { totalTurns: 34, humanTurns: 24, aiTurns: 10, durationSeconds: 1200 },
   },
   {
@@ -141,7 +141,7 @@ export const sessions: Session[] = [
     ],
     startedAt: "2026-03-29T14:01:00Z",
     endedAt: "2026-03-29T14:18:00Z",
-    teamDecision: "C",
+    teamDecision: ["C"],
     metadata: { totalTurns: 28, humanTurns: 18, aiTurns: 10, durationSeconds: 1020 },
   },
   {
@@ -189,7 +189,7 @@ export const sessions: Session[] = [
     ],
     startedAt: "2026-03-27T11:01:00Z",
     endedAt: "2026-03-27T11:19:00Z",
-    teamDecision: "A",
+    teamDecision: ["A"],
     metadata: { totalTurns: 30, humanTurns: 20, aiTurns: 10, durationSeconds: 1080 },
   },
 ];

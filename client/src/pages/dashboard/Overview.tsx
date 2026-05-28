@@ -1,4 +1,5 @@
-import { sessions, conditions, conditionLabel } from "@/lib/mockData";
+import { useSessionList } from "@/hooks/useSessions";
+import { CONDITION_CODES, conditionLabel } from "@/lib/conditions";
 import {
   Activity,
   Users,
@@ -29,19 +30,16 @@ const statusIcon = (s: string) => {
   return <Circle className="w-3.5 h-3.5 text-muted-foreground/40" />;
 };
 
-const condProgress = [
-  { condition: "C1", completed: 3, remaining: 2 },
-  { condition: "C2", completed: 2, remaining: 3 },
-  { condition: "C3", completed: 1, remaining: 4 },
-  { condition: "C4", completed: 2, remaining: 3 },
-  { condition: "CTRL", completed: 1, remaining: 4 },
-];
-
 const Overview = () => {
-  const condCodes = ["C1", "C2", "C3", "C4", "CTRL"] as const;
+  const { data: sessions = [], isLoading, error } = useSessionList();
+  const condCodes = CONDITION_CODES;
 
+  if (isLoading) return <div>Loading...</div>;
+  if (error) return <div>Failed to load sessions</div>;
+
+  const realSessions = sessions.filter((s) => s.isTest === false || s.sessionCode.startsWith("S-"));
   const stats = condCodes.map((code) => {
-    const s = sessions.filter((s) => s.conditionCode === code);
+    const s = realSessions.filter((s) => s.conditionCode === code);
     return {
       code,
       label: conditionLabel[code],
@@ -52,10 +50,30 @@ const Overview = () => {
     };
   });
 
-  const totalParticipants = sessions.reduce((a, s) => a + s.participants.length, 0);
-  const completedSessions = sessions.filter(
+  const condProgress = stats.map((s) => ({
+    condition: s.code,
+    completed: s.completed,
+    remaining: s.total - s.completed,
+  }));
+
+  const totalParticipants = realSessions.reduce((a, s) => a + s.participantCount, 0);
+  const completedSessions = realSessions.filter(
     (s) => s.status === "completed" || s.status === "data_ready",
   ).length;
+
+  //평균 duration: startedAt~endedAt 차이 (분)
+  const completedWithTimes = sessions.filter((s) => s.startedAt && s.endedAt);
+  const avgDurationMin = completedWithTimes.length
+    ? Math.round(
+        completedWithTimes.reduce((a, s) => {
+          const start = new Date(s.startedAt!).getTime();
+          const end = new Date(s.endedAt!).getTime();
+          return a + (end - start);
+        }, 0) /
+          completedWithTimes.length /
+          60_000,
+      )
+    : 0;
 
   return (
     <div className="p-8 space-y-8">
@@ -85,7 +103,7 @@ const Overview = () => {
           <div className="mt-3 flex items-baseline gap-3">
             <span className="text-3xl font-bold">{totalParticipants}</span>
             <span className="flex items-center gap-1 text-xs font-medium text-status-success bg-status-success/10 px-2 py-0.5 rounded-full">
-              <TrendingUp className="w-3 h-3" /> 15.8%
+              <TrendingUp className="w-3 h-3" /> -%
             </span>
           </div>
         </div>
@@ -102,7 +120,7 @@ const Overview = () => {
           </div>
           <div className="mt-3 flex items-baseline gap-3">
             <span className="text-3xl font-bold">{completedSessions}</span>
-            <span className="text-sm text-muted-foreground font-medium">/ 25</span>
+            <span className="text-sm text-muted-foreground font-medium">/ {sessions.length}</span>
           </div>
         </div>
 
@@ -117,18 +135,10 @@ const Overview = () => {
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-3">
-            <span className="text-3xl font-bold">
-              {Math.round(
-                sessions
-                  .filter((s) => s.metadata?.durationSeconds)
-                  .reduce((a, s) => a + (s.metadata?.durationSeconds || 0), 0) /
-                  Math.max(1, sessions.filter((s) => s.metadata?.durationSeconds).length) /
-                  60,
-              )}
-            </span>
+            <span className="text-3xl font-bold">{avgDurationMin}</span>
             <span className="text-sm text-muted-foreground font-medium">min</span>
             <span className="flex items-center gap-1 text-xs font-medium text-status-success bg-status-success/10 px-2 py-0.5 rounded-full">
-              <TrendingUp className="w-3 h-3" /> 8.3%
+              <TrendingUp className="w-3 h-3" /> -%
             </span>
           </div>
         </div>
@@ -237,7 +247,7 @@ const Overview = () => {
         <div className="divide-y">
           {sessions.slice(0, 5).map((s) => (
             <div
-              key={s.id}
+              key={s.sessionCode}
               className="flex items-center gap-4 px-6 py-3.5 hover:bg-muted/30 transition-colors cursor-pointer"
             >
               {statusIcon(s.status)}
@@ -245,6 +255,14 @@ const Overview = () => {
               <span className="text-sm text-muted-foreground flex-1">
                 {conditionLabel[s.conditionCode]}
               </span>
+              {s.startedAt && (
+                <span className="text-xs text-muted-foreground w-20 text-right">
+                  {new Date(s.startedAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </span>
+              )}
               <span
                 className={cn(
                   "text-xs font-medium px-2.5 py-1 rounded-full",
@@ -256,14 +274,6 @@ const Overview = () => {
               >
                 {s.status.replace("_", " ")}
               </span>
-              {s.startedAt && (
-                <span className="text-xs text-muted-foreground w-20 text-right">
-                  {new Date(s.startedAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
-              )}
             </div>
           ))}
         </div>
