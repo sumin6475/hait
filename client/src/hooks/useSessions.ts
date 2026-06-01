@@ -38,7 +38,7 @@ export function useSessionDetail(sessionCode: string | undefined) {
     queryKey: [...SESSIONS_KEY, sessionCode],
     queryFn: () => getSession(sessionCode!),
     enabled: !!sessionCode,
-    refetchInterval: 5000,
+    refetchInterval: (query) => (query.state.data?.session.status === "in_progress" ? 3000 : false),
   });
 }
 

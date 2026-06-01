@@ -17,6 +17,7 @@ export type SessionStatus = "waiting" | "in_progress" | "completed" | "data_read
 export type ParticipantRole = "humanX" | "humanY" | "humanZ";
 export type ProfileSlot = "X" | "Y" | "Z";
 export type Candidate = "A" | "B" | "C" | "D";
+export type SenderRole = ParticipantRole | "ai";
 export type ProgressStep =
   | "consent"
   | "demographics"
@@ -79,6 +80,13 @@ export interface SessionDetail {
     createdAt: string;
   };
   participants: ParticipantInfo[];
+  messages: Array<{
+    seq: number;
+    sender: string;
+    senderRole: SenderRole;
+    content: string;
+    createdAt: string;
+  }>;
 }
 
 export interface CreateSessionResponse {
@@ -142,7 +150,7 @@ export async function getSession(sessionCode: string): Promise<SessionDetail> {
   const data = await adminFetch<{ ok: true } & SessionDetail>(
     `/api/sessions/${encodeURIComponent(sessionCode)}`,
   );
-  return { session: data.session, participants: data.participants };
+  return { session: data.session, participants: data.participants, messages: data.messages };
 }
 
 //세션 생성

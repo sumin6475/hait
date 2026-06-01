@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { sessions, messages, conditionLabel } from "@/lib/mockData";
+import { useSessionList, useSessionDetail } from "@/hooks/useSessions";
+import { conditionLabel } from "@/lib/conditions";
 import { Button } from "@/components/ui/button";
 import { Download, Bot, User } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -7,10 +8,16 @@ import { cn } from "@/lib/utils";
 type Filter = "all" | "humans" | "ai";
 
 const ChatLogs = () => {
-  const [selectedSession, setSelectedSession] = useState(sessions[0]?.id || "");
+  const { data: sessions = [] } = useSessionList();
+  const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
 
-  const sessionMessages = messages.filter((m) => m.sessionId === selectedSession);
+  //selectedCode 없으면 첫 세션 자동 선택
+  const activeCode = selectedCode ?? sessions[0]?.sessionCode ?? null;
+  //선택된 세션의 상세(메시지 포함) - in_progress면 3초마다 자동 갱신
+  const { data: detail } = useSessionDetail(activeCode ?? undefined);
+
+  const sessionMessages = detail?.messages ?? [];
   const filtered =
     filter === "all"
       ? sessionMessages
@@ -33,11 +40,11 @@ const ChatLogs = () => {
           <div className="space-y-1">
             {sessions.map((s) => (
               <button
-                key={s.id}
-                onClick={() => setSelectedSession(s.id)}
+                key={s.sessionCode}
+                onClick={() => setSelectedCode(s.sessionCode)}
                 className={cn(
                   "w-full text-left rounded-lg px-3 py-2 text-sm transition-colors",
-                  selectedSession === s.id
+                  activeCode === s.sessionCode
                     ? "bg-primary/10 text-primary font-medium"
                     : "hover:bg-muted text-muted-foreground",
                 )}
@@ -74,7 +81,7 @@ const ChatLogs = () => {
               </div>
             ) : (
               filtered.map((m) => (
-                <div key={m.id} className="flex gap-4 px-5 py-3">
+                <div key={m.seq} className="flex gap-4 px-5 py-3">
                   <div
                     className={cn(
                       "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5",
@@ -90,10 +97,10 @@ const ChatLogs = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium">
-                        {m.sender === "ai_alex" ? "AI Alex" : m.sender}
+                        {m.senderRole === "ai" ? "AI Alex" : m.sender}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        {new Date(m.timestamp).toLocaleTimeString([], {
+                        {new Date(m.createdAt).toLocaleTimeString([], {
                           hour: "2-digit",
                           minute: "2-digit",
                           second: "2-digit",

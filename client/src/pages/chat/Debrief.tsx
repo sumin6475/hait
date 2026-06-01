@@ -33,6 +33,7 @@ const Debrief = () => {
       console.error("[Debrief] markProgress failed:", e),
     );
   }, []);
+  
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-2xl bg-card rounded-xl border p-8 space-y-6">

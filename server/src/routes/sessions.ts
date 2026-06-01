@@ -131,6 +131,8 @@ sessionsRouter.get("/:code", requireAdmin, async (req, res) => {
       .sort({ assignedProfile: 1 })
       .lean();
 
+    const messages = await Message.find({ sessionId: session._id }).sort({ seq: 1 }).lean();
+
     res.json({
       ok: true,
       session: {
@@ -148,6 +150,13 @@ sessionsRouter.get("/:code", requireAdmin, async (req, res) => {
         assignedProfile: p.assignedProfile,
         connectedAt: p.connectedAt,
         lastSeenAt: p.lastSeenAt,
+      })),
+      messages: messages.map((m) => ({
+        seq: m.seq,
+        sender: m.sender,
+        senderRole: m.senderRole,
+        content: m.content,
+        createdAt: m.createdAt,
       })),
     });
   } catch (error) {
