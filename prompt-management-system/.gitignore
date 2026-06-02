@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Korean reference materials (per CLAUDE.md §3.4)
+docs/_kor_reference/
+
+# NOTE: cache/ is COMMITTED to git for reproducibility (per CLAUDE.md §13).
+# Do NOT add cache/ to this file.

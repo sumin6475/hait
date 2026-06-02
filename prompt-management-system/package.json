@@ -1,0 +1,37 @@
+{
+  "name": "prompt-management-system",
+  "version": "0.1.0",
+  "description": "Prompt-spec generator for a 2x2 Hidden Profile Human-AI experiment (HCDE thesis).",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "scout": "tsx scripts/scout.ts",
+    "build:condition": "tsx scripts/build_condition.ts",
+    "build:all": "tsx scripts/build_all.ts",
+    "appendix": "tsx scripts/generate_appendix.ts",
+    "verify:repro": "tsx scripts/verify_repro.ts",
+    "lint": "vitest run --dir tests --reporter=verbose",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "export:hait": "tsx scripts/export_to_hait.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.65.0",
+    "@langchain/langgraph": "^0.4.0",
+    "bottleneck": "^2.19.5",
+    "js-yaml": "^4.1.0",
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

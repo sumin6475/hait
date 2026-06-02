@@ -1,0 +1,566 @@
+# ─────────────────────────────────────────────────────────────────
+# seed_papers.yaml — Literature seeds for Agent 0 (Scout)
+# ─────────────────────────────────────────────────────────────────
+# Per CLAUDE.md §7.1. Tier handling:
+#   - P0   : force-include in validated_kb.md, skip rubric, source_tier "P0"
+#   - Done : force-include in validated_kb.md, skip rubric, source_tier "Done"
+#   - P1   : enter candidate pool as seeds; subject to 5-point rubric;
+#            kept only if utility_score >= 4.0 (fallback 3.5)
+#   - P2   : same handling as P1
+#   - Reading : same handling as P1
+#
+# Sources (verbatim summaries):
+#   - docs/source_materials/seed_papers_P0_P1_P2.md
+#   - docs/source_materials/seed_papers_done_reading.md
+#
+# Citation keys follow the ValidatedPaper regex /^[A-Z][a-zA-Z]+(EtAl)?_\d{4}$/
+# (CLAUDE.md §6.3). Where author names contain non-ASCII characters, the
+# original spelling is recorded in `authors_display`; the citation_key uses
+# an ASCII fallback. DOIs are filled by the Scout via OpenAlex; null here.
+# ─────────────────────────────────────────────────────────────────
+
+meta:
+  version: "1.0.0"
+  last_updated: "2026-05-26"
+  description: >
+    User-curated seed literature for the 2×2 Hidden Profile × Human-AI
+    experiment. Drives Agent 0's keyword expansion and force-include logic.
+  total_seeds: 30
+  force_included_count: 14  # 4 P0 + 10 Done
+
+# ─────────────────────────────────────────────────────────────────
+# Tier: P0 — Highest-priority. Force-included; skip rubric.
+# ─────────────────────────────────────────────────────────────────
+P0:
+  - citation_key: "HuangEtAl_2025"
+    title: "Artificial social intelligence in teamwork"
+    authors_display: ["Huang", "et al."]
+    year: 2025
+    venue: "Frontiers"
+    doi: null
+    tldr: >
+      Experiment in which three-person teams exchange real-time text-based
+      advice with an AI advisor. Evaluates how AI affects teamwork processes
+      through bidirectional communication (a flexible prompt–response system).
+    why_include: "Used for designing AI intervention timing and method."
+    search_query: "Huang 2025 artificial social intelligence teamwork AI advisor"
+
+  - citation_key: "SchmutzEtAl_2024"
+    title: "AI-Teaming: Redefining Collaboration in the Digital Era"
+    authors_display: ["Schmutz", "Outland", "Kerstan", "Georganta", "Ulfert"]
+    year: 2024
+    venue: "Current Opinion in Psychology"
+    doi: null
+    tldr: >
+      Recent review summarizing the current research landscape on trust, team
+      dynamics, and shared cognition in Human–AI Teams (HATs).
+    why_include: >
+      As the most recent comprehensive HAIT review, essential for summarizing
+      the current research landscape in the Literature Review section.
+    search_query: "Schmutz 2024 AI-Teaming Current Opinion Psychology"
+
+  - citation_key: "ThalerEtAl_2010"
+    title: "Choice Architecture"
+    authors_display: ["Thaler", "Sunstein", "Balz"]
+    year: 2010
+    venue: "University of Pennsylvania — School of Arts & Sciences"
+    doi: null
+    tldr: >
+      Proposes six tools available to choice architects: defaults, expecting
+      error, understanding mappings, giving feedback, structuring complex
+      choices, and creating incentives.
+    why_include: >
+      Theoretical foundation for framing the AI as a choice architect. Mapping
+      ACI's facilitative questioning onto one of these six tools strengthens
+      the operational definition of ACI.
+    search_query: "Thaler Sunstein Balz 2010 Choice Architecture"
+
+  - citation_key: "Weidmann_2025"
+    title: "Measuring Human Leadership Skills with AI Agents"
+    authors_display: ["Weidmann, B."]
+    year: 2025
+    venue: null
+    doi: null
+    tldr: >
+      Landmark experimental paper demonstrating that human leadership
+      performance when leading a team of AI agents in tasks such as Hidden
+      Profile strongly predicts performance when leading an actual human team
+      (rho = 0.81).
+    why_include: >
+      Empirical justification for treating AI as a social agent (peer or
+      leader). Direct empirical precedent for the AI Status variable.
+    search_query: "Weidmann 2025 measuring human leadership AI agents hidden profile"
+
+# ─────────────────────────────────────────────────────────────────
+# Tier: Done — Foundational paradigm. Force-included; skip rubric.
+# ─────────────────────────────────────────────────────────────────
+Done:
+  - citation_key: "StasserTitus_1985"
+    title: "Pooling of Unshared Information in Group Decision Making: Biased Information Sampling During Discussion"
+    authors_display: ["Stasser, G.", "Titus, W."]
+    year: 1985
+    venue: "Journal of Personality and Social Psychology"
+    doi: null
+    tldr: >
+      Foundational study demonstrating that groups often fail to reach
+      optimal decisions because members hide unshared information they
+      uniquely possess while repeatedly discussing shared information —
+      a pattern called biased information sampling.
+    why_include: >
+      Origin of the Hidden Profile paradigm and the foundational problem
+      statement for why groups bury unshared information.
+    search_query: "Stasser Titus 1985 pooling unshared information biased sampling"
+
+  - citation_key: "SeeberEtAl_2020"
+    title: "Machines as teammates: A research agenda on AI in team collaboration"
+    authors_display: ["Seeber, I.", "et al."]
+    year: 2020
+    venue: null
+    doi: null
+    tldr: >
+      Argues that AI has been elevated from tool to teammate that offers
+      opinions and negotiates. When AI becomes a teammate, communication
+      modes, trust formation, and leadership dynamics change fundamentally.
+    why_include: >
+      Essential theory for establishing the AI Status (Leader vs. Peer)
+      variable. Used when arguing why it is important to grant AI a status
+      rather than treat it as a simple aide.
+    search_query: "Seeber 2020 machines as teammates research agenda AI team collaboration"
+
+  - citation_key: "ChenEtAl_2025"
+    title: "Maintaining Balanced Conflict: Proactive Intervention Strategies of AI Voice Agents in Online Collaboration of Temporary Design Teams"
+    authors_display: ["Chen, X.", "et al."]
+    year: 2025
+    venue: null
+    doi: null
+    notes: "Originally cited in the source list as Yuan et al., 2025; first author corrected to Chen."
+    tldr: >
+      Addresses how AI, rather than a passive entity responding only when
+      asked, proactively intervenes during group conflict or information
+      imbalance to induce balanced conflict within a team.
+    why_include: >
+      Excellent reference for describing the specific intervention behaviors
+      by which a Leader-status AI guides team discussion and elicits unshared
+      information.
+    search_query: "Chen 2025 proactive intervention AI voice agents temporary design teams balanced conflict"
+
+  - citation_key: "ZercherEtAl_2025"
+    title: "How Can Teams Benefit From AI Team Members? Exploring the Effect of Generative AI on Decision-Making Processes and Decision Quality in Team–AI Collaboration"
+    authors_display: ["Zercher, D.", "et al."]
+    year: 2025
+    venue: "Journal of Organizational Behavior"
+    doi: null
+    tldr: >
+      Recent study demonstrating how modern generative AI, when deployed
+      into human teams, offsets the information-processing asymmetries
+      (IAM-related evaluation bias, negotiation focus) experienced by humans.
+      Emphasizes that how AI is integrated matters.
+    why_include: >
+      Analyzes the effect of AI role on team performance and AI knowledge
+      configuration. Demonstrates that without social validation information
+      cannot be integrated even when present. The Common Prompt in
+      common_framework.yaml is adapted from this work.
+    search_query: "Zercher 2025 generative AI team decision making Journal Organizational Behavior"
+
+  - citation_key: "Miller_2019"
+    title: "Explanation in artificial intelligence: Insights from the social sciences"
+    authors_display: ["Miller, T."]
+    year: 2019
+    venue: null
+    doi: null
+    tldr: >
+      The most widely cited review paper in XAI research, defining what makes
+      a good explanation from social science and cognitive psychology
+      perspectives.
+    why_include: >
+      Provides the operational definition of explanation and the standard XAI
+      benchmark for comparing how ACI differs.
+    search_query: "Miller 2019 explanation artificial intelligence social sciences"
+
+  - citation_key: "MillerIII_1977"
+    title: "Review of Status Characteristics Theory (title not specified in source list)"
+    authors_display: ["Miller III"]
+    year: 1977
+    venue: null
+    doi: null
+    tldr: "Review and organization of the academic trajectory of Status Characteristics Theory (SCT)."
+    why_include: "Useful for grasping the development of SCT underlying the AI Status variable."
+    search_query: "Miller 1977 status characteristics theory review"
+
+  - citation_key: "BergerEtAl_1972"
+    title: "Status Characteristics and Social Interaction"
+    authors_display: ["Berger, J.", "Cohen, B. P.", "Zelditch, M."]
+    year: 1972
+    venue: "American Sociological Review"
+    doi: null
+    tldr: >
+      Foundational classic sociology paper that first established the
+      framework of Status Characteristics Theory.
+    why_include: >
+      Grounds the use of SCT indicators in designing the Leader condition —
+      the justification for how human participants are made to perceive the
+      AI as a Leader.
+    search_query: "Berger Cohen Zelditch 1972 status characteristics social interaction"
+
+  - citation_key: "BrodbeckEtAl_2007"
+    title: "Group Decision Making Under Conditions of Distributed Knowledge: The Information Asymmetries Model"
+    authors_display: ["Brodbeck, F. C.", "Kerschreiter, R.", "Mojzisch, A.", "Schulz-Hardt, S."]
+    year: 2007
+    venue: "Academy of Management Review"
+    doi: null
+    tldr: >
+      Major paper that applies Status Characteristics Theory to explain why
+      information is not adequately shared in group decision-making.
+    why_include: >
+      Root of Zercher's Information Asymmetries Model (IAM). Strong
+      theoretical basis for combining Leader × ACI in this study.
+    search_query: "Brodbeck Kerschreiter Mojzisch Schulz-Hardt 2007 information asymmetries model"
+
+  - citation_key: "GanapiniEtAl_2023"
+    title: "Value-based Fast and Slow AI Nudging"
+    authors_display: ["Ganapini, M. B.", "Campbell, M.", "Ho, K."]
+    year: 2023
+    venue: null
+    doi: null
+    tldr: >
+      Proposes an alternative, value-based conceptual framework for AI
+      nudging that guides human behavior.
+    why_include: >
+      Smoothly connects ACI with nudge theory. Directly usable for the nudge
+      scope principles and guidelines of ACI.
+    search_query: "Ganapini Campbell Ho 2023 value-based fast slow AI nudging"
+
+  - citation_key: "LuEtAl_2012"
+    title: "Twenty-Five Years of Hidden Profiles in Group Decision Making: A Meta-Analysis"
+    authors_display: ["Lu, L.", "Yuan, Y. C.", "McLeod, P. L."]
+    year: 2012
+    venue: null
+    doi: null
+    tldr: >
+      Meta-analysis statistically synthesizing effect sizes and conditions
+      across 25 years of Hidden Profile research.
+    why_include: >
+      Reference for core experimental design parameters (information
+      distribution ratios, group-size effect sizes, condition specifications).
+    search_query: "Lu Yuan McLeod 2012 hidden profile meta-analysis group decision"
+
+# ─────────────────────────────────────────────────────────────────
+# Tier: P1 — Major variable design and theoretical justification.
+# Subject to rubric (utility_score >= 4.0 to enter validated_kb.md).
+# ─────────────────────────────────────────────────────────────────
+P1:
+  - citation_key: "GurkanYan_2023"
+    title: "Chatbot Catalysts: Improving Team Decision-Making Through Cognitive Diversity and Information Elaboration"
+    authors_display: ["Gurkan", "Yan"]
+    year: 2023
+    venue: "ICIS 2023"
+    doi: null
+    tldr: >
+      Study on chatbot support in team decision-making showing that
+      early/timed chatbot assistance can improve decision quality by
+      promoting cognitive diversity and information elaboration.
+    why_include: >
+      Cited multiple times by Zercher. Directly applies an AI chatbot to a
+      Hidden Profile task and offers a reference design for information
+      distribution.
+    search_query: "Gurkan Yan 2023 chatbot catalysts team decision making ICIS"
+
+  - citation_key: "QianEtAl_2025"
+    title: "Deliberate Lab"
+    authors_display: ["Qian", "et al."]
+    year: 2025
+    venue: "arXiv:2510.13011"
+    doi: null
+    tldr: >
+      Open-source platform for large-scale, real-time multi-party experiments
+      with human and LLM-based agents as first-class participants. Reports a
+      12-month deployment with ~88 experimenters and ~9k participants.
+    why_include: >
+      Technical reference for experiment platform design. Demonstrates an
+      architecture treating LLMs as first-class participants.
+    search_query: "Qian 2025 Deliberate Lab arXiv 2510.13011 LLM multi-party experiment"
+
+  - citation_key: "ZhangEtAl_2023"
+    title: "Investigating AI Teammate Communication Strategies and Their Impact in Human-AI Teams"
+    authors_display: ["Zhang", "et al."]
+    year: 2023
+    venue: "CSCW"
+    doi: null
+    tldr: >
+      Through 60-participant interviews, derived four communication strategies
+      humans expect from AI teammates. Key finding: AI proactive communication
+      promotes trust and situational awareness; without it, AI is not
+      perceived as a teammate.
+    why_include: >
+      Foundation for communication design that allows humans to perceive AI
+      not as a tool but as a genuine teammate.
+    search_query: "Zhang 2023 CSCW AI teammate communication strategies human-AI teams"
+
+  - citation_key: "ZvelebilovaEtAl_2024"
+    title: "Research on the unequal distribution of AI access (title not specified in source list)"
+    authors_display: ["Zvelebilova", "et al."]
+    year: 2024
+    venue: null
+    doi: null
+    tldr: >
+      Recent study addressing the influence of unequal distribution of AI
+      access on within-team information asymmetry.
+    why_include: "Frequently surfaced in literature search as an important recent context."
+    search_query: "Zvelebilova 2024 AI access inequality information asymmetry"
+
+  - citation_key: "BergerEtAl_1977"
+    title: "Status Characteristics Theory"
+    authors_display: ["Berger", "et al."]
+    year: 1977
+    venue: null
+    doi: null
+    tldr: >
+      The theory that certain characteristics in a group form expectations
+      about task performance, and that these expectations determine who
+      exerts influence within the group.
+    why_include: >
+      Provides theoretical justification for the AI Status (Leader vs. Peer)
+      variable. Without this theory the argument for why Leader is effective
+      is weakened.
+    search_query: "Berger 1977 status characteristics theory expectations influence"
+
+  - citation_key: "HoffmannEtAl_2026"
+    title: "Drivers and influence of social conformity on decision making in human-AI teams"
+    authors_display: ["Hoffmann", "et al."]
+    year: 2026
+    venue: "Scientific Reports"
+    doi: null
+    tldr: >
+      Shows that when AI and humans provide advice of equivalent accuracy,
+      participants weight human advice significantly more highly. Demonstrates
+      that AI lacks the normative pull inherent to human peers.
+    why_include: >
+      Core justification for the study's design that tone alone is
+      insufficient — tone must be combined with structural role (Status).
+    search_query: "Hoffmann 2026 social conformity human-AI teams Scientific Reports normative"
+
+# ─────────────────────────────────────────────────────────────────
+# Tier: P2 — Peripheral context and risk hedging.
+# Subject to rubric.
+# ─────────────────────────────────────────────────────────────────
+P2:
+  - citation_key: "FlathmannEtAl_2024"
+    title: "What you say vs what you do: Utilizing positive emotional expressions to relay AI teammate intent within human-AI teams"
+    authors_display: ["Flathmann", "et al."]
+    year: 2024
+    venue: null
+    doi: null
+    tldr: >
+      Experimental paper on how human teammates interpret AI teammates' use
+      of varied positive emotional expressions. When emotion-based
+      communication is paired with action, trust in the AI teammate and
+      human teammates' positive mood increase.
+    why_include: >
+      Directly useful for designing the concrete tone of XAI (direct
+      information presentation) and ACI (questioning-based intervention).
+    search_query: "Flathmann 2024 positive emotional expressions AI teammate intent"
+
+  - citation_key: "WeinmannEtAl_2016"
+    title: "Digital Nudging"
+    authors_display: ["Weinmann", "Schneider", "vom Brocke"]
+    year: 2016
+    venue: "Business & Information Systems Engineering"
+    doi: null
+    tldr: >
+      Defines digital nudging as the use of user-interface design elements
+      to guide people's behavior in digital choice environments.
+    why_include: >
+      Connects to the justification that ACI operates as a kind of nudge
+      within the digital environment of a chat interface.
+    search_query: "Weinmann Schneider vom Brocke 2016 digital nudging BISE"
+
+  - citation_key: "BeliefOffloading_2025"
+    title: "Belief Offloading in Human-AI Interaction"
+    authors_display: ["(arXiv, author TBD)"]
+    year: 2025
+    venue: "arXiv (2025)"
+    doi: null
+    notes: >
+      Author not specified in source list. Scout must resolve author + DOI
+      via OpenAlex search; on successful resolution, update citation_key to
+      the resolved AuthorEtAl_YYYY form before writing to validated_kb.md.
+    tldr: >
+      Defines belief offloading as a cognitive externalization phenomenon
+      in human–LLM interaction. Maps when people defer belief formation and
+      maintenance to AI, and presents a classification scheme and normative
+      implications.
+    why_include: >
+      Used to analyze the risk that ACI may unintentionally distort human
+      beliefs, strengthening the Risk Mitigation section.
+    search_query: "belief offloading human AI interaction LLM cognitive externalization arXiv 2025"
+
+  - citation_key: "BerenteEtAl_2021"
+    title: "Managing Artificial Intelligence"
+    authors_display: ["Berente", "Gu", "Recker", "Santhanam"]
+    year: 2021
+    venue: "MIS Quarterly (special issue editor's comments)"
+    doi: null
+    tldr: >
+      Frames managing AI as decisions across autonomy, learning, and
+      inscrutability; describes shifting AI frontiers; outlines implications
+      for IT/IS management research.
+    why_include: >
+      Macro perspective for framing the management of AI along the
+      dimensions of autonomy, learning, and inscrutability.
+    search_query: "Berente Gu Recker Santhanam 2021 managing artificial intelligence MIS Quarterly"
+
+  - citation_key: "DennisEtAl_2023"
+    title: "AI Agents as Team Members: Effects on Satisfaction, Conflict, Trustworthiness, and Willingness to Work With"
+    authors_display: ["Dennis", "Lakhiwal", "Sachdeva"]
+    year: 2023
+    venue: "Journal of Management Information Systems"
+    doi: null
+    tldr: >
+      Lab experiment manipulating teammate type (AI vs. human) and
+      performance. Finds AI teammates are perceived as higher in ability and
+      integrity but lower in benevolence, leading to lower process
+      satisfaction when an AI teammate is present.
+    why_include: >
+      Useful for identifying the mechanism by which team-process
+      satisfaction may decline when an AI teammate is present.
+    search_query: "Dennis Lakhiwal Sachdeva 2023 AI agents team members JMIS"
+
+  - citation_key: "FeuerriegelEtAl_2024"
+    title: "Generative AI"
+    authors_display: ["Feuerriegel", "Hartmann", "Janiesch", "Zschech"]
+    year: 2024
+    venue: "Business & Information Systems Engineering"
+    doi: null
+    tldr: >
+      Catchword article conceptualizing generative AI within socio-technical
+      systems. Summarizes model/system/application examples, outlines key
+      limitations, and proposes a research agenda for Information Systems.
+    why_include: >
+      Useful when positioning generative AI theoretically within a
+      socio-technical systems perspective.
+    search_query: "Feuerriegel Hartmann Janiesch Zschech 2024 generative AI BISE"
+
+  - citation_key: "FlathmannEtAl_2023"
+    title: "Understanding the impact and design of AI teammate etiquette"
+    authors_display: ["Flathmann", "et al."]
+    year: 2023
+    venue: null
+    doi: null
+    tldr: >
+      Experimentally manipulates AI teammate etiquette. Compares a directive
+      condition where the AI overrides human input with a passive condition
+      where the AI takes direction and uses polite language.
+    why_include: >
+      Useful for understanding dynamics that arise from different AI
+      intervention styles (directive vs. passive).
+    search_query: "Flathmann 2023 AI teammate etiquette directive passive"
+
+  - citation_key: "FugenerEtAl_2022"
+    title: "Cognitive Challenges in Human-AI Collaboration"
+    authors_display: ["Fuegener", "et al."]   # original spelling: Fügener
+    year: 2022
+    venue: "Information Systems Research"
+    doi: null
+    notes: "Original author surname uses non-ASCII character (Fügener); citation_key uses ASCII fallback Fugener."
+    tldr: >
+      Top-tier journal article experimentally demonstrating that in human–AI
+      collaboration humans often lack the metacognition about their own
+      abilities needed to delegate tasks to AI appropriately — or, conversely,
+      rely on AI excessively.
+    why_include: >
+      Strongest available evidence base for metacognitive laziness mentioned
+      in the proposal. Essential when addressing cognitive delegation to AI.
+    search_query: "Fugener 2022 cognitive challenges human AI collaboration Information Systems Research"
+
+  - citation_key: "GeorgantaUlfert_2024"
+    title: "Trust formation in small human–AI teams (title not specified in source list)"
+    authors_display: ["Georganta", "Ulfert"]
+    year: 2024
+    venue: null
+    doi: null
+    tldr: >
+      Experimental work on trust in human–AI teams. Compares trust emergence
+      in human–AI vs. human–human teams and shows how perceived
+      trustworthiness and similarity shape interpersonal trust and team trust.
+    why_include: >
+      Used to understand the limits and composition of trust formation in
+      small human–AI teams.
+    search_query: "Georganta Ulfert 2024 trust human-AI team trustworthiness similarity"
+
+  - citation_key: "ZercherEtAl_2023"
+    title: "When AI Joins the Team: A Literature Review on Intragroup Processes and Their Effect on Team Performance in Team-AI Collaboration"
+    authors_display: ["Zercher", "Jussupow", "Heinzl"]
+    year: 2023
+    venue: "ECIS"
+    doi: null
+    tldr: >
+      Literature review on team–AI collaboration focusing on intragroup
+      processes and their effects on team performance.
+    why_include: >
+      Useful for identifying research gaps in AI collaboration from an
+      intragroup-process perspective.
+    search_query: "Zercher Jussupow Heinzl 2023 when AI joins team literature review ECIS"
+
+# ─────────────────────────────────────────────────────────────────
+# Tier: Reading — Currently under detailed review. Subject to rubric.
+# ─────────────────────────────────────────────────────────────────
+Reading:
+  - citation_key: "AlsobayEtAl_2025"
+    title: "Bringing Everyone to the Table: An Experimental Study of LLM-Facilitated Group Decision Making"
+    authors_display: ["Alsobay, M.", "Rothschild, D.", "et al."]
+    year: 2025
+    venue: null
+    doi: null
+    tldr: >
+      Large-scale experiment with 1,475 participants empirically testing the
+      effectiveness of an LLM acting as a facilitator in Hidden Profile tasks.
+    why_include: >
+      Recent study directly examining Hidden Profile + LLM Facilitator at
+      large scale. Ideal benchmark for experimental manipulation and
+      results-analysis framing.
+    search_query: "Alsobay Rothschild 2025 LLM facilitator group decision making hidden profile"
+
+  - citation_key: "DoEtAl_2023"
+    title: "Group decision making and Hidden Profile (title not specified in source list)"
+    authors_display: ["Do", "et al."]
+    year: 2023
+    venue: "CSCW"
+    doi: null
+    tldr: >
+      Examines group decision-making and Hidden Profile situations from a
+      collaborative systems and human–computer interaction perspective.
+    why_include: >
+      Under review for CSCW-specific system design and mixed-method
+      (qualitative + quantitative) analysis approaches.
+    search_query: "Do 2023 CSCW hidden profile group decision making collaborative systems"
+
+  - citation_key: "SchulzHardt_2012"
+    title: "How to achieve synergy in group decision making: Lessons to be learned from the hidden profile paradigm"
+    authors_display: ["Schulz-Hardt, S."]
+    year: 2012
+    venue: null
+    doi: null
+    tldr: >
+      Synthesizes lessons on overcoming information loss in Hidden Profile
+      situations and achieving synergy — performance beyond the simple sum
+      of parts — in group decision-making.
+    why_include: >
+      Useful for constructing the bridge by which AI intervention (ACI) goes
+      beyond merely surfacing information to producing higher-order outcomes
+      (Decision Quality) through group synergy.
+    search_query: "Schulz-Hardt 2012 synergy group decision making hidden profile paradigm"
+
+  - citation_key: "SohrabEtAl_2015"
+    title: "Exploring the Hidden-Profile Paradigm: A Literature Review and Analysis"
+    authors_display: ["Sohrab, S. G.", "et al."]
+    year: 2015
+    venue: null
+    doi: null
+    tldr: >
+      Comprehensive literature review of the history, key variables, and
+      experimental limitations of the Hidden Profile paradigm.
+    why_include: >
+      Reference for clearly identifying common experimental pitfalls and
+      prior-research limitations (research gaps) when adopting the HP
+      paradigm.
+    search_query: "Sohrab 2015 hidden-profile paradigm literature review analysis"

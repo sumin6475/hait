@@ -1,0 +1,78 @@
+# ─────────────────────────────────────────────────────────────────
+# manipulation_checks.yaml — Perception items for Critic scoring
+# ─────────────────────────────────────────────────────────────────
+# Per CLAUDE.md §1, §7.4. Consumed by Agent 3 (Critic Evaluator) as the
+# verbatim rubric for scoring the AI's behavior in mock chat transcripts.
+#
+# Source (verbatim): docs/source_materials/experiment_design.md §6.1, §6.2.
+# Do not paraphrase the items below — they are the same items participants
+# will see post-experiment, so the Critic must score against the exact
+# language used in the actual study.
+# ─────────────────────────────────────────────────────────────────
+
+meta:
+  version: "1.0.0"
+  last_updated: "2026-05-26"
+  source: "experiment_design.md §6.1, §6.2"
+  scale: "7-point Likert (1 = strongly disagree, 7 = strongly agree)"
+  items_per_dimension: 3
+  scoring_aggregation: "mean of the three items per dimension"
+
+# ─────────────────────────────────────────────────────────────────
+# §6.1 Communication Strategy Manipulation Check
+# Assesses whether participants perceived the AI's behavioral style
+# consistent with the assigned condition (XAI vs. ACI).
+# ─────────────────────────────────────────────────────────────────
+communication_strategy:
+  source: "experiment_design.md §6.1"
+  hypothesis:
+    xai_perception_score: "XAI condition > ACI condition (significant)"
+    aci_perception_score: "ACI condition > XAI condition (significant)"
+  dimensions:
+    xai:
+      label: "Explanation-focused behavior (XAI perception)"
+      items:
+        - "The AI explained the reasoning behind the information it provided."
+        - "The AI clarified why certain information about the candidates was important."
+        - "The AI gave detailed explanations of its statements."
+    aci:
+      label: "Questioning-focused behavior (ACI perception)"
+      items:
+        - "The AI asked our team questions during the discussion."
+        - "The AI asked us about specific aspects of the candidates that the team had not yet discussed."
+        - "The AI sought information from the human team members."
+
+# ─────────────────────────────────────────────────────────────────
+# §6.2 Status Manipulation Check
+# Assesses whether participants perceived the AI's hierarchical
+# position consistent with the assigned condition (Leader vs. Peer).
+# ─────────────────────────────────────────────────────────────────
+status:
+  source: "experiment_design.md §6.2"
+  hypothesis:
+    leader_perception_score: "Leader condition > Peer condition (significant)"
+    peer_perception_score: "Peer condition > Leader condition (significant)"
+  dimensions:
+    leader:
+      label: "Authority position (Leader perception)"
+      items:
+        - "The AI held a position of authority within our team."
+        - "The AI was responsible for guiding our team's decision-making process."
+        - "Our team was expected to follow the AI's direction."
+    peer:
+      label: "Equal-teammate position (Peer perception)"
+      items:
+        - "The AI was an equal member of our team."
+        - "The AI worked alongside us at the same level."
+        - "The AI participated in our discussion on equal footing with the human team members."
+
+# ─────────────────────────────────────────────────────────────────
+# Pass criteria (mirrors config/thresholds.yaml; reproduced here for
+# the Critic's convenience so it does not need to load two files).
+# CLAUDE.md §7.4.
+# ─────────────────────────────────────────────────────────────────
+pass_criteria:
+  target_min: 4.5      # Target dimension >= 4.5/7 (e.g. Leader_XAI → leader >= 4.5 AND xai >= 4.5)
+  opposite_max: 3.0    # Opposite dimension <= 3.0/7 (clear differentiation)
+  scale_max: 7
+  scale_min: 1

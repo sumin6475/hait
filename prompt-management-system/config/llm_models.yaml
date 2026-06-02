@@ -1,0 +1,41 @@
+# Single source of truth for agent -> model mapping.
+# Agents read this file at startup. Never hard-code model strings
+# in agent source files (CLAUDE.md §15.15).
+# Per CLAUDE.md §11.
+
+agents:
+  scout:
+    model: "claude-haiku-4-5-20251001"
+    temperature: 0.0
+    max_tokens: 2000
+    extended_thinking: false
+
+  grounder:
+    model: "claude-sonnet-4-6"
+    temperature: 0.2        # Lowered from 0.4 — structured tool output stays reliable.
+    max_tokens: 8192        # 8 arrays of behavioral rules in one tool call.
+    extended_thinking: false
+
+  architect:
+    model: "claude-sonnet-4-6"
+    temperature: 0.4
+    max_tokens: 4000
+    extended_thinking: false
+
+  critic_simulator:        # Sub-role A: Naive Simulator. NOT told it is being scored.
+    model: "claude-opus-4-7"
+    temperature: 0.7        # Higher for natural dialogue variance.
+    max_tokens: 3000
+    extended_thinking: false
+
+  critic_evaluator:        # Sub-role B: External Evaluator. Scores transcripts on 1-7 Likert.
+    model: "claude-opus-4-7"
+    temperature: 0.2
+    max_tokens: 2000
+    extended_thinking: true
+
+  supervisor:
+    model: "claude-sonnet-4-6"
+    temperature: 0.2
+    max_tokens: 2000
+    extended_thinking: false

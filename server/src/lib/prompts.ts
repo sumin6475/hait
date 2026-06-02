@@ -3,8 +3,14 @@
 //condition별 layer 2 prompt 분기 (XAI/ACI × Leader/Peer)
 import { Message } from "../models/Message.js";
 import { ConditionCode } from "../types.js";
+import compiledPrompts from "./compiled-prompts.json" with { type: "json" };
 
-//Common Prompt - 실험 설계 문서 Section 4.4
+/* ─────────────────────────────────────────────────────────────
+ * [DEPRECATED] 하드코딩 프롬프트 — PMS 동결 JSON으로 이관됨 (2026-06-01)
+ * prompt-management-system/core_prompts/*.yaml
+ * 비교/롤백용 보존. 안정화 후 삭제 예정.
+ * ───────────────────────────────────────────────────────────── */
+/*
 const COMMON_PROMPT = `We are conversing in English. Keep it brief. You are an assistant named Alex. 
 You help select the best candidate for a pilot position. You must always calculate the new ratio of positive to negative traits for each candidate. 
 Treat all traits of the candidates as equally important. Treat all candidates as gender-neutral. 
@@ -74,12 +80,24 @@ function getLayer2Prompts(conditionCode: ConditionCode): { strategy: string; sta
       throw new Error("CTRL condition should not invoke AI");
   }
 }
-
+*/
+//=== 동결 프롬프트 (PMS 산출물) ===
+// core_prompts/*.yaml → compiled-prompts.json → 동결 프롬프트
+//프롬프트 갱신 : PMS에서 'pnpm run export:hait' 실행
 export function buildSystemPrompt(conditionCode: ConditionCode): string {
-  const { strategy, status } = getLayer2Prompts(conditionCode);
-  return `${COMMON_PROMPT}\n\n${Z_PROFILE}\n\n${status}\n\n${strategy}`;
-}
+  if (conditionCode === "CTRL") {
+    throw new Error("CTRL condition should not invoke AI");
+  }
 
+  const entry = compiledPrompts.conditions[conditionCode];
+  if (!entry) {
+    throw new Error(
+      `No compiled prompt for condition "${conditionCode}". ` +
+        `Run \`pnpm run export:hait\` in prompt-management-system/.`,
+    );
+  }
+  return entry.prompt;
+}
 //전체 세션 메시지를 seq 순서대로 sender: content transcript로 직렬화
 //줄바꿈/연속 공백은 단일 공백으로 치환 (transcript 라인 무결성)
 export async function buildUserPrompt(sessionId: string): Promise<string> {

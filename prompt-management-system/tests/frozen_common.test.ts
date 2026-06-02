@@ -1,0 +1,48 @@
+import { describe, it, expect } from "vitest";
+import { readFileSync, existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+
+// Per CLAUDE.md §3.5, §13, §15.1.
+// `config/common_framework.yaml` is the experimental control. Agents must
+// never modify it. This test is a tripwire: when the file exists, its
+// SHA-256 must match the value committed below. To update the file, the
+// USER edits both the YAML and this checksum in the same commit.
+
+const ROOT = resolve(import.meta.dirname, "..");
+const FILE = resolve(ROOT, "config/common_framework.yaml");
+
+// Tripwire value. Recorded 2026-05-26 when common_framework.yaml was first
+// authored from docs/source_materials/experiment_design.md §4.4 +
+// docs/source_materials/hidden_profile_dataset.pdf (Profile Z). Any change
+// to the YAML requires the user to intentionally update this checksum in
+// the same commit. See CLAUDE.md §13.
+const EXPECTED_SHA256: string | null =
+  "8151bbe7e3c3e292ff48da026c35aed4570412f081c42075800914f29f48781d";
+
+function sha256(buf: Buffer): string {
+  return createHash("sha256").update(buf).digest("hex");
+}
+
+describe("common_framework.yaml is frozen (tripwire)", () => {
+  it("file is either absent (Phase 1, pre-source-materials) or checksum-matches", () => {
+    if (!existsSync(FILE)) {
+      // Phase 1 state. Skip the checksum branch.
+      expect(EXPECTED_SHA256).toBeNull();
+      return;
+    }
+    if (EXPECTED_SHA256 === null) {
+      throw new Error(
+        "config/common_framework.yaml exists but EXPECTED_SHA256 in tests/frozen_common.test.ts is null. " +
+          "Compute and commit the checksum: " +
+          `sha256(${sha256(readFileSync(FILE))})`,
+      );
+    }
+    const actual = sha256(readFileSync(FILE));
+    expect(
+      actual,
+      `common_framework.yaml drift. Expected ${EXPECTED_SHA256}, got ${actual}. ` +
+        "If the change is intentional, update EXPECTED_SHA256 in this file.",
+    ).toBe(EXPECTED_SHA256);
+  });
+});

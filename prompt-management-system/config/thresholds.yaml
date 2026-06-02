@@ -1,0 +1,25 @@
+# Pipeline pass criteria and loop control.
+# Read by Agent 3 (Critic) and Agent 4 (Supervisor).
+# Per CLAUDE.md §7.4, §7.5, §14.3.
+
+# Manipulation check thresholds (1-7 Likert).
+# A draft passes when target-condition perception is high AND
+# opposite-condition perception is low (clear differentiation).
+pass_threshold: 4.5          # status_target >= 4.5 AND strategy_target >= 4.5
+opposite_max: 3.0            # status_opposite <= 3.0 AND strategy_opposite <= 3.0
+
+# Loop control (Architect <-> Critic <-> Supervisor cycle).
+loop_limit: 10               # Hard cap. After this, write *_specification.FAILED.yaml and halt.
+
+# Soft Entropy Rule (CLAUDE.md §7.5).
+# After N consecutive stagnant iterations, lower the threshold for the
+# lowest-scoring sub-scale by `soft_entropy_decay`. One-time, logged.
+soft_entropy_stagnation_window: 3
+soft_entropy_min_improvement: 0.3   # Per-iteration delta below this counts as stagnant.
+soft_entropy_decay: 0.2
+
+# Rubric pass criteria for Agent 0 (Scout).
+# CLAUDE.md §7.1: papers >= 4.0/5 are kept; fallback to 3.5 once if <8 papers pass.
+scout_rubric_pass: 4.0
+scout_rubric_fallback: 3.5
+scout_minimum_validated_kb_size: 8

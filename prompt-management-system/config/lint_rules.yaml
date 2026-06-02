@@ -1,0 +1,58 @@
+# Lint banlists for orthogonality and trigger-separation enforcement.
+# Per CLAUDE.md §3.3, §3.4, §14.2.
+#
+# All matches are case-insensitive substring matches on rendered text
+# (the `text` field of every prompt_component, plus any rendered system
+# prompt). Whole-word vs substring is configurable per-list below.
+
+# ─────────────────────────────────────────────────────────────────
+# Strategy orthogonality
+# ─────────────────────────────────────────────────────────────────
+# XAI condition must NOT use facilitative-questioning vocabulary.
+# Source: CLAUDE.md §14.2. Pilot refinement: dropped "elicit" and
+# "open question" — both have legitimate non-ACI idiomatic uses
+# ("the open question is how to weight…" = unresolved matter; "elicit"
+# commonly appears in negation phrases describing what to avoid).
+# The remaining tokens are more clearly diagnostic of facilitative-
+# questioning intent.
+xai_forbidden_vocab:
+  - "ask"
+  - "could you share"
+  - "what do you think"
+  - "any other information"
+  - "have we considered"
+  - "probe"
+
+# ACI condition must NOT use contrastive-explanation vocabulary.
+# Source: CLAUDE.md §14.2. Refine in pilot.
+aci_forbidden_vocab:
+  - "in contrast to"
+  - "because of"
+  - "stronger than"
+  - "comparing"
+  - "the ratio"
+  - "let me explain why"
+
+# ─────────────────────────────────────────────────────────────────
+# Trigger-separation (CLAUDE.md §3.3, §8)
+# ─────────────────────────────────────────────────────────────────
+# Trigger timing/cadence vocabulary lives in the experiment runtime repo,
+# NOT in this repo. Any of these tokens in core_prompts/*.yaml fails CI.
+trigger_vocab_banlist:
+  - "every N messages"
+  - "after N seconds"
+  - "silence"
+  - "interval"
+  - "periodically intervene"
+  - "trigger"
+  - "threshold"
+  - "polling"
+
+# ─────────────────────────────────────────────────────────────────
+# Language enforcement (CLAUDE.md §3.4)
+# ─────────────────────────────────────────────────────────────────
+# Hangul codepoint range. Any match outside docs/_kor_reference/ fails CI.
+# Values are escape-encoded so this YAML file itself does not contain Hangul.
+hangul_unicode_range:
+  start: "\\uAC00"
+  end: "\\uD7A3"
