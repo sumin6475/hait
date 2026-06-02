@@ -26,8 +26,8 @@ const navGroups = [
   {
     label: "ANALYSIS",
     items: [
-      { to: "/dashboard/analytics", icon: BarChart3, label: "Analytics" },
-      { to: "/dashboard/surveys", icon: ClipboardList, label: "Surveys" },
+      { to: "/dashboard/analytics", icon: BarChart3, label: "Analytics", disabled: true },
+      { to: "/dashboard/surveys", icon: ClipboardList, label: "Surveys", disabled: true },
     ],
   },
 ];
@@ -47,24 +47,36 @@ const DashboardLayout = () => (
               {group.label}
             </div>
             <div className="space-y-0.5">
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                      isActive
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
-                    )
-                  }
-                >
-                  <item.icon className="w-[18px] h-[18px]" />
-                  {item.label}
-                </NavLink>
-              ))}
+              {group.items.map((item) =>
+                item.disabled ? (
+                  <div
+                    key={item.to}
+                    aria-disabled="true"
+                    title="Coming soon"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground/40 cursor-not-allowed select-none"
+                  >
+                    <item.icon className="w-[18px] h-[18px]" />
+                    {item.label}
+                  </div>
+                ) : (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                        isActive
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-semibold"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-foreground",
+                      )
+                    }
+                  >
+                    <item.icon className="w-[18px] h-[18px]" />
+                    {item.label}
+                  </NavLink>
+                ),
+              )}
             </div>
           </div>
         ))}
