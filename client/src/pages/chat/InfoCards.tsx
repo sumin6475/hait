@@ -28,7 +28,7 @@ const InfoCardItem = ({ card }: { card: InfoCard }) => (
     <img
       src={`/info-images/${card.id}.png`}
       alt=""
-      className="hidden group-hover:block absolute left-full top-0 ml-2 w-48 rounded-lg border bg-card shadow-lg z-10"
+      className="hidden group-hover:block absolute right-full top-0 mr-2 w-48 rounded-lg border bg-card shadow-lg z-10"
       onError={(e) => {
         e.currentTarget.style.display = "none";
       }}
