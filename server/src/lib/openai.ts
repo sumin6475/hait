@@ -128,7 +128,7 @@ interface CallAIStructuredOptions {
 export async function callAIStructured({
   systemPrompt,
   userPrompt,
-  model = "gpt-4o-mini",
+  model = "gpt-5.4-mini-2026-03-17",
   timeoutMs = 30_000,
   previousResponseId,
 }: CallAIStructuredOptions): Promise<AIStructuredResult> {
