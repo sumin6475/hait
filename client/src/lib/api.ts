@@ -176,7 +176,45 @@ export async function deleteSession(sessionCode: string): Promise<void> {
   });
 }
 
-//---Participant API (public)---
+//=== Conditions (동결 프롬프트 읽기 전용) ===
+//출처: sever lib/compiled-prompts.json
+//GET /api/conditions
+export interface CompiledCondition {
+  prompt: string; //완성된 system prompt
+  version: string; //ex: "1.1.0"
+  sourceCondition: string; //ex: "peer_xai"
+  audit: unknown;
+}
+
+export interface CompiledPromptsResponse {
+  generatedAt: string;
+  conditions: Record<string, CompiledCondition>;
+}
+
+//프롬프트 전체 조회
+export async function getConditions(): Promise<CompiledPromptsResponse> {
+  return adminFetch<CompiledPromptsResponse>("/api/conditions");
+}
+
+//Test Chat - 누적 transcript로 AI 응답 1개 받기 (DB 저장 안함)
+export interface TestChatResult {
+  content: string;
+  latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export async function postTestChat(input: {
+  conditionCode: ConditionCode;
+  transcript: { sender: string; content: string }[];
+}): Promise<TestChatResult> {
+  return adminFetch<TestChatResult>("/api/conditions/test-chat", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+//=== Participant API (public) ===
 
 //progress step 마킹 - 각 페이지 완료 시점에 호출
 export async function markProgress(

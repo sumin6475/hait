@@ -8,6 +8,7 @@ import { healthRouter } from "./routes/health.js";
 import { testRouter } from "./routes/test.js";
 import { sessionsRouter } from "./routes/sessions.js";
 import participantsRouter from "./routes/participants.js";
+import { conditionsRouter } from "./routes/conditions.js";
 import { registerSocketHandlers } from "./sockets/index.js";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "./sockets/events.js";
 
@@ -32,6 +33,7 @@ async function start() {
   app.use(express.json());
   app.use(healthRouter);
   app.use(testRouter);
+  app.use("/api/conditions", conditionsRouter);
   app.use("/api/sessions", sessionsRouter);
   app.use("/api/participants", participantsRouter);
 
