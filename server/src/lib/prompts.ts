@@ -98,6 +98,20 @@ export function buildSystemPrompt(conditionCode: ConditionCode): string {
   }
   return entry.prompt;
 }
+
+//=== Output discipline (2026-06-01) ===
+// 런타임 append, 4조건 공통 - calculate ratio 발화 금지
+const OUTPUT_DISCIPLINE = `You calculate the positive-to-negative ratio internally to inform your judgment, but you must never state, recite, or refer to the numeric ratios, trait counts, or the calculation itself in your messages. 
+Speak naturally as a teammate would — reason from the ratios silently, express only your reasoning and preference in words.
+
+Keep each message brief: at most 3 short sentences. Make one focused point per turn rather than covering every candidate at once — you will have further turns to add more. 
+Do not pack multiple comparisons into a single long sentence.`;
+
+//동결 system prompt + output discipline
+//실험경로(aiTurn) + 확인 경로(eval) : 이 함수 공유
+export function buildSystemPromptWithDiscipline(conditionCode: ConditionCode): string {
+  return `${buildSystemPrompt(conditionCode)}\n\n${OUTPUT_DISCIPLINE}`;
+}
 //전체 세션 메시지를 seq 순서대로 sender: content transcript로 직렬화
 //줄바꿈/연속 공백은 단일 공백으로 치환 (transcript 라인 무결성)
 export async function buildUserPrompt(sessionId: string): Promise<string> {

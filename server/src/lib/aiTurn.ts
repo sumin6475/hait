@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPrompt, buildUserPrompt } from "./prompts.js";
+import { buildSystemPromptWithDiscipline, buildUserPrompt } from "./prompts.js";
 import type { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -32,7 +32,7 @@ export async function handleAITurn(
   try {
     //prompt 생성 = prompts.ts
 
-    const systemPrompt = buildSystemPrompt(conditionCode);
+    const systemPrompt = buildSystemPromptWithDiscipline(conditionCode);
     const userPrompt = await buildUserPrompt(sessionId);
 
     //response id 조회

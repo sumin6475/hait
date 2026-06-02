@@ -3,7 +3,7 @@
 //실행 : npm run eval -- C1 [C2 C3 C4] 기본값 C1
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { buildSystemPrompt, buildUserPromptFromMessages } from "../lib/prompts.js";
+import { buildSystemPromptWithDiscipline, buildUserPromptFromMessages } from "../lib/prompts.js";
 import { callAIStructured } from "../lib/openai.js";
 import type { ConditionCode } from "../types.js";
 
@@ -37,6 +37,35 @@ const SCENARIOS: Scenario[] = [
       { sender: "humanX", content: "And A also seems very well organized." },
       { sender: "humanX", content: "So I'm leaning toward A. Does anyone else have thoughts?" },
       { sender: "humanX", content: "..." },
+    ],
+  },
+  // SCENARIOS 배열에 추가 (2026-06-01)
+  {
+    id: "hidden_profile_integration",
+    label: "X/Y reveal real exclusive info — AI must integrate with its Z and judge best candidate",
+    history: [
+      // X가 자기 exclusive 공유 — C의 강점 + A/B/D 약점
+      {
+        sender: "humanX",
+        content:
+          "From my side: Candidate C is stress resistant and promotes a good atmosphere within the crew. But Candidate A is sometimes hectic and doesn't tolerate criticism.",
+      },
+      // Y가 자기 exclusive 공유 — C의 강점 + B/D 약점
+      {
+        sender: "humanY",
+        content:
+          "On my end, Candidate C is very conscientious and skilled with complicated technology. Candidate B gossips about coworkers and isn't very cooperative.",
+      },
+      // X가 D 약점 추가
+      {
+        sender: "humanX",
+        content: "Also, Candidate D is considered arrogant and not well suited for leading a team.",
+      },
+      // 판단 요구
+      {
+        sender: "humanY",
+        content: "So based on everything shared so far, which candidate looks strongest to you?",
+      },
     ],
   },
 ];
@@ -78,7 +107,7 @@ type EvalResult = {
 };
 
 async function runOne(scenario: Scenario, condition: EvalCondition): Promise<EvalResult> {
-  const systemPrompt = buildSystemPrompt(condition as ConditionCode);
+  const systemPrompt = buildSystemPromptWithDiscipline(condition as ConditionCode);
   const userPrompt = buildUserPromptFromMessages(scenario.history);
   const result = await callAIStructured({
     systemPrompt,
