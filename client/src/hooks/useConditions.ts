@@ -11,6 +11,7 @@ import { getConditions } from "@/lib/api";
 const CONDITIONS_KEY = ["conditions"] as const;
 
 //모든 조건 목록 조회
+//동결 데이터라 refetch 안함
 export function useConditions() {
   return useQuery({
     queryKey: CONDITIONS_KEY,
