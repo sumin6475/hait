@@ -31,6 +31,7 @@ client/.vite
 !.vscode/extensions.json
 !.vscode/settings.json
 .idea
+.obsidian/
 .DS_Store
 *.suo
 *.ntvs*
