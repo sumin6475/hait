@@ -100,7 +100,7 @@ export async function callAI({
 }
 
 export const AIResponseSchema = z.object({
-  content: z.string().max(600),
+  content: z.string().max(800),
 });
 
 export type AIResponseParsed = z.infer<typeof AIResponseSchema>;
@@ -123,6 +123,7 @@ interface CallAIStructuredOptions {
   model?: string;
   timeoutMs?: number;
   previousResponseId?: string;
+  maxOutputTokens?: number; //default 140
 }
 
 export async function callAIStructured({
@@ -131,59 +132,78 @@ export async function callAIStructured({
   model = "gpt-5.4-mini-2026-03-17",
   timeoutMs = 30_000,
   previousResponseId,
+  maxOutputTokens = 140,
 }: CallAIStructuredOptions): Promise<AIStructuredResult> {
   const start = Date.now();
-  const ctrl = new AbortController();
-  const timeoutId = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const response = await client.responses.parse(
-      {
-        model,
-        temperature: 0,
-        input: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        previous_response_id: previousResponseId,
-        text: {
-          format: zodTextFormat(AIResponseSchema, "ai_response"),
-        },
-      },
-      { signal: ctrl.signal },
-    );
-    clearTimeout(timeoutId);
-    const latencyMs = Date.now() - start;
+  let cap = maxOutputTokens;
 
-    //output_pared가 null 이면 schema 어김 또는 model refusal
-    const pared = response.output_parsed;
-    if (!pared) {
+  // 2 attempts
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const response = await client.responses.parse(
+        {
+          model,
+          temperature: 0,
+          max_output_tokens: cap,
+          input: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          previous_response_id: previousResponseId,
+          text: {
+            format: zodTextFormat(AIResponseSchema, "ai_response"),
+          },
+        },
+        { signal: ctrl.signal },
+      );
+      clearTimeout(timeoutId);
+
+      //output_pared가 null 이면 schema 어김 또는 model refusal
+      const parsed = response.output_parsed;
+      if (parsed) {
+        return {
+          ok: true,
+          parsed,
+          requestId: response.id,
+          latencyMs: Date.now() - start,
+          inputTokens: response.usage?.input_tokens ?? 0,
+          outputTokens: response.usage?.output_tokens ?? 0,
+          systemFingerprint: (response as any).system_fingerprint ?? null,
+        };
+      }
+
+      //null parse -> truncation by the cap, or a genuine schema/refusal?
+      const truncated =
+        response.status === "incomplete" &&
+        response.incomplete_details?.reason === "max_output_tokens";
+
+      if (attempt === 0) {
+        cap = truncated ? 256 : maxOutputTokens;
+        continue;
+      }
       return {
         ok: false,
         reason: "parsed_error",
-        error: "output_parsed is null(schema mismatch or model refusal)",
+        error: truncated
+          ? "truncated at max_output_tokens(after retry)"
+          : "output_parsed is null - schema/refusal (after retry)",
       };
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (
+        error.name === "AbortError" ||
+        error.code === "ETIMEDOUT" ||
+        error.message?.includes("aborted")
+      ) {
+        return { ok: false, reason: "timeout", error: `Timeout after ${timeoutMs}ms` };
+      }
+      if (error.status === 429) {
+        return { ok: false, reason: "rate_limit", error: error.message };
+      }
+      return { ok: false, reason: "unknown", error: error.message ?? String(error) };
     }
-    return {
-      ok: true,
-      parsed: pared,
-      requestId: response.id,
-      latencyMs,
-      inputTokens: response.usage?.input_tokens ?? 0,
-      outputTokens: response.usage?.output_tokens ?? 0,
-      systemFingerprint: (response as any).system_fingerprint ?? null,
-    };
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (
-      error.name === "AbortError" ||
-      error.code === "ETIMEDOUT" ||
-      error.message?.includes("aborted")
-    ) {
-      return { ok: false, reason: "timeout", error: `Timeout after ${timeoutMs}ms` };
-    }
-    if (error.status === 429) {
-      return { ok: false, reason: "rate_limit", error: error.message };
-    }
-    return { ok: false, reason: "unknown", error: error.message ?? String(error) };
   }
+  return { ok: false, reason: "parsed_error", error: "exhausted retries" };
 }

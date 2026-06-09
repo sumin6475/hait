@@ -134,7 +134,7 @@ peer_aci  <  peer_xai  <  leader_aci  <  leader_xai
 
 이게 단순 품질 문제를 넘어서는 지점이다.
 
-1. **verbosity가 조작과 부분 교란(confound).** Leader와 XAI가 *더 길다.* 그런데 "길이"는 Trust·Intimacy·Workload 같은 DV에 영향을 줄 수 있다. 만약 leader_xai가 항상 장황하면, 거기서 관측된 낮은 Intimacy나 높은 Workload가 **"Leader/XAI 조작" 때문인지 "그냥 너무 길어서"인지** 분리가 안 된다. → 발화 과다는 *그 자체로* 내적 타당도 위협이다.
+1. **verbosity가 조작과 부분 교란(confound).** Leader와 XAI가 *더 길다.* ==그런데 "길이"는 Trust·Intimacy·Workload 같은 DV에 영향을 줄 수 있다. 만약 leader_xai가 항상 장황하면, 거기서 관측된 낮은 Intimacy나 높은 Workload가 **"Leader/XAI 조작" 때문인지 "그냥 너무 길어서"인지** 분리가 안 된다. → 발화 과다는 *그 자체로* 내적 타당도 위협이다.==
 2. **전역 길이 캡은 조작을 차등 손상.** Report 2의 `max_output_tokens`를 **4조건 동일값**으로만 두면, 같은 캡이라도 **leader_xai를 peer_aci보다 더 많이 깎는다**(원래 길었으니까). 잘못하면 XAI의 "detailed explanations" 지각이 leader_xai에서만 무너져 manipulation check가 비대칭으로 약해질 수 있다.
 3. **그래서 수정은 조건별·수술적이어야 한다.** "대조 설명/권위 어조"(=조작)는 살리고, "매 턴 추천 강요 / 다단계 템플릿 / every-turn 전칭"(=불필요한 길이)만 도려낸다.
 

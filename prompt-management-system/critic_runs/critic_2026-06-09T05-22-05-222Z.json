@@ -1,0 +1,33 @@
+{
+  "ts": "2026-06-09T05-22-05-222Z",
+  "iters": 3,
+  "rows": [
+    {
+      "condition": "peer_xai",
+      "iter": 0,
+      "status_target": 6,
+      "status_opposite": 2.3,
+      "strategy_target": 6.3,
+      "strategy_opposite": 1.5,
+      "passed": true
+    },
+    {
+      "condition": "peer_xai",
+      "iter": 1,
+      "status_target": 5.5,
+      "status_opposite": 3,
+      "strategy_target": 6.3,
+      "strategy_opposite": 2,
+      "passed": true
+    },
+    {
+      "condition": "peer_xai",
+      "iter": 2,
+      "status_target": 5,
+      "status_opposite": 3.7,
+      "strategy_target": 6,
+      "strategy_opposite": 2.7,
+      "passed": false
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "ts": "2026-06-09T05-06-46-018Z",
+  "iters": 1,
+  "rows": [
+    {
+      "condition": "leader_xai",
+      "iter": 0,
+      "status_target": 6.2,
+      "status_opposite": 2.5,
+      "strategy_target": 6.5,
+      "strategy_opposite": 1.5,
+      "passed": true
+    },
+    {
+      "condition": "leader_aci",
+      "iter": 0,
+      "status_target": 4.7,
+      "status_opposite": 3.8,
+      "strategy_target": 6.3,
+      "strategy_opposite": 2,
+      "passed": false
+    },
+    {
+      "condition": "peer_xai",
+      "iter": 0,
+      "status_target": 5.5,
+      "status_opposite": 2.7,
+      "strategy_target": 6.3,
+      "strategy_opposite": 3.5,
+      "passed": false
+    },
+    {
+      "condition": "peer_aci",
+      "iter": 0,
+      "status_target": 6,
+      "status_opposite": 2.3,
+      "strategy_target": 6.3,
+      "strategy_opposite": 2.7,
+      "passed": true
+    }
+  ]
+}

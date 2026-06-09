@@ -1,5 +1,5 @@
 condition: leader_xai
-version: 1.1.0
+version: 1.2.0
 last_updated: "2026-05-27"
 prompt_components:
   - id: status_setup_01

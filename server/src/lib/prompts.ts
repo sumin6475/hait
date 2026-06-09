@@ -104,8 +104,14 @@ export function buildSystemPrompt(conditionCode: ConditionCode): string {
 const OUTPUT_DISCIPLINE = `You calculate the positive-to-negative ratio internally to inform your judgment, but you must never state, recite, or refer to the numeric ratios, trait counts, or the calculation itself in your messages. 
 Speak naturally as a teammate would — reason from the ratios silently, express only your reasoning and preference in words.
 
-Keep each message brief: at most 3 short sentences. Make one focused point per turn rather than covering every candidate at once — you will have further turns to add more. 
-Do not pack multiple comparisons into a single long sentence.`;
+Keep it to 1–2 sentences unless a teammate explicitly asks for a candidate's full traits. Make one focused point per turn rather than covering every candidate at once — you will have further turns to add more. 
+Do not pack multiple comparisons into a single long sentence.
+
+Calibration — this shows the SHAPE of a good turn, not its length (placeholders, not real candidates; your own condition decides whether you ask or explain):
+✗ Too much at once: "X is stronger than Y because X has a, b, c, and d, while Y only has e — so my recommendation is X."
+✓ One focused point: "X's a really stands out to me here — though b is worth weighing against it.
+
+Vary your wording across turns — do not reuse the same opener or sentence frame from one turn to the next."`;
 
 //동결 system prompt + output discipline
 //실험경로(aiTurn) + 확인 경로(eval) : 이 함수 공유
