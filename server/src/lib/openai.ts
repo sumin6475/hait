@@ -114,8 +114,14 @@ export type AIStructuredResult =
       inputTokens: number;
       outputTokens: number;
       systemFingerprint: string | null;
+      model: string;
     }
-  | { ok: false; reason: "timeout" | "rate_limit" | "parsed_error" | "unknown"; error: string };
+  | {
+      ok: false;
+      reason: "timeout" | "rate_limit" | "parsed_error" | "unknown";
+      error: string;
+      model: string;
+    };
 
 interface CallAIStructuredOptions {
   systemPrompt: string;
@@ -171,6 +177,7 @@ export async function callAIStructured({
           inputTokens: response.usage?.input_tokens ?? 0,
           outputTokens: response.usage?.output_tokens ?? 0,
           systemFingerprint: (response as any).system_fingerprint ?? null,
+          model,
         };
       }
 
@@ -189,6 +196,7 @@ export async function callAIStructured({
         error: truncated
           ? "truncated at max_output_tokens(after retry)"
           : "output_parsed is null - schema/refusal (after retry)",
+        model,
       };
     } catch (error: any) {
       clearTimeout(timeoutId);
@@ -197,13 +205,13 @@ export async function callAIStructured({
         error.code === "ETIMEDOUT" ||
         error.message?.includes("aborted")
       ) {
-        return { ok: false, reason: "timeout", error: `Timeout after ${timeoutMs}ms` };
+        return { ok: false, reason: "timeout", error: `Timeout after ${timeoutMs}ms`, model };
       }
       if (error.status === 429) {
-        return { ok: false, reason: "rate_limit", error: error.message };
+        return { ok: false, reason: "rate_limit", error: error.message, model };
       }
-      return { ok: false, reason: "unknown", error: error.message ?? String(error) };
+      return { ok: false, reason: "unknown", error: error.message ?? String(error), model };
     }
   }
-  return { ok: false, reason: "parsed_error", error: "exhausted retries" };
+  return { ok: false, reason: "parsed_error", error: "exhausted retries", model };
 }

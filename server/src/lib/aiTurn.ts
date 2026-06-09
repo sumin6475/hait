@@ -53,7 +53,7 @@ export async function handleAITurn(
       sessionId,
       turnIndex: ctx.lastMessageSeq,
       triggerReason: trigger.name,
-      model: "gpt-4o-mini",
+      model: result.model,
       prompt: userPrompt,
     };
 
