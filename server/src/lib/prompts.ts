@@ -119,6 +119,26 @@ Vary your wording across turns — do not reuse the same opener or sentence fram
 export function buildSystemPromptWithDiscipline(conditionCode: ConditionCode): string {
   return `${buildSystemPrompt(conditionCode)}\n\n${OUTPUT_DISCIPLINE}`;
 }
+//=== Closing 전용 프롬프트 (Step 4/A·R4) — compiled spec을 쓰지 않는다(=commit/recommend 압력 없음). ===
+// 2축 핵심 키워드만: status(leader) + strategy(xai 설명·비교 / aci 질문·끌어내기). 중립 마무리.
+// closing은 leader 조건에서만 발동 → 현재 C2/C4만 정의(필요시 peer 추가).
+const CLOSING_PROMPTS: Partial<Record<ConditionCode, string>> = {
+  // C2 = leader_xai
+  C2: `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. The discussion time is almost up. Give a brief closing remark that wraps up where the discussion has landed and hands the final decision to the team. Your style is explanatory and comparative — you reason by weighing candidates against each other. Do NOT pick a winner or give your own recommendation; leave the choice to the team. Do not mention any numbers or trait counts. Keep it to 1–2 sentences, in your own words.`,
+  // C4 = leader_aci
+  C4: `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. The discussion time is almost up. Give a brief closing remark that wraps up where the discussion has landed and hands the final decision to the team. Your style is to ask and draw the team out rather than to declare. Do NOT pick a winner or give your own recommendation; leave the choice to the team. Do not mention any numbers or trait counts. Keep it to 1–2 sentences, in your own words.`,
+};
+
+export function buildClosingPrompt(conditionCode: ConditionCode): string {
+  const p = CLOSING_PROMPTS[conditionCode];
+  if (!p) {
+    throw new Error(
+      `No closing prompt for "${conditionCode}" (closing fires for leader conditions only).`,
+    );
+  }
+  return p;
+}
+
 //전체 세션 메시지를 seq 순서대로 sender: content transcript로 직렬화
 //줄바꿈/연속 공백은 단일 공백으로 치환 (transcript 라인 무결성)
 export async function buildUserPrompt(sessionId: string): Promise<string> {

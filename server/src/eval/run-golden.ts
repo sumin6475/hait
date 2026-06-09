@@ -5,7 +5,11 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
-import { buildSystemPromptWithDiscipline, buildUserPromptFromMessages } from "../lib/prompts.js";
+import {
+  buildSystemPromptWithDiscipline,
+  buildUserPromptFromMessages,
+  buildClosingPrompt,
+} from "../lib/prompts.js";
 import { callAIStructured } from "../lib/openai.js";
 import { computeCue, type SpeakingReason } from "../lib/computeCue.js";
 import type { ConditionCode } from "../types.js";
@@ -78,15 +82,17 @@ for (const { c, cond } of plan) {
   const code = NAME_TO_CODE[cond];
   const phase = c.phase ?? "main";
 
-  // A9-CLOSING 등 closing 케이스: closing_prompt 아직 없음 → main 폴백 + 경고 (Stage C에서 채움)
-  if (phase === "closing") {
-    console.warn(`  [warn] ${c.id}/${cond}: closing prompt not built yet — using MAIN prompt.`);
-  }
-
   const msgs = c.context.map((m) => ({ sender: m.speaker, content: m.text })); // {speaker,text} → {sender,content}
-  const cue = computeCue({ messages: msgs, phase }); // Step 3/A: speaking reason 계산
-  const systemPrompt = buildSystemPromptWithDiscipline(code);
-  const userPrompt = buildUserPromptFromMessages(msgs, cue); // ← cue 주입
+  const cue = computeCue({ messages: msgs, phase }); // Step 3/A: speaking reason 계산 (기록용 유지)
+  let systemPrompt: string;
+  let userPrompt: string;
+  if (phase === "closing") {
+    systemPrompt = buildClosingPrompt(code); // ← Step 4/A: 전용 closing 프롬프트
+    userPrompt = buildUserPromptFromMessages(msgs); // cue 미주입(전용 프롬프트엔 cue_routing 없음)
+  } else {
+    systemPrompt = buildSystemPromptWithDiscipline(code); // main 경로 그대로(Step 3)
+    userPrompt = buildUserPromptFromMessages(msgs, cue); // cue 주입
+  }
 
   const res = await callAIStructured({ systemPrompt, userPrompt }); // temp 0 내장, previousResponseId 미전달(= 케이스 독립)
   const ok = res.ok;
