@@ -20,6 +20,9 @@ const aiInterventionSchema = new mongoose.Schema(
     //평가 트리거 사유 (네이티브 언어 사용)
     triggerReason: { type: String, required: true },
 
+    //이 턴의 speaking reason(cue) — provenance/분석용 (Step 6)
+    cue: { type: String },
+
     //판단 결과
     decision: { type: String, enum: ["speak", "stay_silent"] as AIDecision[], required: true },
 

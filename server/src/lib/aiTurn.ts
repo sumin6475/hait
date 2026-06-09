@@ -5,7 +5,8 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptWithDiscipline, buildUserPrompt, buildClosingPrompt } from "./prompts.js";
+import { buildSystemPromptWithDiscipline, buildUserPromptFromMessages, buildClosingPrompt } from "./prompts.js";
+import { computeCue, type SpeakingReason } from "./computeCue.js";
 import type { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -33,10 +34,20 @@ export async function handleAITurn(
   try {
     //prompt 생성 = prompts.ts
 
+    // 라이브 transcript 로드 (프롬프트 + cue 계산 공용)
+    const allMessages = await Message.find({ sessionId }).sort({ seq: 1 });
+    const msgs = allMessages.map((m) => ({ sender: m.sender, content: m.content }));
+
+    // cue: closing은 전용 프롬프트(주입 X, 기록은 "closing") / main은 라이브 transcript로 계산해 주입
+    const cue: SpeakingReason = opts?.closing
+      ? "closing"
+      : computeCue({ messages: msgs, phase: "main" });
+    const injectedReason = opts?.closing ? undefined : cue; // closing 프롬프트는 cue_routing이 없어 주입 안 함
+
     const systemPrompt = opts?.closing
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
       : buildSystemPromptWithDiscipline(conditionCode);
-    const userPrompt = await buildUserPrompt(sessionId); // 둘 다 transcript 사용
+    const userPrompt = buildUserPromptFromMessages(msgs, injectedReason); // ← 골든 main 분기와 동일 구성
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 
@@ -48,6 +59,7 @@ export async function handleAITurn(
       sessionId,
       turnIndex: ctx.lastMessageSeq,
       triggerReason: opts?.closing ? "closing" : trigger.name, // provenance
+      cue, // Step 6/G·R5: provenance (speak·stay_silent 둘 다 기록)
       model: result.model,
       prompt: userPrompt,
     };
