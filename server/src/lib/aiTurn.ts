@@ -35,18 +35,10 @@ export async function handleAITurn(
     const systemPrompt = buildSystemPromptWithDiscipline(conditionCode);
     const userPrompt = await buildUserPrompt(sessionId);
 
-    //response id 조회
-    const lastIntervention = await AIIntervention.findOne({ sessionId, decision: "speak" }).sort({
-      turnIndex: -1,
-    });
-    const previousResponseId = lastIntervention?.responseId ?? undefined;
+    console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 
-    console.log(
-      `[ai-turn] calling AI for session ${sessionCode} (trigger= ${trigger.name}, chained=${!!previousResponseId})`,
-    );
-
-    //AI 호출 - structured output
-    const result = await callAIStructured({ systemPrompt, userPrompt, previousResponseId });
+    //AI 호출 - structured output (stateless: previous_response_id 체이닝 제거 — Step 2/E)
+    const result = await callAIStructured({ systemPrompt, userPrompt });
 
     //공통 메타 - 성공/실패 둘 다 기록
     const commonMeta = {

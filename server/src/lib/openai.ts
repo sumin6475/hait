@@ -128,7 +128,6 @@ interface CallAIStructuredOptions {
   userPrompt: string;
   model?: string;
   timeoutMs?: number;
-  previousResponseId?: string;
   maxOutputTokens?: number; //default 140
 }
 
@@ -137,7 +136,6 @@ export async function callAIStructured({
   userPrompt,
   model = "gpt-5.4-mini-2026-03-17",
   timeoutMs = 30_000,
-  previousResponseId,
   maxOutputTokens = 140,
 }: CallAIStructuredOptions): Promise<AIStructuredResult> {
   const start = Date.now();
@@ -157,7 +155,6 @@ export async function callAIStructured({
             { role: "system", content: systemPrompt },
             { role: "user", content: userPrompt },
           ],
-          previous_response_id: previousResponseId,
           text: {
             format: zodTextFormat(AIResponseSchema, "ai_response"),
           },

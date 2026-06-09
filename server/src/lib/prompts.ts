@@ -125,7 +125,12 @@ export async function buildUserPrompt(sessionId: string): Promise<string> {
   return buildUserPromptFromMessages(messages);
 }
 
+// transcript 윈도우 상한 (메시지 단위). Hidden Profile에서 transcript=풀링 정보(DV)라 넉넉히.
+// 한 세션 토론은 bounded → 40이면 사실상 전체 유지. 세션이 더 길면 상향. (Step 2/E)
+const TRANSCRIPT_WINDOW_MSGS = 40;
+
 //순수 함수 - mock 데이터로도 호출 가능 (eval 스크립트용)
+//라이브(buildUserPrompt)와 eval(run-golden) 공유 → 윈도우를 여기 두어 양쪽 동일 규칙
 export function buildUserPromptFromMessages(
   messages: { sender: string; content: string }[],
 ): string {
@@ -133,7 +138,8 @@ export function buildUserPromptFromMessages(
     return "[No messages yet. The discussion is about to begin.]";
   }
 
-  const transcript = messages
+  const windowed = messages.slice(-TRANSCRIPT_WINDOW_MSGS);
+  const transcript = windowed
     .map((m) => `${m.sender}: ${m.content.replace(/\s+/g, " ").trim()}`)
     .join("\n");
 
