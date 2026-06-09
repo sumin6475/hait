@@ -22,7 +22,8 @@ const MEDIATION_RE =
   /(going in circles|i disagree|i'?d be fine|deciding between those|decide between those|we'?re split|split between)/i;
 
 // AI 호명(명시). 라이브의 'AI 메시지에 직접 reply'는 Step 6에서 추가.
-const ADDRESS_RE = /\balex\b/i;
+// 트리거 게이트(evaluate.ts)와 공유 — 단일 소스 (Step 5/F)
+export const ADDRESS_RE = /\balex\b/i;
 
 export function computeCue(input: ComputeCueInput): SpeakingReason {
   const { messages, phase } = input;

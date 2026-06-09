@@ -3,15 +3,14 @@ import type { SessionContext, Trigger } from "./types.js";
 import { messageCountTrigger } from "./MessageCountTrigger.js";
 import { timeIntervalTrigger } from "./TimeIntervalTrigger.js";
 import { longSilenceTrigger } from "./LongSilenceTrigger.js";
-import { sharedInfoTrigger } from "./SharedInfoTrigger.js";
+import { TRIGGER_CONFIG } from "../config/triggers.js";
+import { ADDRESS_RE } from "../lib/computeCue.js";
 
-//모든 트리거 등록
-const allTriggers: Trigger[] = [
-  messageCountTrigger,
-  timeIntervalTrigger,
-  longSilenceTrigger,
-  sharedInfoTrigger,
-];
+// 명시 호명("Alex") 합성 트리거 — evaluateTriggers에서 직접 판정 (Step 5/F)
+const addressTrigger: Trigger = { name: "address", shouldFire: () => true };
+
+//일반 트리거 목록 — sharedInfoTrigger는 비활성 유지(2×2 보존) → 제외
+const normalTriggers: Trigger[] = [messageCountTrigger, timeIntervalTrigger, longSilenceTrigger];
 
 //SessionContext 채움 - ctx 생성함
 export async function buildSessionContext(
@@ -48,6 +47,8 @@ export async function buildSessionContext(
   const secondsSinceLastMessage = lastMessage
     ? Math.floor((now - (lastMessage as any).createdAt.getTime()) / 1000)
     : null;
+  const lastMessageText = lastMessage?.content ?? "";
+  const lastMessageIsAI = lastMessage?.senderRole === "ai";
   return {
     sessionId,
     sessionCode,
@@ -56,14 +57,25 @@ export async function buildSessionContext(
     messagesSinceLastAI,
     secondsSinceLastAI,
     secondsSinceLastMessage,
+    lastMessageText,
+    lastMessageIsAI,
   };
 }
 
-//트리거 평가 - ctx 값을 가지고 트리거 평가
+//트리거 평가 — 우선순위 게이트 (Step 5/F): 명시 호명 > cooldown > 일반 트리거 OR
 export async function evaluateTriggers(ctx: SessionContext): Promise<Trigger | null> {
-  for (const trigger of allTriggers) {
-    const fired = await trigger.shouldFire(ctx);
-    if (fired) {
+  // 1) 명시 호명 — 최우선. cooldown/임계값 무시하고 즉답. (AI 자기 메시지는 제외)
+  if (!ctx.lastMessageIsAI && ADDRESS_RE.test(ctx.lastMessageText)) {
+    console.log(`[trigger] fired: address (session=${ctx.sessionCode})`);
+    return addressTrigger;
+  }
+  // 2) cooldown — 방금 말했으면 사람 메시지 N개 전까진 silent (독점 방지)
+  if (ctx.messagesSinceLastAI < TRIGGER_CONFIG.COOLDOWN_MIN_MSGS) {
+    return null;
+  }
+  // 3) 일반 트리거 — OR 첫매치
+  for (const trigger of normalTriggers) {
+    if (await trigger.shouldFire(ctx)) {
       console.log(
         `[trigger] fired: ${trigger.name} (session=${ctx.sessionCode}, msgsSinceAI=${ctx.messagesSinceLastAI}, secsSinceAI=${ctx.secondsSinceLastAI}, secsSinceLastMsg=${ctx.secondsSinceLastMessage})`,
       );
