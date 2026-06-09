@@ -47,6 +47,11 @@ eval-results/
 ARCHITECTURE.md
 prompt-management-system/ARCHITECTURE.md
 
+# Analysis reports (local notes, not tracked)
+Report1_ChatGPT_groupchat_vs_API.md
+Report2_API_quality_improvement_plan.md
+Report3_PMS_core_prompts_spec_analysis.md
+
 # prompt-management-system (오서링타임 툴 — 산출물 캐시는 지금 제외)
 # 재현성 증빙 필요 시 아래 줄 삭제 후 git add 로 추적 시작
 prompt-management-system/cache/
