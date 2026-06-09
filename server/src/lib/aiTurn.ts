@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptWithDiscipline, buildUserPrompt } from "./prompts.js";
+import { buildSystemPromptWithDiscipline, buildUserPrompt, buildClosingPrompt } from "./prompts.js";
 import type { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -21,6 +21,7 @@ export async function handleAITurn(
   trigger: Trigger,
   ctx: SessionContext,
   conditionCode: ConditionCode,
+  opts?: { closing?: boolean }, // ← Step 4/B: 옵셔널 → 기존 호출 불변
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
@@ -32,8 +33,10 @@ export async function handleAITurn(
   try {
     //prompt 생성 = prompts.ts
 
-    const systemPrompt = buildSystemPromptWithDiscipline(conditionCode);
-    const userPrompt = await buildUserPrompt(sessionId);
+    const systemPrompt = opts?.closing
+      ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
+      : buildSystemPromptWithDiscipline(conditionCode);
+    const userPrompt = await buildUserPrompt(sessionId); // 둘 다 transcript 사용
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 
@@ -44,7 +47,7 @@ export async function handleAITurn(
     const commonMeta = {
       sessionId,
       turnIndex: ctx.lastMessageSeq,
-      triggerReason: trigger.name,
+      triggerReason: opts?.closing ? "closing" : trigger.name, // provenance
       model: result.model,
       prompt: userPrompt,
     };

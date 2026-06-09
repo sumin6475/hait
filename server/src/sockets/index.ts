@@ -6,12 +6,51 @@ import { Message } from "../models/Message.js";
 import { buildSessionContext, evaluateTriggers } from "../triggers/evaluate.js";
 import { handleAITurn } from "../lib/aiTurn.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
+import type { Trigger } from "../triggers/types.js";
 import type { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
 const sessionIntervals = new Map<string, NodeJS.Timeout>();
+
+// ── Step 4/B: 타이머 기반 leader closing 게이트 ──────────────────
+const sessionStartedAt = new Map<string, number>(); // sessionCode → startedAt(ms)
+const closingDone = new Set<string>(); // sessionCode (closing 1회 가드)
+const CLOSING_TRIGGER: Trigger = { name: "closing", shouldFire: () => false };
+
+// 게이트 + 일반 트리거 공용 헬퍼 — pull·push 두 경로가 함께 사용.
+// leader(C2/C4) 조건에서 토론 종료 CLOSING_LEAD_MS 전부터 일반 트리거를 차단하고 closing 턴 1회.
+async function maybeAITurn(
+  io: IO,
+  sessionCode: string,
+  sessionId: string,
+  conditionCode: ConditionCode,
+) {
+  // ── leader closing 게이트 ──
+  const isLeader = conditionCode === "C2" || conditionCode === "C4";
+  const startedMs = sessionStartedAt.get(sessionCode);
+  if (isLeader && startedMs !== undefined) {
+    const timeLeftMs = startedMs + TRIGGER_CONFIG.DISCUSSION_DURATION_MS - Date.now();
+    if (timeLeftMs <= TRIGGER_CONFIG.CLOSING_LEAD_MS) {
+      if (!closingDone.has(sessionCode)) {
+        closingDone.add(sessionCode);
+        const ctx = await buildSessionContext(sessionId, sessionCode);
+        await handleAITurn(io, sessionCode, sessionId, CLOSING_TRIGGER, ctx, conditionCode, {
+          closing: true,
+        });
+        console.log(`[closing] fired for ${sessionCode}`);
+      }
+      return; // closing 창: 일반 트리거 차단
+    }
+  }
+  // ── 일반 경로 (기존 buildSessionContext → evaluateTriggers → handleAITurn 동치) ──
+  const ctx = await buildSessionContext(sessionId, sessionCode);
+  const fired = await evaluateTriggers(ctx);
+  if (fired) {
+    await handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode);
+  }
+}
 
 function startPullEvalution(
   io: IO,
@@ -21,18 +60,10 @@ function startPullEvalution(
 ) {
   if (sessionIntervals.has(sessionCode)) return;
 
-  const interval = setInterval(async () => {
-    try {
-      const ctx = await buildSessionContext(sessionId, sessionCode);
-      const fired = await evaluateTriggers(ctx);
-      if (fired) {
-        handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode).catch((e) =>
-          console.error(`[socket] AI turn error:`, e),
-        );
-      }
-    } catch (error) {
-      console.error("[pull-trigger] evalute error:", error);
-    }
+  const interval = setInterval(() => {
+    maybeAITurn(io, sessionCode, sessionId, conditionCode).catch((e) =>
+      console.error("[pull] turn error:", e),
+    );
   }, TRIGGER_CONFIG.PULL_EVALUATION_INTERVAL_MS);
   sessionIntervals.set(sessionCode, interval);
   console.log(`[pull-trigger] started for ${sessionCode}`);
@@ -45,6 +76,9 @@ function stopPullEvalution(sessionCode: string) {
     sessionIntervals.delete(sessionCode);
     console.log(`[pull-trigger] stopped for ${sessionCode}`);
   }
+  // closing 게이트 상태 정리 (메모리 누수 방지)
+  sessionStartedAt.delete(sessionCode);
+  closingDone.delete(sessionCode);
 }
 
 export function registerSocketHandlers(io: IO) {
@@ -136,6 +170,10 @@ export function registerSocketHandlers(io: IO) {
             session.startedAt = new Date();
             await session.save();
             console.log(`[socket] session ${sessionCode} status: waiting -> in_progress`);
+          }
+          // closing 게이트용 시작 시각 보관 (Step 4/B)
+          if (session.startedAt) {
+            sessionStartedAt.set(sessionCode, session.startedAt.getTime());
           }
           io.to(sessionCode).emit("session-ready", { sessionCode, participantCount: newSize });
           if (session.conditionCode !== "CTRL") {
@@ -244,20 +282,11 @@ export function registerSocketHandlers(io: IO) {
           createdAt: savedMessage.createdAt.toISOString(),
         });
 
-        //6. Push 트리거 평가
-        try {
-          if (conditionCode !== "CTRL") {
-            const ctx = await buildSessionContext(sessionId, sessionCode);
-            const fired = await evaluateTriggers(ctx);
-            if (fired) {
-              //트리거 : true 일때 - AI 호출은 비동기 (핸들러 안 막음)
-              handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode).catch((e) =>
-                console.error(`[socket] AI turn error:`, e),
-              );
-            }
-          }
-        } catch (error) {
-          console.error("[push-trigger] evaluate error:", error);
+        //6. Push 트리거 평가 - AI 호출은 비동기 (핸들러 안 막음)
+        if (conditionCode !== "CTRL") {
+          maybeAITurn(io, sessionCode, sessionId, conditionCode as ConditionCode).catch((e) =>
+            console.error("[push] turn error:", e),
+          );
         }
       } catch (error) {
         console.error(`[socket] send-message error:`, error);
