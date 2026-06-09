@@ -26,14 +26,18 @@ interface CommonFramework {
     profile_label: string;
     optimal_candidate: string;
     optimal_candidate_rationale: string;
-    candidates: Record<string, {
-      positive_count: number;
-      negative_count: number;
-      positive_traits: string[];
-      negative_traits: string[];
-    }>;
+    candidates: Record<
+      string,
+      {
+        positive_count: number;
+        negative_count: number;
+        positive_traits: string[];
+        negative_traits: string[];
+      }
+    >;
   };
   system_constraints: { text: string };
+  cue_routing: { text: string };
   critical_rules: {
     ratio_rule: {
       wrap_with_tag_open: string;
@@ -91,6 +95,10 @@ function renderSystemConstraints(cf: CommonFramework): string {
   return `# System Constraints\n${cf.system_constraints.text.trim()}`;
 }
 
+function renderCueRouting(cf: CommonFramework): string {
+  return `# Speaking-Reason Routing\n${cf.cue_routing.text.trim()}`;
+}
+
 function renderAgentCallingModel(cf: CommonFramework): string {
   return `# Calling Model\n${cf.agent_calling_model.text.trim()}`;
 }
@@ -138,6 +146,7 @@ export function compileSystemPrompt(spec: ConditionSpec): string {
     renderTaskEnvironment(cf),
     renderGroundTruth(cf),
     renderSystemConstraints(cf),
+    renderCueRouting(cf),
     renderAgentCallingModel(cf),
     renderConditionComponents(spec, cf),
   ];

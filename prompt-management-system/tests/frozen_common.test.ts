@@ -17,8 +17,11 @@ const FILE = resolve(ROOT, "config/common_framework.yaml");
 // docs/source_materials/hidden_profile_dataset.pdf (Profile Z). Any change
 // to the YAML requires the user to intentionally update this checksum in
 // the same commit. See CLAUDE.md §13.
+
+// Updated 2026-06-08: added cue_routing block (operational layer).
+// Verbatim Common Prompt + ratio_rule UNCHANGED — only the new block added.
 const EXPECTED_SHA256: string | null =
-  "8151bbe7e3c3e292ff48da026c35aed4570412f081c42075800914f29f48781d";
+  "b3c661ba7353db3928349f9f9f626bcfe8b5105f9a33c691dbdb0ca57c79ccbe";
 
 function sha256(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
