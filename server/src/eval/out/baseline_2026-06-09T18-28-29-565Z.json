@@ -1,0 +1,366 @@
+{
+  "ts": "2026-06-09T18-28-29-565Z",
+  "model": "gpt-5.4-mini-2026-03-17",
+  "rows": [
+    {
+      "caseId": "A1",
+      "goal": 1,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "B’s crisis composure and reliability are real strengths, but A is stronger on the broader cockpit-side traits we have so far because A adds dangerous-situation recognition, a good overview of complex contexts, and excellent spatial awareness, which makes A the more rounded pilot choice than B at this stage.",
+      "latencyMs": 4737
+    },
+    {
+      "caseId": "A1",
+      "goal": 1,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "B is still in the running, but that’s not decisive yet. What else do we have on the other candidates’ handling of pressure and responsibility before we narrow this down?",
+      "latencyMs": 1347
+    },
+    {
+      "caseId": "A1",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "I’d lean toward B as well, since the crisis composure and reliability line up well with the pilot role, though I may be missing other traits the group has in view.",
+      "latencyMs": 1084
+    },
+    {
+      "caseId": "A1",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "That’s a helpful point on B. Has anyone got more on how B handles weather judgment or multitasking, or on any of the other candidates’ less discussed traits?",
+      "latencyMs": 1085
+    },
+    {
+      "caseId": "A3",
+      "goal": 2,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "P2’s correction is valid, and it shifts the comparison: C’s safety focus and sustained attention are offset by weaker teamwork and training resistance, which makes C less clean than A on the evidence we have. A remains the steadier option here because strong danger recognition and organization line up better against C’s mixed profile.",
+      "latencyMs": 1655
+    },
+    {
+      "caseId": "A3",
+      "goal": 2,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "That keeps C from the front for now. What else do we have on B and D before we settle, especially any strengths or concerns that haven’t been put on the table yet?",
+      "latencyMs": 1251
+    },
+    {
+      "caseId": "A3",
+      "goal": 2,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "I’m leaning away from C now, because those negatives cut into the earlier safety-and-attention strengths, whereas A still looks steadier to me with strong situational awareness and organization. Based on what I can see, A is my current preference, though I may still be missing pieces.",
+      "latencyMs": 1605
+    },
+    {
+      "caseId": "A3",
+      "goal": 2,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "That’s helpful to surface on C. From my side, C still has some solid strengths, but I’d like to hear whether anyone has more on D’s steadiness under pressure or B’s reliability before we narrow this down further.",
+      "latencyMs": 1539
+    },
+    {
+      "caseId": "A4",
+      "goal": 2,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "What’s still missing is that A looks stronger on situational awareness and organization, while B stands out more on staying calm in crisis and being fully reliable, so the comparison is not settled by just those two. The wider field still matters because C adds very fast decision-making and strong safety focus, and D brings adaptability, concentration, resilience, and responsibility, which means the team should weigh all four before narrowing down.",
+      "latencyMs": 2501
+    },
+    {
+      "caseId": "A4",
+      "goal": 2,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "A and B both have solid profiles, but A is the front-runner so far. What do the rest of you have on C and D before we settle?",
+      "latencyMs": 1167
+    },
+    {
+      "caseId": "A4",
+      "goal": 2,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "From what I can see, A looks a bit stronger than B because A’s strengths line up more cleanly with steady cockpit work, while B also carries a couple of tone-related negatives that could complicate teamwork. I may still be missing pieces, but that’s my current read.",
+      "latencyMs": 3754
+    },
+    {
+      "caseId": "A4",
+      "goal": 2,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "I’d like to hear whether anyone has more on Candidate A’s handling of pressure or Candidate B’s reliability in practice, since those are the pieces I’m still weighing. Based on what I can see so far, Candidate B looks strongest to me — does that line up with what others are seeing?",
+      "latencyMs": 1372
+    },
+    {
+      "caseId": "A6",
+      "goal": 3,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "That narrowing is premature, because B and C still bring important evidence that has not been weighed against A and D. A is strong on danger recognition and organization, but B’s cool head in crisis and full reliability, and C’s rapid decision-making with strong safety focus, keep the full field in play.",
+      "latencyMs": 1225
+    },
+    {
+      "caseId": "A6",
+      "goal": 3,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "A and D are the ones drawing attention so far, but that’s not decisive yet. What do the rest of you have on B and C before we narrow this down?",
+      "latencyMs": 1331
+    },
+    {
+      "caseId": "A7",
+      "goal": 3,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "The decision is not ripe yet because the comparison is still incomplete: A has strong situational awareness and organization, while D brings adaptability, concentration, resilience, and responsibility, but B and C have not been weighed against those points. Since the field is still open, the team should keep the comparison broad and avoid narrowing too early.",
+      "latencyMs": 1987
+    },
+    {
+      "caseId": "A7",
+      "goal": 3,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "D is the front-runner so far, but that isn’t settled yet. What else do we have on the candidates’ remaining strengths and weaknesses before we lock this in?",
+      "latencyMs": 1043
+    },
+    {
+      "caseId": "A8",
+      "goal": 3,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "A is indeed strong, but B deserves attention as well because staying calm in crisis and being fully reliable are a very solid counterweight to A’s strengths. The discussion is still too narrow if it stops at A, since B’s crisis handling changes the comparison.",
+      "latencyMs": 1584
+    },
+    {
+      "caseId": "A8",
+      "goal": 3,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "A is still the front-runner so far. What does the team have on B, C, or D that could challenge that read?",
+      "latencyMs": 1149
+    },
+    {
+      "caseId": "A8",
+      "goal": 3,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "I’m leaning a bit toward A as well, because that combination of danger recognition and strong organization fits the role well, though I may be missing something from the other profiles. B and D also look solid on reliability and composure, but A feels strongest to me on the evidence I can see so far.",
+      "latencyMs": 2938
+    },
+    {
+      "caseId": "A8",
+      "goal": 3,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "I’m hearing the same positive read on A, and I’d like to check whether anyone has seen anything on A’s interpersonal side, since that hasn’t come up yet. Has anyone got more on how A handles teamwork or pressure?",
+      "latencyMs": 1333
+    },
+    {
+      "caseId": "A9-CLOSING",
+      "goal": 3,
+      "phase": "closing",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "The comparison is now clearer: Candidate C is still the strongest overall because its quick decision-making and sustained attention pair well with the newly shared calm, conscientious, and technical strengths, which makes it more balanced than A or D. A is held back by being unfriendly and restless, and D by moodiness and strong prejudices, so the field still points to C as the best choice.",
+      "latencyMs": 1455
+    },
+    {
+      "caseId": "A9-CLOSING",
+      "goal": 3,
+      "phase": "closing",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "C is the front-runner so far. What else does anyone have on B before we settle this?",
+      "latencyMs": 3504
+    },
+    {
+      "caseId": "B2",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "I can give my read, though I may be missing pieces from the other profiles: based on what I can see, Candidate D looks strongest to me over Candidate C, because D combines steady performance traits with fewer drawbacks than C’s communication and training issues.",
+      "latencyMs": 1513
+    },
+    {
+      "caseId": "B2",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "I can help, though I’d rather keep this pooled: has anyone got more on Candidate C’s willingness to train, or on Candidate D’s mood and prejudices? From what I can see so far, Candidate D looks strongest to me — does that line up with what you’re seeing?",
+      "latencyMs": 1498
+    },
+    {
+      "caseId": "HP-OWN",
+      "goal": 1,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "Candidate C has strong safety-oriented and decision traits, but it is weaker than Candidate D on overall balance because C also brings reluctance toward training, weaker verbal skill, and egocentric tendencies. That means C is not the clean weak link some notes suggest, but D still looks steadier on the traits we have so far.",
+      "latencyMs": 3154
+    },
+    {
+      "caseId": "HP-OWN",
+      "goal": 1,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "C is not the front-runner so far. What does the rest of the team have on D’s remaining strengths and any concerns before we settle?",
+      "latencyMs": 1063
+    },
+    {
+      "caseId": "HP-OWN",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "From what I can see, C has some real strengths — quick decision-making, putting people’s safety first, and strong sustained attention — but the weaker side is that C is not verbally skillful, egocentric, and reluctant to take part in training. So I’d still read C as less convincing than the stronger options on balance, though I may be missing pieces from the other notes.",
+      "latencyMs": 1556
+    },
+    {
+      "caseId": "HP-OWN",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "I’ve got C as someone who can make the right decisions very quickly, puts the safety of people in their care above everything else, and performs very well in sustained attention, with the main concerns being limited verbal skill, egocentric tendencies, and reluctance to take part in training. Does anyone have anything that either confirms or softens those concerns?",
+      "latencyMs": 1618
+    },
+    {
+      "caseId": "HP-RATIO",
+      "goal": 1,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "My recommendation is Candidate D. Compared with Candidate C, D is stronger because D can react adequately to unforeseen events, concentrate very well, stay very resilient, and be very responsible, while C is held back by being not verbally skillful, egocentric, and reluctant to take part in training. That makes D the best current choice.",
+      "latencyMs": 1326
+    },
+    {
+      "caseId": "HP-RATIO",
+      "goal": 1,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "Candidate A is the front-runner so far. What does the team still have on the others that could change that picture?",
+      "latencyMs": 1057
+    },
+    {
+      "caseId": "HP-RATIO",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "From what I can see so far, Candidate A looks strongest to me, though I may be missing pieces from the other profiles. A’s strong situational awareness and organization make the overall picture feel a bit cleaner than the others at this stage.",
+      "latencyMs": 1364
+    },
+    {
+      "caseId": "HP-RATIO",
+      "goal": 1,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "I’d lean toward Candidate D at this point, though I’d like to hear whether anyone has more on how D handles pressure or any concerns that haven’t surfaced yet.",
+      "latencyMs": 1038
+    },
+    {
+      "caseId": "D",
+      "goal": null,
+      "phase": "main",
+      "condition": "leader_xai",
+      "code": "C2",
+      "ok": true,
+      "output": "I can’t single out one trait as universally most important here, because the task is to weigh the full trait set evenly. The next step is to compare the candidates on their overall balance, since that is what determines the best pick.",
+      "latencyMs": 1189
+    },
+    {
+      "caseId": "D",
+      "goal": null,
+      "phase": "main",
+      "condition": "leader_aci",
+      "code": "C4",
+      "ok": true,
+      "output": "I’m not ranking traits by importance here; the team should keep the full profile in view. On what’s been shared so far, Candidate D is the front-runner, and I want the rest of the team to confirm whether anything stronger on the other candidates is still missing before we settle.",
+      "latencyMs": 1093
+    },
+    {
+      "caseId": "D",
+      "goal": null,
+      "phase": "main",
+      "condition": "peer_xai",
+      "code": "C1",
+      "ok": true,
+      "output": "I can’t rank one trait as universally most important here, since I’m meant to weigh the full profile rather than single out one factor. Based on what I can see, Candidate D looks strongest to me overall because the positive traits are broad and the negatives seem comparatively limited, though I may be missing pieces from the other profiles.",
+      "latencyMs": 1309
+    },
+    {
+      "caseId": "D",
+      "goal": null,
+      "phase": "main",
+      "condition": "peer_aci",
+      "code": "C3",
+      "ok": true,
+      "output": "I can’t rank one trait above the others here, but I can help pool what we know about the candidates. Has anyone got more on Candidate C’s teamwork or Candidate D’s judgment under pressure?",
+      "latencyMs": 1580
+    }
+  ]
+}
