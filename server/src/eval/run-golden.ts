@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import { buildSystemPromptWithDiscipline, buildUserPromptFromMessages } from "../lib/prompts.js";
 import { callAIStructured } from "../lib/openai.js";
+import { computeCue, type SpeakingReason } from "../lib/computeCue.js";
 import type { ConditionCode } from "../types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +60,7 @@ interface Row {
   phase: "main" | "closing";
   condition: ConditionName;
   code: ConditionCode;
+  cue: SpeakingReason;
   ok: boolean;
   output: string; // 생성된 턴 또는 실패 사유
   latencyMs: number;
@@ -81,19 +83,19 @@ for (const { c, cond } of plan) {
     console.warn(`  [warn] ${c.id}/${cond}: closing prompt not built yet — using MAIN prompt.`);
   }
 
+  const msgs = c.context.map((m) => ({ sender: m.speaker, content: m.text })); // {speaker,text} → {sender,content}
+  const cue = computeCue({ messages: msgs, phase }); // Step 3/A: speaking reason 계산
   const systemPrompt = buildSystemPromptWithDiscipline(code);
-  const userPrompt = buildUserPromptFromMessages(
-    c.context.map((m) => ({ sender: m.speaker, content: m.text })), // {speaker,text} → {sender,content}
-  );
+  const userPrompt = buildUserPromptFromMessages(msgs, cue); // ← cue 주입
 
   const res = await callAIStructured({ systemPrompt, userPrompt }); // temp 0 내장, previousResponseId 미전달(= 케이스 독립)
   const ok = res.ok;
   const output = res.ok ? res.parsed.content : `[FAIL: ${res.reason}] ${res.error}`;
   const latencyMs = res.ok ? res.latencyMs : 0;
 
-  rows.push({ caseId: c.id, goal: c.goal, phase, condition: cond, code, ok, output, latencyMs });
+  rows.push({ caseId: c.id, goal: c.goal, phase, condition: cond, code, cue, ok, output, latencyMs });
   console.log(
-    `  [${String(i).padStart(2)}/${plan.length}] ${c.id.padEnd(11)} ${cond.padEnd(10)} (${code}) ${ok ? "ok" : "FAIL"} ${latencyMs}ms`,
+    `  [${String(i).padStart(2)}/${plan.length}] ${c.id.padEnd(11)} ${cond.padEnd(10)} (${code}) cue=${cue} ${ok ? "ok" : "FAIL"} ${latencyMs}ms`,
   );
 }
 
@@ -110,7 +112,7 @@ md += `model: gpt-5.4-mini-2026-03-17 (temperature 0, no chaining) · cases: ${d
 md += `> "actual" = current prompt's output. "hint" = fixture illustrative (DRAFT, not a target).\n\n`;
 for (const c of doc.cases) {
   const rs = byId.get(c.id) ?? [];
-  md += `## ${c.id} — goal ${c.goal} — phase ${c.phase ?? "main"}\n\n`;
+  md += `## ${c.id} — goal ${c.goal} — phase ${c.phase ?? "main"} — cue ${rs[0]?.cue ?? "?"}\n\n`;
   md += `**context:**\n`;
   for (const m of c.context) md += `- ${m.speaker}: ${m.text}\n`;
   md += `\n`;

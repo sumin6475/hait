@@ -3,6 +3,7 @@
 //condition별 layer 2 prompt 분기 (XAI/ACI × Leader/Peer)
 import { Message } from "../models/Message.js";
 import { ConditionCode } from "../types.js";
+import type { SpeakingReason } from "./computeCue.js";
 import compiledPrompts from "./compiled-prompts.json" with { type: "json" };
 
 /* ─────────────────────────────────────────────────────────────
@@ -133,9 +134,11 @@ const TRANSCRIPT_WINDOW_MSGS = 40;
 //라이브(buildUserPrompt)와 eval(run-golden) 공유 → 윈도우를 여기 두어 양쪽 동일 규칙
 export function buildUserPromptFromMessages(
   messages: { sender: string; content: string }[],
+  reason?: SpeakingReason, // ← Step 3/A: cue 주입 (옵셔널 → 라이브는 안 넘김 → 불변)
 ): string {
+  const head = reason ? `[Speaking reason: ${reason}]\n` : "";
   if (messages.length === 0) {
-    return "[No messages yet. The discussion is about to begin.]";
+    return `${head}[No messages yet. The discussion is about to begin.]`;
   }
 
   const windowed = messages.slice(-TRANSCRIPT_WINDOW_MSGS);
@@ -143,5 +146,5 @@ export function buildUserPromptFromMessages(
     .map((m) => `${m.sender}: ${m.content.replace(/\s+/g, " ").trim()}`)
     .join("\n");
 
-  return `Discussion so far:\n${transcript}\n\n---\nNow respond as Alex with your next single message.`;
+  return `${head}Discussion so far:\n${transcript}\n\n---\nNow respond as Alex with your next single message.`;
 }
