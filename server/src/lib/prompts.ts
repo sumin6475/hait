@@ -151,9 +151,15 @@ export function buildCueSnippet(cue: SpeakingReason, conditionCode: ConditionCod
   return CUE_BASE[key] + STRATEGY_TAIL[strategyOf(conditionCode)];
 }
 
-// task 턴 시스템 프롬프트 = compiled + OUTPUT_DISCIPLINE + 이번 cue 스니펫(최종 블록)
-export function buildSystemPromptForTask(conditionCode: ConditionCode, cue: SpeakingReason): string {
-  return `${buildSystemPromptWithDiscipline(conditionCode)}\n\n[This turn] ${buildCueSnippet(cue, conditionCode)}`;
+// task 턴 시스템 프롬프트 = compiled + OUTPUT_DISCIPLINE + tally(현재 상태, Step 14a) + 이번 cue 스니펫(최종 블록)
+// tallyText 옵셔널 → 골든/기존 호출 불변 (미주입 시 S12 조립과 동일).
+export function buildSystemPromptForTask(
+  conditionCode: ConditionCode,
+  cue: SpeakingReason,
+  tallyText?: string,
+): string {
+  const tally = tallyText ? `\n\n${tallyText}` : "";
+  return `${buildSystemPromptWithDiscipline(conditionCode)}${tally}\n\n[This turn] ${buildCueSnippet(cue, conditionCode)}`;
 }
 //=== Closing 전용 프롬프트 (Step 4/A·R4) — compiled spec을 쓰지 않는다(=commit/recommend 압력 없음). ===
 // 2축 핵심 키워드만: status(leader) + strategy(xai 설명·비교 / aci 질문·끌어내기). 중립 마무리.

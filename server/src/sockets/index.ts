@@ -8,6 +8,8 @@ import { handleAITurn } from "../lib/aiTurn.js";
 import { LEADER_OPENING } from "../lib/prompts.js";
 import { judgeIntervention, JUDGE_WINDOW_SIZE } from "../lib/interventionJudge.js";
 import { computeCue, ADDRESS_RE } from "../lib/computeCue.js";
+import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
+import { updateRevealStats } from "../lib/poolingTally.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { Trigger } from "../triggers/types.js";
@@ -404,6 +406,16 @@ export function registerSocketHandlers(io: IO) {
           content: savedMessage.content,
           createdAt: savedMessage.createdAt.toISOString(),
         });
+
+        // pooling 추출 (Step 14a) — 사람 메시지만, fire-and-forget (응답경로 안 막음). 짧은 잡담은 skip.
+        if (conditionCode !== "CTRL" && trimmed.length >= 15) {
+          void extractSurfacedTraits(trimmed)
+            .then((ids) => {
+              if (ids.length) console.log(`[pooling] surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
+              return updateRevealStats(sessionId, ids);
+            })
+            .catch((e) => console.error("[pooling] extract error:", e));
+        }
 
         //6. Push 트리거 평가 - AI 호출은 비동기 (핸들러 안 막음)
         if (conditionCode !== "CTRL") {

@@ -21,8 +21,9 @@ const profileStatsSchema = new mongoose.Schema(
 //후보별 공유 통계
 const candidateStatsSchema = new mongoose.Schema(
   {
-    positiveRevealed: { type: Number, default: 0 }, // positive 정보 중 공유된 수
-    negativeRevealed: { type: Number, default: 0 }, // negative 정보 중 공유된 수
+    positiveRevealed: { type: Number, default: 0 }, // positive 정보 중 공유된 수 (미사용 — revealedIds에서 read 시 파생)
+    negativeRevealed: { type: Number, default: 0 }, // negative 정보 중 공유된 수 (미사용 — revealedIds에서 read 시 파생)
+    revealedIds: { type: [String], default: [] }, // 표면화된 trait id 집합 (Step 14a, $addToSet로 dedup)
   },
   { _id: false },
 );
@@ -86,8 +87,11 @@ const sessionSchema = new mongoose.Schema(
     //팀 결정 (최종 의견)
     teamDecision: { type: [String], enum: ["A", "B", "C", "D"] as Candidate[], default: [] },
 
-    //캐시된 통계
-    revealStats: revealStatsSchema,
+    //캐시된 통계 — default로 byCandidate 경로를 처음부터 보장 ($addToSet 대상 경로, Step 14a)
+    revealStats: {
+      type: revealStatsSchema,
+      default: () => ({ byCandidate: { A: {}, B: {}, C: {}, D: {} } }),
+    },
 
     //메타 데이터
     metadata: metadataSchema,
