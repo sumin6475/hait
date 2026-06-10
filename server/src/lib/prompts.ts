@@ -133,9 +133,13 @@ const CUE_BASE: Record<"open_floor" | "build_on" | "directed_followup" | "mediat
   mediation:
     "The team is narrowing or getting stuck. Say plainly where things stand and widen the comparison back to the full field — do not name a winner this turn.",
 };
+// aci tail은 status-aware (Step 15/Part B): peer는 본인 범위 질문, leader는 전체팀 의제 질문.
+// 파일럿에서 peer_aci의 전체팀-지시 질문("does anyone have more on D?")이 leader처럼 읽힌 문제의 직접 해결.
 const STRATEGY_TAIL = {
   xai: " Frame your point as a brief comparison with your reasoning.",
-  aci: " End by drawing the team out with a question.",
+  aci_leader: " End by putting a question to the team about what to cover or weigh next.",
+  aci_peer:
+    " End with a question from your own side — checking your own read or filling a gap in what you have, rather than directing the team.",
 } as const;
 
 function strategyOf(c: ConditionCode): "xai" | "aci" {
@@ -148,7 +152,13 @@ export function buildCueSnippet(cue: SpeakingReason, conditionCode: ConditionCod
   let key: keyof typeof CUE_BASE =
     cue === "build_on" || cue === "directed_followup" || cue === "mediation" ? cue : "open_floor";
   if (key === "mediation" && isPeer) key = "open_floor"; // 방어적(정상 경로에선 차단됨)
-  return CUE_BASE[key] + STRATEGY_TAIL[strategyOf(conditionCode)];
+  const tail =
+    strategyOf(conditionCode) === "xai"
+      ? STRATEGY_TAIL.xai
+      : isPeer
+        ? STRATEGY_TAIL.aci_peer
+        : STRATEGY_TAIL.aci_leader;
+  return CUE_BASE[key] + tail;
 }
 
 // task 턴 시스템 프롬프트 = compiled + OUTPUT_DISCIPLINE + tally(현재 상태, Step 14a) + 이번 cue 스니펫(최종 블록)
@@ -184,6 +194,13 @@ export function buildClosingPrompt(conditionCode: ConditionCode): string {
     );
   }
   return p;
+}
+
+//=== Leader 중간정리 (Step 15/Phase 2) — tally 기반 state-of-play. leader 전용, 선언형(질문 X). ===
+// 선두 후보가 바뀌는 마일스톤에 sockets 게이트가 1회 발동. ACI여도 정리는 진술 → 질문턴과 구분.
+export function buildSummaryPrompt(tallyText?: string): string {
+  const tally = tallyText ? `\n\n${tallyText}` : "";
+  return `You are Alex, the team's lead. The standing among the candidates has just shifted. As the person running the room, give a short interim summary of where things stand now — name which candidate has moved ahead and which have slipped, in your own words. Keep it to one or two sentences. State it; do NOT ask a question this turn, and do not recite any numbers.${tally}`;
 }
 
 //=== React 전용 프롬프트 (Step 13) — 가벼운 사람다운 반응. task 페르소나 우회. ===
