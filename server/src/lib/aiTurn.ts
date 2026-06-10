@@ -9,6 +9,8 @@ import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingProm
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
 import { computeTally, formatTally } from "./poolingTally.js";
+import { extractSurfacedTraits } from "./poolingExtractor.js";
+import { updateAiSurfaced } from "./poolingDV.js";
 import { allocSeq } from "./seq.js";
 import type { ConditionCode } from "../types.js";
 
@@ -132,6 +134,17 @@ export async function handleAITurn(
       content: savedMessage.content,
       createdAt: (savedMessage as any).createdAt.toISOString(),
     });
+
+    // pooling DV (Step 19) — Alex가 표면화한 trait를 AI 집합에 적재 (사람 집합과 분리). 응답경로 안 막음.
+    // social/react/closing 턴도 추출되지만 trait 없으면 [] → 무해. $addToSet dedup이라 재진술 중복 안 셈.
+    if (result.parsed.content.length >= 15) {
+      void extractSurfacedTraits(result.parsed.content)
+        .then((ids) => {
+          if (ids.length) console.log(`[pooling] AI surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
+          return updateAiSurfaced(sessionId, ids);
+        })
+        .catch((e) => console.error("[pooling] AI extract error:", e));
+    }
     console.log(
       `[ai-turn] AI spoke in ${sessionCode} seq=${savedMessage.seq} latency=${result.latencyMs}ms`,
     );

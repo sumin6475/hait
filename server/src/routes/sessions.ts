@@ -20,6 +20,7 @@ import {
   buildParticipantCode,
   getParticipantSlots,
 } from "../lib/codeGen.js";
+import { computePoolingDV } from "../lib/poolingDV.js";
 import type { ConditionCode, Candidate } from "../types.js";
 import { STATUS_CODES } from "http";
 
@@ -250,6 +251,11 @@ sessionsRouter.patch("/:code/team-decision", async (req, res) => {
     if (submittedCount >= expected) {
       session.status = "completed";
       session.endedAt = new Date();
+      // Step 19: 완료 시점 pooling DV 스냅샷 (분석 편의 — 원천 집합 revealedIds/aiSurfacedIds는 그대로 보존).
+      // fresh read로 async 추출이 적재한 최신 집합을 반영. save()는 수정된 path만 쓰므로
+      // byCandidate/aiSurfacedIds에 대한 동시 $addToSet을 덮어쓰지 않는다.
+      const fresh = await Session.findById(session._id).select("revealStats").lean();
+      session.set("revealStats.byProfile", computePoolingDV((fresh as any)?.revealStats));
       transitioned = true;
     }
     await session.save();

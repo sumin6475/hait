@@ -41,6 +41,7 @@ const revealStatsSchema = new mongoose.Schema(
       C: candidateStatsSchema,
       D: candidateStatsSchema,
     },
+    aiSurfacedIds: { type: [String], default: [] }, // Alex가 표면화한 trait id (Z DV용, $addToSet dedup) — Step 19
   },
   { _id: false },
 );
