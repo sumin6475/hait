@@ -5,6 +5,10 @@ import { Participant } from "../models/Participant.js";
 import { Message } from "../models/Message.js";
 import { buildSessionContext, evaluateTriggers } from "../triggers/evaluate.js";
 import { handleAITurn } from "../lib/aiTurn.js";
+import { LEADER_OPENING } from "../lib/prompts.js";
+import { judgeIntervention, JUDGE_WINDOW_SIZE } from "../lib/interventionJudge.js";
+import { computeCue, ADDRESS_RE } from "../lib/computeCue.js";
+import { AIIntervention } from "../models/AIIntervention.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { Trigger } from "../triggers/types.js";
 import type { ConditionCode } from "../types.js";
@@ -17,15 +21,69 @@ const sessionIntervals = new Map<string, NodeJS.Timeout>();
 // ── Step 4/B: 타이머 기반 leader closing 게이트 ──────────────────
 const sessionStartedAt = new Map<string, number>(); // sessionCode → startedAt(ms)
 const closingDone = new Set<string>(); // sessionCode (closing 1회 가드)
+const openingDone = new Set<string>(); // sessionCode (오프닝 1회 가드)
 const CLOSING_TRIGGER: Trigger = { name: "closing", shouldFire: () => false };
+const ADDRESS_TRIGGER: Trigger = { name: "address", shouldFire: () => false };
+const JUDGE_TRIGGER: Trigger = { name: "judge", shouldFire: () => false };
+const SILENCE_TRIGGER: Trigger = { name: "long-silence", shouldFire: () => false };
 
-// 게이트 + 일반 트리거 공용 헬퍼 — pull·push 두 경로가 함께 사용.
+async function insertLeaderOpening(
+  io: IO,
+  sessionCode: string,
+  sessionId: string,
+  conditionCode: ConditionCode,
+) {
+  if (conditionCode !== "C2" && conditionCode !== "C4") return;
+  if (openingDone.has(sessionCode)) return;
+  openingDone.add(sessionCode);
+
+  const lastMsg = await Message.findOne({ sessionId }).sort({ seq: -1 });
+  const seq = (lastMsg?.seq ?? 0) + 1;
+  const msg = await Message.create({
+    sessionId,
+    sender: "ai",
+    senderRole: "ai",
+    content: LEADER_OPENING,
+    seq,
+    sharedInfoIds: [],
+  });
+  io.to(sessionCode).emit("new-message", {
+    seq: msg.seq,
+    sender: msg.sender,
+    senderRole: msg.senderRole,
+    content: msg.content,
+    createdAt: (msg as any).createdAt.toISOString(),
+  });
+  await AIIntervention.create({
+    sessionId,
+    turnIndex: 0,
+    triggerReason: "opening",
+    cue: "opening",
+    decision: "speak",
+    generateMessageId: msg._id,
+    response: LEADER_OPENING,
+  });
+  console.log(`[opening] leader opening inserted for ${sessionCode}`);
+}
+
+async function loadWindow(sessionId: string) {
+  const recent = await Message.find({ sessionId }).sort({ seq: -1 }).limit(JUDGE_WINDOW_SIZE);
+  const asc = recent.reverse();
+  const label = (r: string) => (r === "ai" ? "Alex" : r === "humanX" ? "Member 1" : "Member 2");
+  return {
+    labeled: asc.map((m) => ({ speaker: label(m.senderRole), content: m.content })),
+    cue: asc.map((m) => ({ sender: m.sender, content: m.content })),
+  };
+}
+
+// 게이트 + 개입 judge — pull·push 분리 (pull=long-silence 안전망, push=judge).
 // leader(C2/C4) 조건에서 토론 종료 CLOSING_LEAD_MS 전부터 일반 트리거를 차단하고 closing 턴 1회.
 async function maybeAITurn(
   io: IO,
   sessionCode: string,
   sessionId: string,
   conditionCode: ConditionCode,
+  source: "push" | "pull",
 ) {
   // ── leader closing 게이트 ──
   const isLeader = conditionCode === "C2" || conditionCode === "C4";
@@ -41,14 +99,55 @@ async function maybeAITurn(
         });
         console.log(`[closing] fired for ${sessionCode}`);
       }
-      return; // closing 창: 일반 트리거 차단
+      return;
     }
   }
-  // ── 일반 경로 (기존 buildSessionContext → evaluateTriggers → handleAITurn 동치) ──
+
   const ctx = await buildSessionContext(sessionId, sessionCode);
-  const fired = await evaluateTriggers(ctx);
-  if (fired) {
-    await handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode);
+
+  // ① 호명 fast-path (push·pull 공통, judge보다 우선·결정적)
+  if (!ctx.lastMessageIsAI && ADDRESS_RE.test(ctx.lastMessageText)) {
+    console.log(`[gate] address (session=${sessionCode})`);
+    await handleAITurn(io, sessionCode, sessionId, ADDRESS_TRIGGER, ctx, conditionCode, {
+      reason: "directed_followup",
+    });
+    return;
+  }
+
+  // ② pre-filter: AI 발화 후 새 사람 메시지 없으면 아무것도 안 함
+  if (ctx.messagesSinceLastAI < 1) return;
+
+  if (source === "pull") {
+    // ③ pull = long-silence 안전망만 (결정적, judge·messageCount 없음)
+    if (
+      ctx.secondsSinceLastMessage !== null &&
+      ctx.secondsSinceLastMessage >= TRIGGER_CONFIG.LONG_SILENCE_SECONDS
+    ) {
+      const win = await loadWindow(sessionId);
+      const reason = computeCue({ messages: win.cue, phase: "main" });
+      console.log(`[gate] long-silence safety (session=${sessionCode})`);
+      await handleAITurn(io, sessionCode, sessionId, SILENCE_TRIGGER, ctx, conditionCode, {
+        reason,
+      });
+    }
+    return;
+  }
+
+  // ④ push = 개입 judge (조건-블라인드)
+  const win = await loadWindow(sessionId);
+  const decision = await judgeIntervention(win.labeled, ctx.messagesSinceLastAI);
+  if (decision === null) {
+    const fired = await evaluateTriggers(ctx);
+    if (fired) await handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode);
+    return;
+  }
+  console.log(
+    `[judge] speak=${decision.speak} reason=${decision.reason} why="${decision.why}" (session=${sessionCode})`,
+  );
+  if (decision.speak) {
+    await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
+      reason: decision.reason,
+    });
   }
 }
 
@@ -61,7 +160,7 @@ function startPullEvalution(
   if (sessionIntervals.has(sessionCode)) return;
 
   const interval = setInterval(() => {
-    maybeAITurn(io, sessionCode, sessionId, conditionCode).catch((e) =>
+    maybeAITurn(io, sessionCode, sessionId, conditionCode, "pull").catch((e) =>
       console.error("[pull] turn error:", e),
     );
   }, TRIGGER_CONFIG.PULL_EVALUATION_INTERVAL_MS);
@@ -79,6 +178,7 @@ function stopPullEvalution(sessionCode: string) {
   // closing 게이트 상태 정리 (메모리 누수 방지)
   sessionStartedAt.delete(sessionCode);
   closingDone.delete(sessionCode);
+  openingDone.delete(sessionCode);
 }
 
 export function registerSocketHandlers(io: IO) {
@@ -178,6 +278,12 @@ export function registerSocketHandlers(io: IO) {
           io.to(sessionCode).emit("session-ready", { sessionCode, participantCount: newSize });
           if (session.conditionCode !== "CTRL") {
             startPullEvalution(
+              io,
+              sessionCode,
+              session._id.toString(),
+              session.conditionCode as ConditionCode,
+            );
+            await insertLeaderOpening(
               io,
               sessionCode,
               session._id.toString(),
@@ -284,8 +390,8 @@ export function registerSocketHandlers(io: IO) {
 
         //6. Push 트리거 평가 - AI 호출은 비동기 (핸들러 안 막음)
         if (conditionCode !== "CTRL") {
-          maybeAITurn(io, sessionCode, sessionId, conditionCode as ConditionCode).catch((e) =>
-            console.error("[push] turn error:", e),
+          maybeAITurn(io, sessionCode, sessionId, conditionCode as ConditionCode, "push").catch(
+            (e) => console.error("[push] turn error:", e),
           );
         }
       } catch (error) {

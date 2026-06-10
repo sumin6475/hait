@@ -22,7 +22,7 @@ export async function handleAITurn(
   trigger: Trigger,
   ctx: SessionContext,
   conditionCode: ConditionCode,
-  opts?: { closing?: boolean }, // ← Step 4/B: 옵셔널 → 기존 호출 불변
+  opts?: { closing?: boolean; reason?: SpeakingReason },
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
@@ -41,7 +41,7 @@ export async function handleAITurn(
     // cue: closing은 전용 프롬프트(주입 X, 기록은 "closing") / main은 라이브 transcript로 계산해 주입
     const cue: SpeakingReason = opts?.closing
       ? "closing"
-      : computeCue({ messages: msgs, phase: "main" });
+      : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
     const injectedReason = opts?.closing ? undefined : cue; // closing 프롬프트는 cue_routing이 없어 주입 안 함
 
     const systemPrompt = opts?.closing
