@@ -155,6 +155,11 @@ async function maybeAITurn(
       await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
         social: true,
       });
+    } else if (decision.reason === "react") {
+      // react: 전용 buildReactPrompt로 분기 (Step 13) — 가벼운 ack, task cue 미주입.
+      await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
+        react: true,
+      });
     } else {
       await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
         reason: decision.reason,

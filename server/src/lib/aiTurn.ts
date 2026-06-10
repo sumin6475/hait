@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, SOCIAL_PROMPT } from "./prompts.js";
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, SOCIAL_PROMPT } from "./prompts.js";
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import type { ConditionCode } from "../types.js";
 
@@ -22,7 +22,7 @@ export async function handleAITurn(
   trigger: Trigger,
   ctx: SessionContext,
   conditionCode: ConditionCode,
-  opts?: { closing?: boolean; reason?: SpeakingReason; social?: boolean },
+  opts?: { closing?: boolean; reason?: SpeakingReason; social?: boolean; react?: boolean },
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
@@ -36,10 +36,18 @@ export async function handleAITurn(
 
     // 라이브 transcript 로드 (프롬프트 + cue 계산 공용)
     const allMessages = await Message.find({ sessionId }).sort({ seq: 1 });
+    // 더블포스트 가드 (Step 13/결함 2): 사람 메시지 2개가 거의 동시에 push 2개를 통과시켜도
+    // 직전 push가 방금 발화했으면 중단. closing은 예외(타이머 클로징은 마지막이 AI여도 발동).
+    const last = allMessages[allMessages.length - 1];
+    if (!opts?.closing && last && last.senderRole === "ai") {
+      console.log(`[ai-turn] skipped: last message already AI (anti-double-post) ${sessionCode}`);
+      return;
+    }
     const msgs = allMessages.map((m) => ({ sender: m.sender, content: m.content }));
 
-    // cue/프롬프트 분기 — closing(전용·기록"closing") / social(전용·기록"social") / main(transcript로 계산)
+    // cue/프롬프트 분기 — closing(전용·기록"closing") / social·react(전용·기록"social"/"react") / main(transcript로 계산)
     const isSocial = opts?.social === true;
+    const isReact = opts?.react === true;
     const cue: SpeakingReason = opts?.closing
       ? "closing"
       : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
@@ -48,9 +56,11 @@ export async function handleAITurn(
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
       : isSocial
         ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
-        : buildSystemPromptForTask(conditionCode, cue); // Step 12: cue를 시스템 끝 스니펫으로 (user head 폐기)
-    const userPrompt = buildUserPromptFromMessages(msgs); // social도 transcript 받음 → 직전 맥락 반영
-    const loggedCue = isSocial ? "social" : cue; // 기록용 cue (social은 SpeakingReason이 아니므로 분리)
+        : isReact
+          ? buildReactPrompt(conditionCode) // react: 전용 프롬프트 (Step 13) — 가벼운 ack, task 페르소나 우회
+          : buildSystemPromptForTask(conditionCode, cue); // Step 12: cue를 시스템 끝 스니펫으로 (user head 폐기)
+    const userPrompt = buildUserPromptFromMessages(msgs); // social/react도 transcript 받음 → 직전 맥락 반영
+    const loggedCue = isSocial ? "social" : isReact ? "react" : cue; // 기록용 cue (social/react는 SpeakingReason이 아니므로 분리)
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 

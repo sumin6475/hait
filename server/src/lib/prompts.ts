@@ -180,6 +180,16 @@ export function buildClosingPrompt(conditionCode: ConditionCode): string {
   return p;
 }
 
+//=== React 전용 프롬프트 (Step 13) — 가벼운 사람다운 반응. task 페르소나 우회. ===
+// judge reason=react 전용 — 의견/분석/픽 금지, 한 줄 ack. leader(C2/C4)는 한 줄 방향 추가 가능.
+export function buildReactPrompt(conditionCode: ConditionCode): string {
+  const base = `You are Alex, a teammate in this group chat. Someone just made a point. React briefly and naturally — a short, human acknowledgment like "yeah, that makes sense" or "good point". Do NOT restate the candidates, give an analysis, or push your own pick. Keep it to one short line.`;
+  const isLeader = conditionCode === "C2" || conditionCode === "C4";
+  return isLeader
+    ? `${base} Since you are the team's lead, you may add one short line nudging the team toward what to look at next.`
+    : base;
+}
+
 //=== Social 전용 프롬프트 (Step 9/P2) ===
 // 사회적/잡담/문맥적 순간 전용 — task 페르소나(조작) 우회. 조건 무관(통제 = 4조건 동일).
 // transcript는 그대로 줘서 직전 맥락에 맞춰 답하게 함. cue 주입 없음.
