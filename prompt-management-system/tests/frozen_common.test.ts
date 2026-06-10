@@ -20,8 +20,10 @@ const FILE = resolve(ROOT, "config/common_framework.yaml");
 
 // Updated 2026-06-08: added cue_routing block (operational layer).
 // Verbatim Common Prompt + ratio_rule UNCHANGED — only the new block added.
+// Updated 2026-06-10: removed system_constraints, ratio_rule → real-time (Step 11).
+// User-approved unfreeze; ratio_rule absorbs the removed block's load-bearing rules.
 const EXPECTED_SHA256: string | null =
-  "b3c661ba7353db3928349f9f9f626bcfe8b5105f9a33c691dbdb0ca57c79ccbe";
+  "38bd7f78d9ed98f89777fdbfc6d870e9b16b4b99cb3021b42fb3406c5b0fb8ba";
 
 function sha256(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");

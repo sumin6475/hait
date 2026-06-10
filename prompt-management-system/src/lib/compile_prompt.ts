@@ -7,7 +7,7 @@ import type { ConditionSpec } from "../schemas/prompt.schema.js";
 // Compile order (rendered into the AI teammate's system prompt):
 //   1. task_environment
 //   2. ground_truth_dataset
-//   3. system_constraints
+//   3. cue_routing
 //   4. agent_calling_model
 //   5. <condition.prompt_components in array order>
 //   6. critical_rules.ratio_rule WRAPPED IN [CRITICAL SYSTEM RULE] (LAST for recency)
@@ -36,7 +36,6 @@ interface CommonFramework {
       }
     >;
   };
-  system_constraints: { text: string };
   cue_routing: { text: string };
   critical_rules: {
     ratio_rule: {
@@ -91,10 +90,6 @@ function renderGroundTruth(cf: CommonFramework): string {
   return lines.join("\n");
 }
 
-function renderSystemConstraints(cf: CommonFramework): string {
-  return `# System Constraints\n${cf.system_constraints.text.trim()}`;
-}
-
 function renderCueRouting(cf: CommonFramework): string {
   return `# Speaking-Reason Routing\n${cf.cue_routing.text.trim()}`;
 }
@@ -145,7 +140,6 @@ export function compileSystemPrompt(spec: ConditionSpec): string {
   const blocks = [
     renderTaskEnvironment(cf),
     renderGroundTruth(cf),
-    renderSystemConstraints(cf),
     renderCueRouting(cf),
     renderAgentCallingModel(cf),
     renderConditionComponents(spec, cf),

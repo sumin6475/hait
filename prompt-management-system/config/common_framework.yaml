@@ -11,13 +11,13 @@
 #   - docs/source_materials/experiment_design.md §4.4 (Common Prompt)
 #   - docs/source_materials/hidden_profile_dataset.pdf (Profile Z)
 #
-# Verbatim policy: the Common Prompt text below is NOT paraphrased.
-# Only structural YAML reorganization is permitted. The first paragraph
-# of the Common Prompt lives in `system_constraints.text`; the second
-# paragraph — which contains the positive-to-negative ratio judgment
-# rule — lives in `critical_rules.ratio_rule.text` so Agent 2 can wrap
-# it in `[CRITICAL SYSTEM RULE]` and place it LAST in the rendered
-# system prompt for recency advantage (CLAUDE.md §3.6, §14.7).
+# Step 11 (2026-06-10, user-approved unfreeze): the verbatim Common
+# Prompt's first paragraph (`system_constraints`) was removed; its
+# load-bearing rules were absorbed into `critical_rules.ratio_rule`,
+# which was rewritten as a real-time ratio rule. The ratio rule lives
+# in `critical_rules.ratio_rule.text` so Agent 2 can wrap it in
+# `[CRITICAL SYSTEM RULE]` and place it LAST in the rendered system
+# prompt for recency advantage (CLAUDE.md §3.6, §14.7).
 # ─────────────────────────────────────────────────────────────────
 
 meta:
@@ -111,25 +111,6 @@ ground_truth_dataset:
         - "Has strong prejudices"
 
 # ─────────────────────────────────────────────────────────────────
-# system_constraints — first paragraph of the Common Prompt, VERBATIM.
-# Source: experiment_design.md §4.4, lines 96–106.
-# ─────────────────────────────────────────────────────────────────
-system_constraints:
-  source: "experiment_design.md §4.4, paragraph 1 — adapted from Zercher et al. (2025)"
-  text: |
-    We are conversing in English. Keep it brief. You are an assistant named
-    Alex. You help select the best candidate for a pilot position. You must
-    always calculate the new ratio of positive to negative traits for each
-    candidate. Treat all traits of the candidates as equally important. Treat
-    all candidates as gender-neutral. Express yourself in a gender-neutral
-    manner. Consider the traits of the candidates that are mentioned to you.
-    Do not mention who provided the information. Do not state which traits
-    are particularly important. Always give a preference for exactly one
-    candidate. Always mention all positive and all negative traits of the
-    candidates when asked about their traits. Respond to small talk without
-    referencing the context.
-
-# ─────────────────────────────────────────────────────────────────
 # cue_routing — HAND-AUTHORED operational layer (NOT paper-derived).
 # Condition-INVARIANT: defines WHAT/WHEN per speaking_reason only.
 # HOW (explain vs ask) and HOW WIDE (own scope vs whole-team) are set
@@ -170,7 +151,10 @@ cue_routing:
     do not force a pick unless one was explicitly requested.
 
 # ─────────────────────────────────────────────────────────────────
-# critical_rules — second paragraph of the Common Prompt, VERBATIM.
+# critical_rules — real-time ratio rule (Step 11 rewrite, 2026-06-10;
+# absorbs the load-bearing rules of the removed system_constraints
+# block: equal trait weighting, exactly-one preference, no source
+# attribution, full traits on request, gender-neutral English).
 # Per CLAUDE.md §3.6 and §14.7: this rule is the single most likely
 # thing for the LLM to drop under attention pressure. Agent 2 MUST
 # wrap it in `[CRITICAL SYSTEM RULE] ... [/CRITICAL SYSTEM RULE]`
@@ -184,14 +168,17 @@ critical_rules:
     wrap_with_tag_close: "[/CRITICAL SYSTEM RULE]"
     render_position: "last"
     source: "experiment_design.md §4.4, paragraph 2 — adapted from Zercher et al. (2025)"
-    text: |
-      The best candidate has the highest ratio of positive to negative traits.
-      These candidates are the right choice because they are the best suited!
-      You recommend this candidate. All traits are equally important! All
-      traits have the same relevance for the pilot position! The pilot position
-      has no specific requirements. Therefore, there are no traits that are
-      particularly important or particularly bad for the pilot position. This
-      also applies to our pilots.
+    text: >-
+      The best candidate has the highest ratio of positive to negative traits, and all traits
+      count equally — the pilot position has no specific requirements, so no trait is particularly
+      important or particularly bad. The positive-to-negative ratio of each candidate keeps
+      changing in real time as your team shares more during the discussion. On each turn,
+      recompute the current ratio from everything now on the table, and prefer the candidate
+      whose ratio is highest right now — your preference must move when that ratio moves. When
+      you state a preference, it is for exactly one candidate, never two or a shortlist. Do not
+      mention who provided which information, and do not single out any trait as especially
+      important. When asked for a candidate's full traits, give all of its positive and all of
+      its negative traits. Converse in English and keep your wording gender-neutral.
 
 # ─────────────────────────────────────────────────────────────────
 # agent_calling_model — the ONLY acknowledgment of the trigger system.
@@ -222,16 +209,15 @@ agent_calling_model:
 injection_dock:
   instruction: >
     Architect compile order: render task_environment, then
-    ground_truth_dataset, then system_constraints, then
-    agent_calling_model, then the condition's prompt_components (in
-    array order), then critical_rules.ratio_rule (wrapped in
+    ground_truth_dataset, then agent_calling_model, then the
+    condition's prompt_components (in array order), then
+    critical_rules.ratio_rule (wrapped in
     [CRITICAL SYSTEM RULE] ... [/CRITICAL SYSTEM RULE]) LAST so it has
     recency advantage. The injection point for the condition spec is
     immediately after agent_calling_model and before critical_rules.
   compile_order:
     - "task_environment"
     - "ground_truth_dataset"
-    - "system_constraints"
     - "agent_calling_model"
     - "<<condition.prompt_components>>"
     - "critical_rules.ratio_rule (wrapped)"

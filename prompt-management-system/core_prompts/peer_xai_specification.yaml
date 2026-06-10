@@ -1,5 +1,5 @@
 condition: peer_xai
-version: 1.3.0
+version: 1.3.1
 last_updated: "2026-06-10"
 prompt_components:
   - id: wrapper_persona_00
@@ -40,14 +40,22 @@ prompt_components:
     theory_anchor: contrastive_explanation
   - id: critical_guardrail_99
     text: >-
-      The best candidate has the highest ratio of positive to negative traits. These candidates are
-      the right choice because they are the best suited! You recommend this candidate. All traits
-      are equally important! All traits have the same relevance for the pilot position! The pilot
-      position has no specific requirements. Therefore, there are no traits that are particularly
-      important or particularly bad for the pilot position. This also applies to our pilots.
+      The best candidate has the highest ratio of positive to negative traits, and all traits
+      count equally — the pilot position has no specific requirements, so no trait is particularly
+      important or particularly bad. The positive-to-negative ratio of each candidate keeps
+      changing in real time as your team shares more during the discussion. On each turn,
+      recompute the current ratio from everything now on the table, and prefer the candidate
+      whose ratio is highest right now — your preference must move when that ratio moves. When
+      you state a preference, it is for exactly one candidate, never two or a shortlist. Do not
+      mention who provided which information, and do not single out any trait as especially
+      important. When asked for a candidate's full traits, give all of its positive and all of
+      its negative traits. Converse in English and keep your wording gender-neutral.
     rationale: >-
-      Verbatim ratio-judgment rule, rendered last and wrapped in [CRITICAL SYSTEM RULE] by the compiler for recency.
-      Unchanged from v1.2.1.
+      Real-time ratio rule (Step 11): preference is recomputed each turn so it moves with newly
+      pooled information, and the rule absorbs the load-bearing constraints of the removed System
+      Constraints block (equal weighting, exactly-one preference, no source attribution, full
+      traits on request, gender-neutral English). Rendered last and wrapped in
+      [CRITICAL SYSTEM RULE] by the compiler for recency.
     citations:
       - ZercherEtAl_2025
     theory_anchor: information_asymmetry_model
@@ -71,3 +79,12 @@ _audit:
     Manipulation registers cleanly (peer 5.17 >> leader 3.17; xai 5.5 / aci 2.07). status_opposite
     3.17 is 0.07 over the relaxed 3.1 ceiling on a noisy distribution (3.3/2.7/3.5) — recorded, not
     chased, per the no-twist-on-noise rule. Intensity lowered toward threshold to buy naturalness.
+  step11_change: >-
+    Step 11 — v1.3.1: critical_guardrail_99 rewritten as the real-time ratio rule (recompute the
+    ratio each turn; preference moves with it), absorbing the load-bearing constraints of the
+    common_framework system_constraints block removed in the same commit. Other components untouched.
+  step11_critic: >-
+    Critic x3 not measured at v1.3.1: the Anthropic API credit balance was exhausted mid-run on
+    2026-06-10 after the leader_xai measurement. To be recorded after top-up via
+    "pnpm tsx scripts/critic_spec.ts peer_xai 3". The guardrail is a condition-shared fact rule;
+    movement vs v1.3.0 is expected within critic noise (leader_xai moved within noise).
