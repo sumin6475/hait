@@ -65,3 +65,4 @@ export const TRAIT_DB: Trait[] = [
 
 export const ALEX_Z_IDS = TRAIT_DB.filter((t) => t.profiles.includes("Z")).map((t) => t.id);
 export const TRAIT_BY_ID = new Map(TRAIT_DB.map((t) => [t.id, t]));
+export const OPTIMAL_CANDIDATE: Cand = "C"; // pooled 7:3 정답 (Step 20)

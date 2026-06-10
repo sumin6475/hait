@@ -47,6 +47,9 @@ const aiInterventionSchema = new mongoose.Schema(
     //OpenAI 모델 버전 식별자
     systemFingerprint: { type: String },
 
+    //judge 사유 문자열 (stay_silent/ speak 판단 근거) — Step 20
+    why: { type: String },
+
     //API 호출 실패 시 에러 메시지
     error: { type: String, default: "" },
   },

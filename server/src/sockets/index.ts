@@ -72,6 +72,25 @@ async function insertLeaderOpening(
   console.log(`[opening] leader opening inserted for ${sessionCode}`);
 }
 
+// judge가 침묵을 택한 평가를 1행 영속 (stay_silent) — Step 20. 응답경로 안 막게 fire-and-forget.
+// 기계적 게이트(pre-filter/anti-double-post 등)는 판단이 아니라 기록하지 않는다.
+function logSilence(
+  sessionId: string,
+  turnIndex: number,
+  triggerReason: string,
+  cue: string,
+  why: string,
+) {
+  void AIIntervention.create({
+    sessionId,
+    turnIndex,
+    triggerReason,
+    cue,
+    decision: "stay_silent",
+    why,
+  }).catch((e) => console.error("[silence-log] failed:", e));
+}
+
 async function loadWindow(sessionId: string) {
   const recent = await Message.find({ sessionId }).sort({ seq: -1 }).limit(JUDGE_WINDOW_SIZE);
   const asc = recent.reverse();
@@ -166,6 +185,7 @@ async function maybeAITurn(
         console.log(
           `[gate] peer mediation suppressed → silent (streak=${streak}/${PEER_MEDIATION_FLOOR_K}, session=${sessionCode})`,
         );
+        logSilence(sessionId, ctx.lastMessageSeq, "peer-mediation-suppressed", "mediation", decision.why); // Step 20 — 조건 효과 분석용
         return;
       }
       // 하한선 도달: mediation 대신 peer 본인 read를 open_floor로 1회 내보냄 + 카운터 리셋
@@ -194,6 +214,9 @@ async function maybeAITurn(
         reason: decision.reason,
       });
     }
+  } else {
+    // Step 20: 평가받고 침묵한 결정 영속 (개입 타이밍 분석용)
+    logSilence(sessionId, ctx.lastMessageSeq, "judge", decision.reason, decision.why);
   }
 }
 

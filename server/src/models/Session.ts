@@ -90,6 +90,14 @@ const sessionSchema = new mongoose.Schema(
 
     seqCounter: { type: Number, default: 0 }, // 메시지 seq 원자 발급용 단조 카운터 (Step 18)
 
+    //팀 결정 정답성 (완료 시 1회 계산, Step 20)
+    decisionAccuracy: {
+      optimal: { type: String }, // "C"
+      teamChoice: { type: String }, // 만장일치면 그 값, 불일치면 최빈값(동률이면 null)
+      correct: { type: Boolean }, // teamChoice === optimal
+      unanimous: { type: Boolean }, // teamDecision 전원 동일
+    },
+
     //캐시된 통계 — default로 byCandidate 경로를 처음부터 보장 ($addToSet 대상 경로, Step 14a)
     revealStats: {
       type: revealStatsSchema,

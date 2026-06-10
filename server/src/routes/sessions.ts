@@ -20,7 +20,7 @@ import {
   buildParticipantCode,
   getParticipantSlots,
 } from "../lib/codeGen.js";
-import { computePoolingDV } from "../lib/poolingDV.js";
+import { computePoolingDV, computeDecisionAccuracy } from "../lib/poolingDV.js";
 import type { ConditionCode, Candidate } from "../types.js";
 import { STATUS_CODES } from "http";
 
@@ -256,6 +256,8 @@ sessionsRouter.patch("/:code/team-decision", async (req, res) => {
       // byCandidate/aiSurfacedIds에 대한 동시 $addToSet을 덮어쓰지 않는다.
       const fresh = await Session.findById(session._id).select("revealStats").lean();
       session.set("revealStats.byProfile", computePoolingDV((fresh as any)?.revealStats));
+      // Step 20: Decision Accuracy (팀이 정답 C를 골랐나)
+      session.set("decisionAccuracy", computeDecisionAccuracy(session.teamDecision ?? []));
       transitioned = true;
     }
     await session.save();
