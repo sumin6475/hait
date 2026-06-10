@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptWithDiscipline, buildUserPromptFromMessages, buildClosingPrompt, SOCIAL_PROMPT } from "./prompts.js";
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, SOCIAL_PROMPT } from "./prompts.js";
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import type { ConditionCode } from "../types.js";
 
@@ -38,19 +38,18 @@ export async function handleAITurn(
     const allMessages = await Message.find({ sessionId }).sort({ seq: 1 });
     const msgs = allMessages.map((m) => ({ sender: m.sender, content: m.content }));
 
-    // cue/프롬프트 분기 — closing(전용·주입X·기록"closing") / social(전용·주입X·기록"social") / main(transcript로 계산·주입)
+    // cue/프롬프트 분기 — closing(전용·기록"closing") / social(전용·기록"social") / main(transcript로 계산)
     const isSocial = opts?.social === true;
     const cue: SpeakingReason = opts?.closing
       ? "closing"
       : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
-    const injectedReason = opts?.closing || isSocial ? undefined : cue; // closing/social은 task cue 주입 안 함
 
     const systemPrompt = opts?.closing
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
       : isSocial
         ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
-        : buildSystemPromptWithDiscipline(conditionCode);
-    const userPrompt = buildUserPromptFromMessages(msgs, injectedReason); // social도 transcript 받음 → 직전 맥락 반영
+        : buildSystemPromptForTask(conditionCode, cue); // Step 12: cue를 시스템 끝 스니펫으로 (user head 폐기)
+    const userPrompt = buildUserPromptFromMessages(msgs); // social도 transcript 받음 → 직전 맥락 반영
     const loggedCue = isSocial ? "social" : cue; // 기록용 cue (social은 SpeakingReason이 아니므로 분리)
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);

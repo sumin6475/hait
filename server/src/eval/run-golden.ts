@@ -6,7 +6,7 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import yaml from "js-yaml";
 import {
-  buildSystemPromptWithDiscipline,
+  buildSystemPromptForTask,
   buildUserPromptFromMessages,
   buildClosingPrompt,
 } from "../lib/prompts.js";
@@ -88,10 +88,10 @@ for (const { c, cond } of plan) {
   let userPrompt: string;
   if (phase === "closing") {
     systemPrompt = buildClosingPrompt(code); // ← Step 4/A: 전용 closing 프롬프트
-    userPrompt = buildUserPromptFromMessages(msgs); // cue 미주입(전용 프롬프트엔 cue_routing 없음)
+    userPrompt = buildUserPromptFromMessages(msgs); // cue 미주입(전용 프롬프트)
   } else {
-    systemPrompt = buildSystemPromptWithDiscipline(code); // main 경로 그대로(Step 3)
-    userPrompt = buildUserPromptFromMessages(msgs, cue); // cue 주입
+    systemPrompt = buildSystemPromptForTask(code, cue); // Step 12: cue를 시스템 끝 스니펫으로 (라이브와 동일 조립)
+    userPrompt = buildUserPromptFromMessages(msgs); // reason head 제거 (task cue는 시스템에)
   }
 
   const res = await callAIStructured({ systemPrompt, userPrompt }); // temp 0 내장, previousResponseId 미전달(= 케이스 독립)

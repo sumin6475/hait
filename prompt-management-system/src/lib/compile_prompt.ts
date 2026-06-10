@@ -7,10 +7,12 @@ import type { ConditionSpec } from "../schemas/prompt.schema.js";
 // Compile order (rendered into the AI teammate's system prompt):
 //   1. task_environment
 //   2. ground_truth_dataset
-//   3. cue_routing
-//   4. agent_calling_model
-//   5. <condition.prompt_components in array order>
-//   6. critical_rules.ratio_rule WRAPPED IN [CRITICAL SYSTEM RULE] (LAST for recency)
+//   3. agent_calling_model
+//   4. <condition.prompt_components in array order>
+//   5. critical_rules.ratio_rule WRAPPED IN [CRITICAL SYSTEM RULE] (LAST for recency)
+// Per-cue speaking-reason guidance is NOT part of the frozen control: the
+// experiment runtime appends one cue snippet per turn at the very end of the
+// live system prompt (Step 12).
 
 // ─────────────────────────────────────────────────────────────────
 // Frozen common framework loader.
@@ -36,7 +38,6 @@ interface CommonFramework {
       }
     >;
   };
-  cue_routing: { text: string };
   critical_rules: {
     ratio_rule: {
       wrap_with_tag_open: string;
@@ -90,10 +91,6 @@ function renderGroundTruth(cf: CommonFramework): string {
   return lines.join("\n");
 }
 
-function renderCueRouting(cf: CommonFramework): string {
-  return `# Speaking-Reason Routing\n${cf.cue_routing.text.trim()}`;
-}
-
 function renderAgentCallingModel(cf: CommonFramework): string {
   return `# Calling Model\n${cf.agent_calling_model.text.trim()}`;
 }
@@ -140,7 +137,6 @@ export function compileSystemPrompt(spec: ConditionSpec): string {
   const blocks = [
     renderTaskEnvironment(cf),
     renderGroundTruth(cf),
-    renderCueRouting(cf),
     renderAgentCallingModel(cf),
     renderConditionComponents(spec, cf),
   ];

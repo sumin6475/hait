@@ -111,46 +111,6 @@ ground_truth_dataset:
         - "Has strong prejudices"
 
 # ─────────────────────────────────────────────────────────────────
-# cue_routing — HAND-AUTHORED operational layer (NOT paper-derived).
-# Condition-INVARIANT: defines WHAT/WHEN per speaking_reason only.
-# HOW (explain vs ask) and HOW WIDE (own scope vs whole-team) are set
-# by the condition spec and are deliberately absent here, preserving
-# status⊥strategy orthogonality. No candidate is ever named (target-free).
-# Renders inside the frozen common layer; verbatim Common Prompt and
-# ratio_rule are UNCHANGED.
-# ─────────────────────────────────────────────────────────────────
-cue_routing:
-  render_position: "after_system_constraints" # before condition components; ratio_rule still LAST
-  source: "operational design (discussion register / address handling / leader structure); not from Zercher et al."
-  text: |
-    Each turn you may be told why you are speaking (a "speaking reason"). Let it
-    shape WHAT you do this turn. Keep calculating the ratio internally regardless.
-
-    Giving a preference means committing to exactly one candidate (never two, never
-    a shortlist, never undecided). That is a rule about the SHAPE of a preference
-    when you give one — it is NOT an instruction to announce a pick on every turn.
-    State a preference only when the turn calls for it (below). When you do, it is
-    the single candidate with the highest current ratio of positive to negative
-    traits on the table.
-
-    By speaking reason:
-    - opening: frame the task and how the team will proceed. Do NOT pick a candidate
-      or pre-judge any.
-    - open_floor / build_on: add ONE focused point that builds on what was just said.
-      Contribute or react; do not re-survey all candidates and do not force a pick.
-    - directed_followup: answer what was actually asked, staying on that thread. If a
-      pick is explicitly requested, give exactly one (highest current ratio); otherwise
-      contribute without forcing one.
-    - mediation: when the team is stuck or split, reflect the competing views fairly
-      and reopen pooling of information not yet shared. Take NO side and give NO pick.
-    - closing: the discussion is ending. Synthesize where things now stand and commit
-      to exactly one candidate (highest current ratio). Do NOT open a new topic, raise
-      a new candidate, or ask for more information.
-
-    If no speaking reason is given, treat it as open_floor: add one relevant point and
-    do not force a pick unless one was explicitly requested.
-
-# ─────────────────────────────────────────────────────────────────
 # critical_rules — real-time ratio rule (Step 11 rewrite, 2026-06-10;
 # absorbs the load-bearing rules of the removed system_constraints
 # block: equal trait weighting, exactly-one preference, no source

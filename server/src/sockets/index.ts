@@ -145,6 +145,11 @@ async function maybeAITurn(
     `[judge] speak=${decision.speak} reason=${decision.reason} why="${decision.why}" (session=${sessionCode})`,
   );
   if (decision.speak) {
+    // peer(C1/C3)는 mediation을 하지 않는다(리더 전용 행동) → 침묵(자연스럽게 덜 말함) — Step 12/결함 4
+    if (decision.reason === "mediation" && (conditionCode === "C1" || conditionCode === "C3")) {
+      console.log(`[gate] peer mediation suppressed → silent (session=${sessionCode})`);
+      return;
+    }
     if (decision.reason === "social") {
       // social: 전용 SOCIAL_PROMPT로 분기 (task cue 미주입, 조건 무관 통제). transcript로 맥락 반영.
       await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {

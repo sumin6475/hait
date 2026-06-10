@@ -119,6 +119,42 @@ Vary your wording across turns — do not reuse the same opener or sentence fram
 export function buildSystemPromptWithDiscipline(conditionCode: ConditionCode): string {
   return `${buildSystemPrompt(conditionCode)}\n\n${OUTPUT_DISCIPLINE}`;
 }
+
+//=== Per-cue 스니펫 (Step 12) ===
+// cue_routing(통제의 6-cue 한 블록)을 대체: judge가 정한 이번 턴 cue 하나의 한 줄 지시만
+// task 시스템 프롬프트 맨 끝(OUTPUT_DISCIPLINE 뒤)에 주입 (recency).
+const CUE_BASE: Record<"open_floor" | "build_on" | "directed_followup" | "mediation", string> = {
+  open_floor:
+    "React to what was just said with one focused point. Don't re-survey every candidate and don't force a pick.",
+  build_on:
+    "Build on the point just made — extend it or push back on that specific thread, one focused point. Don't restate what you've already said.",
+  directed_followup:
+    "Answer what was actually asked, on that thread. If someone asked you to pick, give your single current best (the highest ratio right now); otherwise answer without forcing a pick.",
+  mediation:
+    "The team is narrowing or getting stuck. Say plainly where things stand and widen the comparison back to the full field — do not name a winner this turn.",
+};
+const STRATEGY_TAIL = {
+  xai: " Frame your point as a brief comparison with your reasoning.",
+  aci: " End by drawing the team out with a question.",
+} as const;
+
+function strategyOf(c: ConditionCode): "xai" | "aci" {
+  return c === "C1" || c === "C2" ? "xai" : "aci";
+}
+
+// cue 스니펫: peer는 mediation 미지원(라우팅에서 차단 — 방어적으로 open_floor로 폴백).
+export function buildCueSnippet(cue: SpeakingReason, conditionCode: ConditionCode): string {
+  const isPeer = conditionCode === "C1" || conditionCode === "C3";
+  let key: keyof typeof CUE_BASE =
+    cue === "build_on" || cue === "directed_followup" || cue === "mediation" ? cue : "open_floor";
+  if (key === "mediation" && isPeer) key = "open_floor"; // 방어적(정상 경로에선 차단됨)
+  return CUE_BASE[key] + STRATEGY_TAIL[strategyOf(conditionCode)];
+}
+
+// task 턴 시스템 프롬프트 = compiled + OUTPUT_DISCIPLINE + 이번 cue 스니펫(최종 블록)
+export function buildSystemPromptForTask(conditionCode: ConditionCode, cue: SpeakingReason): string {
+  return `${buildSystemPromptWithDiscipline(conditionCode)}\n\n[This turn] ${buildCueSnippet(cue, conditionCode)}`;
+}
 //=== Closing 전용 프롬프트 (Step 4/A·R4) — compiled spec을 쓰지 않는다(=commit/recommend 압력 없음). ===
 // 2축 핵심 키워드만: status(leader) + strategy(xai 설명·비교 / aci 질문·끌어내기). 중립 마무리.
 // closing은 leader 조건에서만 발동 → 현재 C2/C4만 정의(필요시 peer 추가).

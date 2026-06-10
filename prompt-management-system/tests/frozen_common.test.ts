@@ -22,8 +22,10 @@ const FILE = resolve(ROOT, "config/common_framework.yaml");
 // Verbatim Common Prompt + ratio_rule UNCHANGED — only the new block added.
 // Updated 2026-06-10: removed system_constraints, ratio_rule → real-time (Step 11).
 // User-approved unfreeze; ratio_rule absorbs the removed block's load-bearing rules.
+// Updated 2026-06-10: removed cue_routing → live per-cue snippets (Step 12).
+// Per-turn cue guidance now lives in server/src/lib/prompts.ts (buildCueSnippet).
 const EXPECTED_SHA256: string | null =
-  "38bd7f78d9ed98f89777fdbfc6d870e9b16b4b99cb3021b42fb3406c5b0fb8ba";
+  "8e63129910215e0ec600987865620b1f49d580783b9f06f9db8be1ef3b04ea1e";
 
 function sha256(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");
