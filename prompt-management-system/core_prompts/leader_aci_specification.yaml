@@ -83,8 +83,9 @@ _audit:
     Step 11 — v1.3.1: critical_guardrail_99 rewritten as the real-time ratio rule (recompute the
     ratio each turn; preference moves with it), absorbing the load-bearing constraints of the
     common_framework system_constraints block removed in the same commit. Other components untouched.
-  step11_critic: >-
-    Critic x3 not measured at v1.3.1: the Anthropic API credit balance was exhausted mid-run on
-    2026-06-10 after the leader_xai measurement. To be recorded after top-up via
-    "pnpm tsx scripts/critic_spec.ts leader_aci 3". The guardrail is a condition-shared fact rule;
-    movement vs v1.3.0 is expected within critic noise (leader_xai moved within noise).
+  scores_after_v131_x3: { status_target: 5.47, status_opposite: 3.03, strategy_target: 6.37, strategy_opposite: 2.73 }
+  step11_verdict: >-
+    PASS under the relaxed rule (target >= 4, opposite <= 3, +/-0.1): leader 5.47 >> peer 3.03
+    (within the +0.1 band, samples 3.3/3.3/2.5); aci 6.37 / xai 2.73. Measured after a credit
+    top-up (the first x3 attempt on 2026-06-10 died on API credit exhaustion). Essentially
+    unchanged from v1.3.0 (5.63/3.0/6.37/2.17), as expected for a condition-shared fact rule.
