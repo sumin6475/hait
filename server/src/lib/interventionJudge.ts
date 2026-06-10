@@ -2,7 +2,6 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
-import type { SpeakingReason } from "./computeCue.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey });
 const JUDGE_MODEL = "gpt-4o-mini";
@@ -12,10 +11,12 @@ const JUDGE_WINDOW = 16;
 
 const JudgeSchema = z.object({
   speak: z.boolean(),
-  reason: z.enum(["open_floor", "build_on", "directed_followup", "mediation"]),
+  reason: z.enum(["open_floor", "build_on", "directed_followup", "mediation", "social"]),
   why: z.string().max(200),
 });
-export type JudgeDecision = { speak: boolean; reason: SpeakingReason; why: string };
+// social은 SpeakingReason(task cue)과 분리된 judge 전용 신호 — 사회적/문맥적 순간 라우팅용.
+export type JudgeReason = "open_floor" | "build_on" | "directed_followup" | "mediation" | "social";
+export type JudgeDecision = { speak: boolean; reason: JudgeReason; why: string };
 
 const JUDGE_SYSTEM = `You are the floor manager for a small, live team chat. The team is two people plus an AI teammate named "Alex", working through a group decision. Your ONLY job is to decide, right now, whether Alex should SPEAK or STAY SILENT — and if speaking, the single best reason. You never write Alex's message; you only gate it.
 
@@ -30,13 +31,15 @@ SPEAK if any clearly holds:
 STAY SILENT if:
 - The two people are mid-exchange and Alex would interrupt their back-and-forth.
 - Alex spoke very recently and has nothing genuinely new to add (never repeat a point already made).
+- Alex already gave a social reply a moment ago and another greeting/social line doesn't need a fresh response.
 - The latest lines don't actually need Alex.
 
 Pick exactly one reason when speaking:
 - directed_followup — addressed or asked something.
 - mediation — stuck / split / looping / settling too early.
 - build_on — extend or react to the immediately preceding point.
-- open_floor — add one new point, or a short social/greeting reply.
+- open_floor — add one new substantive point about the task or candidates.
+- social — a greeting, small talk, an emotional or off-task remark that just wants a brief, human reply (not about the candidates).
 
 You are told how many messages have passed since Alex last spoke; if that number is small, lean strongly toward silence unless Alex was addressed. Output JSON only.`;
 
@@ -65,7 +68,7 @@ export async function judgeIntervention(
     clearTimeout(to);
     const p = resp.output_parsed;
     if (!p) return null;
-    return { speak: p.speak, reason: p.reason as SpeakingReason, why: p.why };
+    return { speak: p.speak, reason: p.reason, why: p.why };
   } catch {
     clearTimeout(to);
     return null;

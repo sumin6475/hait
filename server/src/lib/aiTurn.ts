@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptWithDiscipline, buildUserPromptFromMessages, buildClosingPrompt } from "./prompts.js";
+import { buildSystemPromptWithDiscipline, buildUserPromptFromMessages, buildClosingPrompt, SOCIAL_PROMPT } from "./prompts.js";
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import type { ConditionCode } from "../types.js";
 
@@ -22,7 +22,7 @@ export async function handleAITurn(
   trigger: Trigger,
   ctx: SessionContext,
   conditionCode: ConditionCode,
-  opts?: { closing?: boolean; reason?: SpeakingReason },
+  opts?: { closing?: boolean; reason?: SpeakingReason; social?: boolean },
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
@@ -38,16 +38,20 @@ export async function handleAITurn(
     const allMessages = await Message.find({ sessionId }).sort({ seq: 1 });
     const msgs = allMessages.map((m) => ({ sender: m.sender, content: m.content }));
 
-    // cue: closing은 전용 프롬프트(주입 X, 기록은 "closing") / main은 라이브 transcript로 계산해 주입
+    // cue/프롬프트 분기 — closing(전용·주입X·기록"closing") / social(전용·주입X·기록"social") / main(transcript로 계산·주입)
+    const isSocial = opts?.social === true;
     const cue: SpeakingReason = opts?.closing
       ? "closing"
       : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
-    const injectedReason = opts?.closing ? undefined : cue; // closing 프롬프트는 cue_routing이 없어 주입 안 함
+    const injectedReason = opts?.closing || isSocial ? undefined : cue; // closing/social은 task cue 주입 안 함
 
     const systemPrompt = opts?.closing
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
-      : buildSystemPromptWithDiscipline(conditionCode);
-    const userPrompt = buildUserPromptFromMessages(msgs, injectedReason); // ← 골든 main 분기와 동일 구성
+      : isSocial
+        ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
+        : buildSystemPromptWithDiscipline(conditionCode);
+    const userPrompt = buildUserPromptFromMessages(msgs, injectedReason); // social도 transcript 받음 → 직전 맥락 반영
+    const loggedCue = isSocial ? "social" : cue; // 기록용 cue (social은 SpeakingReason이 아니므로 분리)
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 
@@ -59,7 +63,7 @@ export async function handleAITurn(
       sessionId,
       turnIndex: ctx.lastMessageSeq,
       triggerReason: opts?.closing ? "closing" : trigger.name, // provenance
-      cue, // Step 6/G·R5: provenance (speak·stay_silent 둘 다 기록)
+      cue: loggedCue, // Step 6/G·R5 + Step 9/P2: provenance (social이면 "social", 그 외 task cue/closing)
       model: result.model,
       prompt: userPrompt,
     };

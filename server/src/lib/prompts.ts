@@ -144,6 +144,11 @@ export function buildClosingPrompt(conditionCode: ConditionCode): string {
   return p;
 }
 
+//=== Social 전용 프롬프트 (Step 9/P2) ===
+// 사회적/잡담/문맥적 순간 전용 — task 페르소나(조작) 우회. 조건 무관(통제 = 4조건 동일).
+// transcript는 그대로 줘서 직전 맥락에 맞춰 답하게 함. cue 주입 없음.
+export const SOCIAL_PROMPT = `You are Alex, a warm, easygoing member of this team chat. Someone just said something social or off-task — a greeting, a bit of small talk, or a side comment. Reply to it briefly and naturally, in the flow of what was just said, the way a real person would in a group chat. Keep it to one short line. Don't bring up the candidates or the selection task unless they did.`;
+
 //전체 세션 메시지를 seq 순서대로 sender: content transcript로 직렬화
 //줄바꿈/연속 공백은 단일 공백으로 치환 (transcript 라인 무결성)
 export async function buildUserPrompt(sessionId: string): Promise<string> {
