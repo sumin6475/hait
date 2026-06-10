@@ -33,6 +33,16 @@ const SILENCE_TRIGGER: Trigger = { name: "long-silence", shouldFire: () => false
 const PEER_MEDIATION_FLOOR_K = 5; // peer mediation 연속 억제 상한 — 이만큼 연속 묵으면 1회 open_floor로 풀어줌
 const peerMediationStreak = new Map<string, number>(); // sessionCode → 연속 peer-mediation 억제 횟수
 const PEER_FLOOR_TRIGGER: Trigger = { name: "peer-mediation-floor", shouldFire: () => false };
+// ── Step 21: judge 개입 이력 (soft anti-repeat용) ──────────────────
+// GroupGPT(Shen et al. 2026)의 judge 입력 포맷 이식 — 직전 개입 reason을 judge가 보게 한다.
+const RECENT_REASONS_K = 4; // judge에 보여줄 최근 발화 reason 개수
+const recentReasons = new Map<string, string[]>(); // sessionCode → 오래된→최신 (최대 K)
+function pushReason(sessionCode: string, reason: string) {
+  const arr = recentReasons.get(sessionCode) ?? [];
+  arr.push(reason);
+  while (arr.length > RECENT_REASONS_K) arr.shift();
+  recentReasons.set(sessionCode, arr);
+}
 
 async function insertLeaderOpening(
   io: IO,
@@ -135,6 +145,7 @@ async function maybeAITurn(
   if (!ctx.lastMessageIsAI && ADDRESS_RE.test(ctx.lastMessageText)) {
     console.log(`[gate] address (session=${sessionCode})`);
     peerMediationStreak.set(sessionCode, 0); // 실제 발화 → 연속 억제 끊김 (Step 16/B-3)
+    pushReason(sessionCode, "directed_followup"); // Step 21
     await handleAITurn(io, sessionCode, sessionId, ADDRESS_TRIGGER, ctx, conditionCode, {
       reason: "directed_followup",
     });
@@ -154,6 +165,7 @@ async function maybeAITurn(
       const reason = computeCue({ messages: win.cue, phase: "main" });
       console.log(`[gate] long-silence safety (session=${sessionCode})`);
       peerMediationStreak.set(sessionCode, 0); // 실제 발화 → 연속 억제 끊김 (Step 16/B-3)
+      pushReason(sessionCode, reason); // Step 21
       await handleAITurn(io, sessionCode, sessionId, SILENCE_TRIGGER, ctx, conditionCode, {
         reason,
       });
@@ -163,7 +175,11 @@ async function maybeAITurn(
 
   // ④ push = 개입 judge (조건-블라인드)
   const win = await loadWindow(sessionId);
-  const decision = await judgeIntervention(win.labeled, ctx.messagesSinceLastAI);
+  const decision = await judgeIntervention(
+    win.labeled,
+    ctx.messagesSinceLastAI,
+    recentReasons.get(sessionCode) ?? [],
+  );
   if (decision === null) {
     const fired = await evaluateTriggers(ctx);
     if (fired) {
@@ -193,12 +209,14 @@ async function maybeAITurn(
       console.log(
         `[gate] peer mediation floor reached (streak=${streak}) → remap to open_floor (session=${sessionCode})`,
       );
+      pushReason(sessionCode, "open_floor"); // Step 21
       await handleAITurn(io, sessionCode, sessionId, PEER_FLOOR_TRIGGER, ctx, conditionCode, {
         reason: "open_floor",
       });
       return;
     }
     peerMediationStreak.set(sessionCode, 0); // mediation 억제 통과 = 실제 발화 확정 → 연속 억제 끊김 (Step 16/B-3)
+    pushReason(sessionCode, decision.reason); // Step 21 — judge 발화 전부 (social/react/task 공통)
     if (decision.reason === "social") {
       // social: 전용 SOCIAL_PROMPT로 분기 (task cue 미주입, 조건 무관 통제). transcript로 맥락 반영.
       await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
@@ -249,6 +267,7 @@ function stopPullEvalution(sessionCode: string) {
   closingDone.delete(sessionCode);
   openingDone.delete(sessionCode);
   peerMediationStreak.delete(sessionCode);
+  recentReasons.delete(sessionCode);
 }
 
 export function registerSocketHandlers(io: IO) {

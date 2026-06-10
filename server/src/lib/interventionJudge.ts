@@ -33,14 +33,22 @@ Check these in order; the FIRST one that clearly holds decides the output:
 
 Cases 1 and 2 are the ONLY situations where Alex may voice a candidate opinion (its read, a comparison, a preference). Outside them Alex must NOT volunteer an opinion, even if it could — mediation, react, and social are lighter, non-opinion moves, so they may fire outside cases 1–2.
 
-You are told how many messages have passed since Alex last spoke. If that number is 1, output speak=false unless Alex was directly addressed (case 1). If it is small, lean hard toward silence unless Alex was directly addressed. Prefer react or silence over volunteering an opinion. Output JSON only.`;
+You are told how many messages have passed since Alex last spoke. If that number is 1, output speak=false unless Alex was directly addressed (case 1). If it is small, lean hard toward silence unless Alex was directly addressed. Prefer react or silence over volunteering an opinion.
+
+You are also shown your own recent intervention reasons. The history never changes which rule matches — always classify the current moment with the ordered checklist above first. Then apply one repeat check: if the matched reason is build_on, mediation, or open_floor, AND it is exactly the same reason as your most recent intervention (the last item in the list), AND the people are still saying essentially what they were saying before, output speak=false instead — do not re-make the move you just made. If the matched reason differs from your most recent intervention, speak as normal. This check never applies to directed_followup, react, or social — in particular, always answer when Alex is directly addressed.
+
+Output JSON only.`;
 
 export async function judgeIntervention(
   transcript: { speaker: string; content: string }[],
   msgsSinceAlex: number,
+  recentReasons: string[] = [], // Step 21 — 최근 발화 reason 이력 (soft anti-repeat)
 ): Promise<JudgeDecision | null> {
   const lines = transcript.map((t) => `${t.speaker}: ${t.content}`).join("\n");
-  const user = `Messages since Alex last spoke: ${msgsSinceAlex}\n\nRecent chat:\n${lines}\n\nDecide now. Output JSON only.`;
+  const hist = recentReasons.length
+    ? `\nYour own recent interventions (oldest→newest): ${recentReasons.join(", ")}.`
+    : "";
+  const user = `Messages since Alex last spoke: ${msgsSinceAlex}${hist}\n\nRecent chat:\n${lines}\n\nDecide now. Output JSON only.`;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), JUDGE_TIMEOUT_MS);
   try {
