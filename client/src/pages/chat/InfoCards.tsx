@@ -5,10 +5,11 @@ import type { InfoCard, Candidate } from "@/types";
 import { FileText, ThumbsUp, ThumbsDown } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ChevronDown } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
-import seedrandom from "seedrandom";
 import { markProgress } from "@/lib/api";
+
+const CANDIDATES: Candidate[] = ["A", "B", "C", "D"]; // infocard 섹션 고정 순서 (셔플 없음)
 
 const candidateColors: Record<Candidate, string> = {
   A: "bg-chart-1/15 text-chart-1",
@@ -89,25 +90,13 @@ const InfoCards = () => {
   }
   const allCards = [...sharedInfoCards, ...exclusiveCards];
 
-  const grouped = (["A", "B", "C", "D"] as Candidate[]).reduce(
+  const grouped = CANDIDATES.reduce(
     (acc, c) => {
       acc[c] = allCards.filter((card) => card.candidate === c);
       return acc;
     },
     {} as Record<Candidate, InfoCard[]>,
   );
-
-  //participantCode로 시드로 후보 순서 셔플 (같은 참가자는 항상 같은 순서로 보기)
-  const candidateOrder = useMemo(() => {
-    const rng = seedrandom(participantCode);
-    const arr: Candidate[] = ["A", "B", "C", "D"];
-    //Fisher-Yates 셔플 알고리즘
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }, [participantCode]);
 
   const handleContinue = () => {
     if (participantCode) {
@@ -140,7 +129,7 @@ const InfoCards = () => {
           </p>
         </div>
         <div className="space-y-4">
-          {candidateOrder.map((c) => (
+          {CANDIDATES.map((c) => (
             <CandidateSection key={c} candidate={c} cards={grouped[c]} />
           ))}
         </div>
