@@ -135,11 +135,16 @@ const CUE_BASE: Record<"open_floor" | "build_on" | "directed_followup" | "mediat
 };
 const STRATEGY_TAIL = {
   xai: " Frame your point as a brief comparison with your reasoning.",
-  aci: " End by drawing the team out with a question.",
+  // leader: 전체 팀을 끌어내며 다음에 볼 것을 정하는 질문 (agenda-setting)
+  aci_leader: " End by drawing the team out with a question that steers what to look at next.",
+  // peer: 지금 스레드/본인이 확신 없는 지점에 한정 — 한 사람을 그 구체적 지점에서 끌어낸다 (agenda-setting 아님)
+  aci_peer:
+    " End with a question that stays on the point being discussed right now — draw one teammate out on that specific thread, or check whether they have evidence on something you're unsure of, the way a curious equal would.",
 } as const;
 
-function strategyOf(c: ConditionCode): "xai" | "aci" {
-  return c === "C1" || c === "C2" ? "xai" : "aci";
+function tailKeyOf(c: ConditionCode): keyof typeof STRATEGY_TAIL {
+  if (c === "C1" || c === "C2") return "xai"; // xai (peer/leader 동일)
+  return c === "C4" ? "aci_leader" : "aci_peer"; // aci: C4 leader / C3 peer
 }
 
 // cue 스니펫: peer는 mediation 미지원(라우팅에서 차단 — 방어적으로 open_floor로 폴백).
@@ -148,7 +153,7 @@ export function buildCueSnippet(cue: SpeakingReason, conditionCode: ConditionCod
   let key: keyof typeof CUE_BASE =
     cue === "build_on" || cue === "directed_followup" || cue === "mediation" ? cue : "open_floor";
   if (key === "mediation" && isPeer) key = "open_floor"; // 방어적(정상 경로에선 차단됨)
-  return CUE_BASE[key] + STRATEGY_TAIL[strategyOf(conditionCode)];
+  return CUE_BASE[key] + STRATEGY_TAIL[tailKeyOf(conditionCode)];
 }
 
 // task 턴 시스템 프롬프트 = compiled + OUTPUT_DISCIPLINE + tally(현재 상태, Step 14a) + 이번 cue 스니펫(최종 블록)
