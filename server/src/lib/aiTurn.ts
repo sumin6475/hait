@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, buildSummaryPrompt, SOCIAL_PROMPT } from "./prompts.js";
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, SOCIAL_PROMPT } from "./prompts.js";
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
 import { computeTally, formatTally } from "./poolingTally.js";
@@ -24,7 +24,7 @@ export async function handleAITurn(
   trigger: Trigger,
   ctx: SessionContext,
   conditionCode: ConditionCode,
-  opts?: { closing?: boolean; reason?: SpeakingReason; social?: boolean; react?: boolean; summary?: boolean },
+  opts?: { closing?: boolean; reason?: SpeakingReason; social?: boolean; react?: boolean },
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
@@ -50,12 +50,11 @@ export async function handleAITurn(
     // cue/프롬프트 분기 — closing(전용·기록"closing") / social·react(전용·기록"social"/"react") / main(transcript로 계산)
     const isSocial = opts?.social === true;
     const isReact = opts?.react === true;
-    const isSummary = opts?.summary === true;
     const cue: SpeakingReason = opts?.closing
       ? "closing"
       : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
 
-    // tally 주입 (Step 14a) — task/summary 턴만 (social/react/closing은 의견 턴이 아님). Alex-시점 on-table 집계.
+    // tally 주입 (Step 14a) — task 턴만 (social/react/closing은 의견 턴이 아님). Alex-시점 on-table 집계.
     let tallyText: string | undefined;
     if (!opts?.closing && !isSocial && !isReact) {
       const session = await Session.findById(sessionId).select("revealStats").lean();
@@ -68,11 +67,9 @@ export async function handleAITurn(
         ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
         : isReact
           ? buildReactPrompt(conditionCode) // react: 전용 프롬프트 (Step 13) — 가벼운 ack, task 페르소나 우회
-          : isSummary
-            ? buildSummaryPrompt(tallyText) // summary: leader 중간정리 (Step 15/Phase 2) — tally 기반 선언형
-            : buildSystemPromptForTask(conditionCode, cue, tallyText); // Step 12 조립 + Step 14a tally
+          : buildSystemPromptForTask(conditionCode, cue, tallyText); // Step 12 조립 + Step 14a tally
     const userPrompt = buildUserPromptFromMessages(msgs); // social/react도 transcript 받음 → 직전 맥락 반영
-    const loggedCue = isSocial ? "social" : isReact ? "react" : isSummary ? "summary" : cue; // 기록용 cue
+    const loggedCue = isSocial ? "social" : isReact ? "react" : cue; // 기록용 cue (social/react는 SpeakingReason이 아니므로 분리)
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 

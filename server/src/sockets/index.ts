@@ -9,8 +9,7 @@ import { LEADER_OPENING } from "../lib/prompts.js";
 import { judgeIntervention, JUDGE_WINDOW_SIZE } from "../lib/interventionJudge.js";
 import { computeCue, ADDRESS_RE } from "../lib/computeCue.js";
 import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
-import { updateRevealStats, computeTally } from "../lib/poolingTally.js";
-import type { Cand } from "../lib/traitData.js";
+import { updateRevealStats } from "../lib/poolingTally.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { Trigger } from "../triggers/types.js";
@@ -25,11 +24,6 @@ const sessionIntervals = new Map<string, NodeJS.Timeout>();
 const sessionStartedAt = new Map<string, number>(); // sessionCode → startedAt(ms)
 const closingDone = new Set<string>(); // sessionCode (closing 1회 가드)
 const openingDone = new Set<string>(); // sessionCode (오프닝 1회 가드)
-// ── Step 15/Phase 2: leader 중간정리 마일스톤 상태 ─────────────────
-const lastSummaryLeader = new Map<string, Cand>(); // sessionCode → 직전 summary 때의 선두
-const lastSummaryAt = new Map<string, number>(); // sessionCode → 직전 summary의 lastMessageSeq
-const SUMMARY_COOLDOWN_TURNS = 4;
-const SUMMARY_TRIGGER: Trigger = { name: "summary", shouldFire: () => false };
 const CLOSING_TRIGGER: Trigger = { name: "closing", shouldFire: () => false };
 const ADDRESS_TRIGGER: Trigger = { name: "address", shouldFire: () => false };
 const JUDGE_TRIGGER: Trigger = { name: "judge", shouldFire: () => false };
@@ -125,25 +119,6 @@ async function maybeAITurn(
   // ② pre-filter: AI 발화 후 새 사람 메시지 없으면 아무것도 안 함
   if (ctx.messagesSinceLastAI < 1) return;
 
-  // ②.5 leader 중간정리 마일스톤 (Step 15/Phase 2) — push만 · leader 전용 · 선두 변화 + 쿨다운.
-  // hidden profile에선 초반 A=B=D 동률(leader=null) → 보통 C가 추월하는 순간 딱 1회 발동.
-  if (source === "push" && isLeader) {
-    const s = await Session.findById(sessionId).select("revealStats").lean();
-    const tally = computeTally((s as any)?.revealStats);
-    const prev = lastSummaryLeader.get(sessionCode);
-    const cooled =
-      ctx.lastMessageSeq - (lastSummaryAt.get(sessionCode) ?? -Infinity) >= SUMMARY_COOLDOWN_TURNS;
-    if (tally.leader !== null && tally.leader !== prev && cooled) {
-      lastSummaryLeader.set(sessionCode, tally.leader);
-      lastSummaryAt.set(sessionCode, ctx.lastMessageSeq);
-      console.log(`[gate] leader summary (session=${sessionCode}, leader=${tally.leader})`);
-      await handleAITurn(io, sessionCode, sessionId, SUMMARY_TRIGGER, ctx, conditionCode, {
-        summary: true,
-      });
-      return;
-    }
-  }
-
   if (source === "pull") {
     // ③ pull = long-silence 안전망만 (결정적, judge·messageCount 없음)
     if (
@@ -219,12 +194,10 @@ function stopPullEvalution(sessionCode: string) {
     sessionIntervals.delete(sessionCode);
     console.log(`[pull-trigger] stopped for ${sessionCode}`);
   }
-  // closing/summary 게이트 상태 정리 (메모리 누수 방지)
+  // closing 게이트 상태 정리 (메모리 누수 방지)
   sessionStartedAt.delete(sessionCode);
   closingDone.delete(sessionCode);
   openingDone.delete(sessionCode);
-  lastSummaryLeader.delete(sessionCode);
-  lastSummaryAt.delete(sessionCode);
 }
 
 export function registerSocketHandlers(io: IO) {
