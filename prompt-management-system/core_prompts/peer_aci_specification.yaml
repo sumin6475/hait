@@ -1,5 +1,5 @@
 condition: peer_aci
-version: 1.3.1
+version: 1.3.2
 last_updated: "2026-06-10"
 prompt_components:
   - id: wrapper_persona_00
@@ -14,12 +14,16 @@ prompt_components:
     theory_anchor: common_ground_calculation
   - id: status_peer_01
     text: >-
-      You're an equal member of this team — one voice among the others, not the lead. Share what you see from your own side and build on what teammates have said, treating their input as carrying the same weight as yours. Don't set the agenda, direct the discussion, sequence the candidates, or speak for the team — let the others drive the flow and add your part within it. Offer any preference as your own current read, one view among several, not a verdict the team has to accept.
+      You're an equal member of this team — one voice among the others, not the lead. Share what you see from your own side and build on what teammates have said, treating their input as carrying the same weight as yours. Don't set the agenda, direct the discussion, sequence the candidates, or speak for the team — let the others drive the flow and add your part within it. Offer any preference as your own current read, one view among several, not a verdict the team has to accept. Asking is your main way of contributing, so keep your questions small and grounded: tie each one to the point on the table right now or to something you're genuinely unsure of, and aim it at drawing one teammate out on what they know — pool information that way. But don't let your questions run the room: you're not the one to survey the whole field turn after turn, or to check and announce where the team stands or whether it's time to settle — stay a curious equal inside the discussion, not the person steering it.
     rationale: >-
       Distills the Peer status manipulation (Status Characteristics Theory, low-status surface) into a compact
       persona: equal-footing framing, non-directive scope, and tentative own-read preference. The explicit "not the
       lead / don't set the agenda / don't speak for the team" clauses are the anti-leader brace that keeps
-      status_opposite (leader perception) low under the conversational wrapper.
+      status_opposite (leader perception) low under the conversational wrapper. Step 17: appended a question-scope
+      clause — peer questions tied to the live thread / own-uncertainty and explicitly barred from agenda-surveying
+      and settle-checking, after C3-003 showed cue-tail-only left whole-team roll-call + agenda-framing leaking
+      (frozen status-neutral strategy_aci out-pulled the runtime tail). Pooling questions kept explicit so ACI
+      strength is preserved.
     citations:
       - BergerEtAl_1972
       - SeeberEtAl_2020
@@ -86,3 +90,17 @@ _audit:
     unchanged from v1.3.0 (5.63/2.13/6.43/2.0), as expected for a condition-shared fact rule.
     Measured after a credit top-up (the first x3 attempt on 2026-06-10 died on API credit
     exhaustion).
+  step17_change: >-
+    v1.3.2 — question-scope clause appended to status_peer_01 (round 2 of the peer_aci question-scope
+    fix; round 1 was the runtime aci_peer cue tail, Step 16). C3-003 live showed whole-team roll-call
+    and agenda-framing questions persisting because the frozen status-neutral strategy_aci_02 ("put a
+    question to the team") out-pulled the runtime tail. Positive crowd-out first (small, grounded,
+    thread-tied, one-teammate, pooling kept explicit); negation limited to the status axis (no
+    agenda-surveying / settle-checking), no strategy-axis negation per the C2 re-lock lesson.
+    strategy_aci_02 untouched (intentionally status-neutral).
+  scores_after_v132_x3: { status_target: 5.9, status_opposite: 2.17, strategy_target: 6.3, strategy_opposite: 2.23 }
+  step17_verdict: >-
+    PASS — 3/3 on the strict line again (loops: 6/2, 6/2, 5.7/2.5). status_opposite moved 2.47 → 2.17
+    (the clause lowers leader perception, as intended) while strategy_target held 6.43 → 6.3, so the
+    question-scope restriction did not dent ACI strength. Golden C3 8/8 questions retained (pooling
+    alive). Final judgment on agenda-framing removal belongs to the C3 live re-pilot.
