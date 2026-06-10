@@ -9,8 +9,10 @@ import { LEADER_OPENING } from "../lib/prompts.js";
 import { judgeIntervention, JUDGE_WINDOW_SIZE } from "../lib/interventionJudge.js";
 import { computeCue, ADDRESS_RE } from "../lib/computeCue.js";
 import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
-import { updateRevealStats } from "../lib/poolingTally.js";
+import { updateRevealStats, computeTally, countSurfaced } from "../lib/poolingTally.js";
+import type { Cand } from "../lib/traitData.js";
 import { allocSeq } from "../lib/seq.js";
+import type { SessionContext } from "../triggers/types.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { Trigger } from "../triggers/types.js";
@@ -33,6 +35,16 @@ const SILENCE_TRIGGER: Trigger = { name: "long-silence", shouldFire: () => false
 const PEER_MEDIATION_FLOOR_K = 5; // peer mediation 연속 억제 상한 — 이만큼 연속 묵으면 1회 open_floor로 풀어줌
 const peerMediationStreak = new Map<string, number>(); // sessionCode → 연속 peer-mediation 억제 횟수
 const PEER_FLOOR_TRIGGER: Trigger = { name: "peer-mediation-floor", shouldFire: () => false };
+// ── Step 22: leader summary (중간정리) 게이트 상태 ─────────────────
+const summaryPrevLeader = new Map<string, Cand | null>(); // 직전 체크 시 1등 (전이 감지)
+const summaryArmedLeader = new Map<string, Cand>(); // 안정성 대기 중인 새 1등 (가드②)
+const lastSummaryAtSeq = new Map<string, number>(); // 마지막 summary 시점 seq (가드③ 쿨다운)
+const lastSummaryLeader = new Map<string, Cand>(); // 마지막 summary가 선언한 1등 (wobble 컨텍스트·재정리 방지)
+const SUMMARY_TRIGGER: Trigger = { name: "summary", shouldFire: () => false };
+const SUMMARY_MIN_SURFACED = 8; // ① 표면화된 distinct trait 최소 (총 40 중) — 초반 성급 차단
+const SUMMARY_COOLDOWN_MSGS = 8; // ③ 마지막 summary 후 최소 사람+AI 메시지 수 (≈4~5턴)
+// ② 안정성 = "한 박자" = 전이 후 다음 체크에도 같은 1등이면 발동 (armedLeader 메커니즘)
+
 // ── Step 21: judge 개입 이력 (soft anti-repeat용) ──────────────────
 // GroupGPT(Shen et al. 2026)의 judge 입력 포맷 이식 — 직전 개입 reason을 judge가 보게 한다.
 const RECENT_REASONS_K = 4; // judge에 보여줄 최근 발화 reason 개수
@@ -111,6 +123,78 @@ async function loadWindow(sessionId: string) {
   };
 }
 
+// 최근(Alex 발화 이후) 미답 호명 스캔 (Step 22/A-4, thin) — 호명이 마지막 메시지면 address fast-path가
+// 먼저 잡으므로, 이 스캔은 "호명 뒤에 다른 사람 메시지가 와서 호명이 마지막이 아닌" 엣지 보강.
+async function hasUnansweredAddress(sessionId: string): Promise<boolean> {
+  const win = await loadWindow(sessionId);
+  const msgs = win.cue;
+  let lastAi = -1;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i]!.sender === "ai") {
+      lastAi = i;
+      break;
+    }
+  }
+  return msgs.slice(lastAi + 1).some((m) => m.sender !== "ai" && ADDRESS_RE.test(m.content));
+}
+
+// ── Step 22: leader summary 게이트 (leader 전용, judge 우회·결정적) ──
+// 전이 = computeTally().leader가 단독(non-null)이고 직전 체크와 다름. 가드: ①충분히 쌓임 ②한 박자 안정 ③쿨다운 + A-4 양보.
+// pre-filter 뒤에서 호출되므로 직전 메시지는 항상 사람 → handleAITurn 더블포스트 가드를 그대로 존중(예외 없음).
+async function maybeLeaderSummary(
+  io: IO,
+  sessionCode: string,
+  sessionId: string,
+  conditionCode: ConditionCode,
+  ctx: SessionContext,
+): Promise<boolean> {
+  const sess = await Session.findById(sessionId).select("revealStats").lean();
+  const rs = (sess as any)?.revealStats;
+  const cur = computeTally(rs).leader; // Cand | null
+
+  const prev = summaryPrevLeader.get(sessionCode) ?? null;
+  summaryPrevLeader.set(sessionCode, cur); // 매 체크 갱신
+
+  // 전이 후보: 현재 단독 1등이고, 직전과 다름 (T2: 후보교체 / T4: 동률→단독)
+  const isTransition = cur !== null && cur !== prev;
+  if (!isTransition) {
+    summaryArmedLeader.delete(sessionCode);
+    return false;
+  }
+
+  // 가드② 안정성("한 박자"): 같은 새 1등이 연속 2회 확인돼야 발동
+  if (summaryArmedLeader.get(sessionCode) !== cur) {
+    summaryArmedLeader.set(sessionCode, cur); // 이번엔 무장만, 발동 X
+    return false;
+  }
+
+  // 가드① 충분히 쌓임
+  if (countSurfaced(rs) < SUMMARY_MIN_SURFACED) return false;
+
+  // 가드③ 쿨다운
+  const lastAt = lastSummaryAtSeq.get(sessionCode) ?? -Infinity;
+  if (ctx.lastMessageSeq - lastAt < SUMMARY_COOLDOWN_MSGS) return false;
+
+  // A-4 양보: 최근 미답 호명이 있으면 summary 보류 (address가 먼저 처리되게)
+  if (await hasUnansweredAddress(sessionId)) {
+    console.log(`[gate] summary deferred → unanswered address (session=${sessionCode})`);
+    return false;
+  }
+
+  // 발동
+  summaryArmedLeader.delete(sessionCode);
+  lastSummaryAtSeq.set(sessionCode, ctx.lastMessageSeq);
+  lastSummaryLeader.set(sessionCode, cur);
+  const transition = prev === null ? "T4(tie→solo)" : `T2(${prev}→${cur})`;
+  console.log(`[gate] leader summary (leader=${cur}, ${transition}, session=${sessionCode})`);
+  await handleAITurn(io, sessionCode, sessionId, SUMMARY_TRIGGER, ctx, conditionCode, {
+    summary: true,
+    summaryLeader: cur,
+    summaryTransition: transition,
+  });
+  return true;
+}
+
 // 게이트 + 개입 judge — pull·push 분리 (pull=long-silence 안전망, push=judge).
 // leader(C2/C4) 조건에서 토론 종료 CLOSING_LEAD_MS 전부터 일반 트리거를 차단하고 closing 턴 1회.
 async function maybeAITurn(
@@ -148,12 +232,19 @@ async function maybeAITurn(
     pushReason(sessionCode, "directed_followup"); // Step 21
     await handleAITurn(io, sessionCode, sessionId, ADDRESS_TRIGGER, ctx, conditionCode, {
       reason: "directed_followup",
+      recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
     });
     return;
   }
 
   // ② pre-filter: AI 발화 후 새 사람 메시지 없으면 아무것도 안 함
   if (ctx.messagesSinceLastAI < 1) return;
+
+  // ②.5 [Step 22] leader summary 게이트 (leader 전용, judge 우회·결정적)
+  if (isLeader) {
+    const fired = await maybeLeaderSummary(io, sessionCode, sessionId, conditionCode, ctx);
+    if (fired) return; // summary 발화함 → 이번 사이클 종료
+  }
 
   if (source === "pull") {
     // ③ pull = long-silence 안전망만 (결정적, judge·messageCount 없음)
@@ -168,6 +259,7 @@ async function maybeAITurn(
       pushReason(sessionCode, reason); // Step 21
       await handleAITurn(io, sessionCode, sessionId, SILENCE_TRIGGER, ctx, conditionCode, {
         reason,
+        recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
       });
     }
     return;
@@ -184,7 +276,9 @@ async function maybeAITurn(
     const fired = await evaluateTriggers(ctx);
     if (fired) {
       peerMediationStreak.set(sessionCode, 0); // 실제 발화 → 연속 억제 끊김 (Step 16/B-3)
-      await handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode);
+      await handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode, {
+        recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
+      });
     }
     return;
   }
@@ -230,6 +324,7 @@ async function maybeAITurn(
     } else {
       await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
         reason: decision.reason,
+        recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
       });
     }
   } else {
@@ -268,6 +363,10 @@ function stopPullEvalution(sessionCode: string) {
   openingDone.delete(sessionCode);
   peerMediationStreak.delete(sessionCode);
   recentReasons.delete(sessionCode);
+  summaryPrevLeader.delete(sessionCode);
+  summaryArmedLeader.delete(sessionCode);
+  lastSummaryAtSeq.delete(sessionCode);
+  lastSummaryLeader.delete(sessionCode);
 }
 
 export function registerSocketHandlers(io: IO) {

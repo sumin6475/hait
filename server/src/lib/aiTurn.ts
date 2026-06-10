@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, SOCIAL_PROMPT } from "./prompts.js";
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, buildSummaryPrompt, SOCIAL_PROMPT } from "./prompts.js";
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
 import { computeTally, formatTally } from "./poolingTally.js";
@@ -27,7 +27,16 @@ export async function handleAITurn(
   trigger: Trigger,
   ctx: SessionContext,
   conditionCode: ConditionCode,
-  opts?: { closing?: boolean; reason?: SpeakingReason; social?: boolean; react?: boolean },
+  opts?: {
+    closing?: boolean;
+    reason?: SpeakingReason;
+    social?: boolean;
+    react?: boolean;
+    summary?: boolean; // Step 22: leader 중간정리 (전용 프롬프트, tally/cue 미주입)
+    summaryLeader?: string; // summary가 선언할 현재 1등
+    summaryTransition?: string; // 전이 기록 (AIIntervention.why로 영속)
+    recentSummaryLeader?: string; // Step 22/C-2: 직전 summary가 선언한 1등 (task 턴 wobble 가드)
+  },
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
@@ -50,29 +59,36 @@ export async function handleAITurn(
     }
     const msgs = allMessages.map((m) => ({ sender: m.sender, content: m.content }));
 
-    // cue/프롬프트 분기 — closing(전용·기록"closing") / social·react(전용·기록"social"/"react") / main(transcript로 계산)
+    // cue/프롬프트 분기 — closing/summary(전용) / social·react(전용) / main(transcript로 계산)
     const isSocial = opts?.social === true;
     const isReact = opts?.react === true;
+    const isSummary = opts?.summary === true;
     const cue: SpeakingReason = opts?.closing
       ? "closing"
       : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
 
-    // tally 주입 (Step 14a) — task 턴만 (social/react/closing은 의견 턴이 아님). Alex-시점 on-table 집계.
+    // tally 주입 (Step 14a) — task 턴만 (social/react/closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
     let tallyText: string | undefined;
-    if (!opts?.closing && !isSocial && !isReact) {
+    if (!opts?.closing && !isSocial && !isReact && !isSummary) {
       const session = await Session.findById(sessionId).select("revealStats").lean();
       tallyText = formatTally(computeTally((session as any)?.revealStats));
     }
 
-    const systemPrompt = opts?.closing
+    let systemPrompt = opts?.closing
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
       : isSocial
         ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
         : isReact
           ? buildReactPrompt(conditionCode) // react: 전용 프롬프트 (Step 13) — 가벼운 ack, task 페르소나 우회
-          : buildSystemPromptForTask(conditionCode, cue, tallyText); // Step 12 조립 + Step 14a tally
+          : isSummary
+            ? buildSummaryPrompt(conditionCode, opts!.summaryLeader!) // summary: leader 중간정리 (Step 22) — 선언형, tally/cue 미주입
+            : buildSystemPromptForTask(conditionCode, cue, tallyText); // Step 12 조립 + Step 14a tally
+    // Step 22/C-2: 직전 summary로 선언한 1등과의 일관성 한 줄 (task 턴만, wobble 보강 — 주 가드는 tally)
+    if (!opts?.closing && !isSocial && !isReact && !isSummary && opts?.recentSummaryLeader) {
+      systemPrompt += `\n\n[Moments ago you told the team ${opts.recentSummaryLeader} is looking strongest right now — stay consistent with that unless the table has genuinely shifted.]`;
+    }
     const userPrompt = buildUserPromptFromMessages(msgs); // social/react도 transcript 받음 → 직전 맥락 반영
-    const loggedCue = isSocial ? "social" : isReact ? "react" : cue; // 기록용 cue (social/react는 SpeakingReason이 아니므로 분리)
+    const loggedCue = isSocial ? "social" : isReact ? "react" : isSummary ? "summary" : cue; // 기록용 cue
 
     console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 
@@ -83,8 +99,9 @@ export async function handleAITurn(
     const commonMeta = {
       sessionId,
       turnIndex: ctx.lastMessageSeq,
-      triggerReason: opts?.closing ? "closing" : trigger.name, // provenance
-      cue: loggedCue, // Step 6/G·R5 + Step 9/P2: provenance (social이면 "social", 그 외 task cue/closing)
+      triggerReason: opts?.closing ? "closing" : trigger.name, // provenance (summary는 trigger.name="summary")
+      cue: loggedCue, // Step 6/G·R5 + Step 9/P2: provenance (social이면 "social", 그 외 task cue/closing/summary)
+      why: opts?.summaryTransition, // Step 22/D: summary 전이 기록 (예: "T2(A→C)") — S20 why 필드 재사용
       model: result.model,
       prompt: userPrompt,
     };

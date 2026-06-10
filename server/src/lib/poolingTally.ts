@@ -58,6 +58,16 @@ export function computeTally(revealStats: any): Tally {
   return { rows, leader };
 }
 
+// 표면화된 distinct trait 총수 (사람 revealedIds ∪ AI aiSurfacedIds) — summary 게이트 가드① (Step 22)
+export function countSurfaced(revealStats: any): number {
+  const ids = new Set<string>();
+  for (const c of CANDS) {
+    for (const id of revealStats?.byCandidate?.[c]?.revealedIds ?? []) ids.add(id);
+  }
+  for (const id of revealStats?.aiSurfacedIds ?? []) ids.add(id);
+  return ids.size;
+}
+
 // (c) 포맷: task 턴 주입 블록. 숫자는 "읽고 추론"용 — 발화 금지(OUTPUT_DISCIPLINE와 양립).
 export function formatTally(t: Tally): string {
   const r = t.rows;

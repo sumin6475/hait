@@ -191,6 +191,22 @@ export function buildClosingPrompt(conditionCode: ConditionCode): string {
   return p;
 }
 
+//=== Leader Summary 전용 프롬프트 (Step 22) ===
+// leader 전용 중간정리 — 현재 on-table 1등을 선언형으로 정리. 질문 없음, 숫자/trait수 발화 금지.
+// task 페르소나(조작) 우회 — closing처럼 전용 프롬프트. C2/C4 공통(선언형, 전략 flavor 안 탐).
+const SUMMARY_PROMPTS: Partial<Record<ConditionCode, (leader: string) => string>> = {
+  C2: (leader) =>
+    `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. Take one short turn to mark where the discussion stands right now: on what the team has put on the table so far, ${leader} is looking like the strongest fit, while the others have slipped behind or haven't caught up. State it plainly as the lead keeping the team oriented — do NOT ask a question, do NOT pick a final winner or tell them to decide, and do NOT mention any numbers or trait counts. Keep it to 1–2 sentences, in your own words.`,
+  C4: (leader) =>
+    `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. Take one short turn to mark where the discussion stands right now: on what the team has put on the table so far, ${leader} is looking like the strongest fit, while the others have slipped behind or haven't caught up. State it plainly as the lead keeping the team oriented — do NOT ask a question, do NOT pick a final winner or tell them to decide, and do NOT mention any numbers or trait counts. Keep it to 1–2 sentences, in your own words.`,
+};
+
+export function buildSummaryPrompt(conditionCode: ConditionCode, leader: string): string {
+  const f = SUMMARY_PROMPTS[conditionCode];
+  if (!f) throw new Error(`No summary prompt for "${conditionCode}" (leader-only).`);
+  return f(leader);
+}
+
 //=== React 전용 프롬프트 (Step 13) — 가벼운 사람다운 반응. task 페르소나 우회. ===
 // judge reason=react 전용 — 의견/분석/픽 금지, 한 줄 ack. leader(C2/C4)는 한 줄 방향 추가 가능.
 export function buildReactPrompt(conditionCode: ConditionCode): string {
