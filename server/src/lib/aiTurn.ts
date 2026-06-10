@@ -9,6 +9,7 @@ import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingProm
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
 import { computeTally, formatTally } from "./poolingTally.js";
+import { allocSeq } from "./seq.js";
 import type { ConditionCode } from "../types.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -98,8 +99,7 @@ export async function handleAITurn(
     }
 
     // 분기2 - 호출 성공 -> DB 저장 + broadcast
-    const lastMsg = await Message.findOne({ sessionId }).sort({ seq: -1 });
-    const nextSeq = (lastMsg?.seq ?? 0) + 1;
+    const nextSeq = await allocSeq(sessionId); // 원자 발급 (Step 18) — AI 생성 중 도착한 사람 메시지와 충돌 없음
 
     //MessageDB 저장
     const savedMessage = await Message.create({

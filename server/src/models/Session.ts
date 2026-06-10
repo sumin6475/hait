@@ -87,6 +87,8 @@ const sessionSchema = new mongoose.Schema(
     //팀 결정 (최종 의견)
     teamDecision: { type: [String], enum: ["A", "B", "C", "D"] as Candidate[], default: [] },
 
+    seqCounter: { type: Number, default: 0 }, // 메시지 seq 원자 발급용 단조 카운터 (Step 18)
+
     //캐시된 통계 — default로 byCandidate 경로를 처음부터 보장 ($addToSet 대상 경로, Step 14a)
     revealStats: {
       type: revealStatsSchema,

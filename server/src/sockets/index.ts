@@ -10,6 +10,7 @@ import { judgeIntervention, JUDGE_WINDOW_SIZE } from "../lib/interventionJudge.j
 import { computeCue, ADDRESS_RE } from "../lib/computeCue.js";
 import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
 import { updateRevealStats } from "../lib/poolingTally.js";
+import { allocSeq } from "../lib/seq.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { Trigger } from "../triggers/types.js";
@@ -43,8 +44,7 @@ async function insertLeaderOpening(
   if (openingDone.has(sessionCode)) return;
   openingDone.add(sessionCode);
 
-  const lastMsg = await Message.findOne({ sessionId }).sort({ seq: -1 });
-  const seq = (lastMsg?.seq ?? 0) + 1;
+  const seq = await allocSeq(sessionId); // 원자 발급 (Step 18)
   const msg = await Message.create({
     sessionId,
     sender: "ai",
@@ -411,9 +411,8 @@ export function registerSocketHandlers(io: IO) {
           return;
         }
 
-        //3. seq 부여 - 이 세션의 마지막 메시지 seq + 1
-        const lastMsg = await Message.findOne({ sessionId }).sort({ seq: -1 });
-        const nextSeq = (lastMsg?.seq ?? 0) + 1;
+        //3. seq 부여 - 세션 카운터에서 원자 발급 (Step 18, read-max-then-+1 레이스 제거)
+        const nextSeq = await allocSeq(sessionId);
 
         //4. DB 저장
         const savedMessage = await Message.create({
