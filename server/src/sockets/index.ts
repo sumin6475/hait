@@ -78,6 +78,7 @@ function resetMediationStreaks(sessionCode: string) {
 }
 // ── [Step 36] 종료 국면 (소진 감지 → 프로브 → Z-drip → min-게이트 close) ──
 const EXHAUSTION_NOYIELD_K = 3; // 신규 추출 0인 사람 메시지 연속 (AI 제외) → 소진 판정
+const EXHAUSTION_MIN_SURFACED = 8; // [Step 36 fix 06-13] 충분히 깔린 뒤에만 probe/drip — 인사/초반 no-yield 오발동 차단
 const EXHAUSTION_RE =
   /없\s*(어|어요|네|습니다)|이게\s*다|더\s*(이상\s*)?(없|모르)|모르겠|that'?s\s+(all|it)|nothing\s+(else|more)|i'?m\s+(out|done)/i;
 const exhaustionPhase = new Map<string, "active" | "probed" | "draining" | "closed">();
@@ -432,6 +433,8 @@ async function maybeAITurn(
           });
           return;
         }
+        // [Step 36 fix 06-13] 초반/인사 단계 오발동 차단 — surfaced가 충분히 쌓인 뒤에만 probe·drip
+        if (countSurfaced(rs) >= EXHAUSTION_MIN_SURFACED) {
         if (isLeader && phase === "active") {
           // ② PROBE (leader만 — 절차 pull은 status로 정당화). callout 머신 재사용, G가드 우회.
           exhaustionPhase.set(sessionCode, "probed");
@@ -459,7 +462,8 @@ async function maybeAITurn(
           });
           return;
         }
-        // else: Z 소진 + pre-MIN → 조용 (open-room floor가 dead-air 받침, MIN까지 대기)
+        } // [Step 36 fix] surfaced≥MIN 가드 닫기
+        // else: 초반(덜 깔림) 또는 Z 소진 → 조용 (open-room floor가 dead-air 받침, MIN까지 대기)
       }
     }
   }
