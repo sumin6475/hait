@@ -24,7 +24,7 @@ const Demographics = () => {
           console.error("[Demographics] markProgress failed:", error);
         });
       }
-      navigate("/chat/info-cards");
+      navigate("/chat/hold/infoCards");
     }
   };
 

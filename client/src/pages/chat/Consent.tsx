@@ -26,7 +26,7 @@ const Consent = () => {
           console.error("[Consent] markProgress failed:", error);
         });
       }
-      navigate("/chat/demographics");
+      navigate("/chat/hold/demographics");
     }
   };
 

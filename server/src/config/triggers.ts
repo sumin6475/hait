@@ -17,6 +17,8 @@ export const TRIGGER_CONFIG = {
 
   // 토론 총 길이 — 클라이언트 Timer(ChatRoom.tsx durationMinutes, 현재 20)와 반드시 일치. (단일소스화 추후)
   DISCUSSION_DURATION_MS: 20 * 60 * 1000,
+  // [Step 36] 이 전엔 소진 close 금지 + Exit 버튼 숨김 (클라 ChatRoom.tsx와 일치). 소진 시 프로브/Z-drip로 채움.
+  MIN_DISCUSSION_MS: 12 * 60 * 1000,
   // 종료 N ms 전부터 leader 조건은 일반 트리거 차단 + closing 1회. (쉽게 조정 가능)
   CLOSING_LEAD_MS: 60 * 1000,
 } as const;

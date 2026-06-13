@@ -26,14 +26,14 @@ const Complete = () => {
         <div>
           <h1 className="text-2xl font-semibold">Thank You!</h1>
           <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-            Your participation in the HAIT experiment is now complete. Your responses have been
+            Your participation in the experiment is now complete. Your responses have been
             recorded and will contribute to important research on human-AI collaboration.
           </p>
         </div>
         <div className="rounded-lg bg-muted/50 border p-4">
           <p className="text-xs text-muted-foreground">
             If you have any questions about this study, please contact the research team at{" "}
-            <span className="text-primary font-medium">hait-research@university.edu</span>
+            <span className="text-primary font-medium">kimsumin@umich.edu</span>
           </p>
         </div>
       </div>

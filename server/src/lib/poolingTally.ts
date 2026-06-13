@@ -1,13 +1,20 @@
 // poolingTally — revealStats 갱신($addToSet) + Alex-시점 tally 계산 + task 턴 주입 블록 포맷 (Step 14a).
 // tally = Alex의 Z(상시 보유) ∪ 표면화된 것(revealedIds) — on-table만, hidden-profile 보존, 조건 무관(통제).
 import { Session } from "../models/Session.js";
-import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
+import { ALEX_Z_IDS, ALEX_Z_UNIQUE_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 
 // (a) 갱신: 원자적 $addToSet — 동시 async 추출에 안전, dedup 자동.
 // 카운트는 저장하지 않고 읽을 때 revealedIds에서 파생한다 (read-modify-write 레이스 회피).
-export async function updateRevealStats(sessionId: string, ids: string[]): Promise<void> {
+// [Step 36] 새로 추가된 distinct id 수 반환 (no-yield 추적용). best-effort: 동시 추출이 같은 id를
+// 둘 다 'new'로 셀 수 있으나 over-count = yield 과다 = 소진 under-trigger = 안전한 방향.
+export async function updateRevealStats(sessionId: string, ids: string[]): Promise<number> {
   const valid = ids.filter((id) => TRAIT_BY_ID.has(id));
-  if (!valid.length) return;
+  if (!valid.length) return 0;
+  const sess = await Session.findById(sessionId).select("revealStats").lean();
+  const rs = (sess as any)?.revealStats;
+  const already = new Set<string>();
+  for (const c of CANDS) for (const id of rs?.byCandidate?.[c]?.revealedIds ?? []) already.add(id);
+  const newIds = new Set(valid.filter((id) => !already.has(id)));
   const add: Record<string, { $each: string[] }> = {};
   for (const id of valid) {
     const c = TRAIT_BY_ID.get(id)!.candidate;
@@ -15,6 +22,7 @@ export async function updateRevealStats(sessionId: string, ids: string[]): Promi
     (add[path] ??= { $each: [] }).$each.push(id);
   }
   await Session.updateOne({ _id: sessionId }, { $addToSet: add });
+  return newIds.size;
 }
 
 // (b) 계산: 후보별 distinct pos/neg (Z ∪ revealed). leader = 최고 pos/neg 비율, 동점이면 null.
@@ -66,6 +74,43 @@ export function countSurfaced(revealStats: any): number {
   }
   for (const id of revealStats?.aiSurfacedIds ?? []) ids.add(id);
   return ids.size;
+}
+
+// [Step 30] 후보별 깔린 정보 수(사람 revealedIds ∪ AI aiSurfaced 중 해당 후보) 최소 후보.
+// 동률 → tally 비율 낮은 쪽(덜 검증된 쪽) → 그래도 동률이면 알파벳. (C4 callout 지정 후보용, 순수 함수)
+export function leastCoveredCandidate(revealStats: any): Cand {
+  const counts = {} as Record<Cand, number>;
+  const ai: string[] = revealStats?.aiSurfacedIds ?? [];
+  for (const c of CANDS) {
+    const ids = new Set<string>(revealStats?.byCandidate?.[c]?.revealedIds ?? []);
+    for (const id of ai) if (TRAIT_BY_ID.get(id)?.candidate === c) ids.add(id);
+    counts[c] = ids.size;
+  }
+  const t = computeTally(revealStats);
+  return [...CANDS].sort(
+    (a, b) =>
+      counts[a] - counts[b] ||
+      t.rows[a].pos / t.rows[a].neg - t.rows[b].pos / t.rows[b].neg ||
+      a.localeCompare(b),
+  )[0]!;
+}
+
+// [Step 36] Alex 고유 Z 중 아직 테이블에 안 올라온 것 → 긍정 먼저, id 번호 오름차순. 없으면 null.
+// surfaced = 사람 revealedIds ∪ AI aiSurfacedIds (이미 드립한 것 제외 → 중복 드립 방지).
+export function nextUnsurfacedZ(revealStats: any): { id: string; cand: Cand } | null {
+  const surfaced = new Set<string>([
+    ...CANDS.flatMap((c) => revealStats?.byCandidate?.[c]?.revealedIds ?? []),
+    ...(revealStats?.aiSurfacedIds ?? []),
+  ]);
+  const pending = ALEX_Z_UNIQUE_IDS.filter((id) => !surfaced.has(id)).sort((a, b) => {
+    const A = TRAIT_BY_ID.get(a)!;
+    const B = TRAIT_BY_ID.get(b)!;
+    if (A.valence !== B.valence) return A.valence === "pos" ? -1 : 1; // 긍정 먼저
+    return a.localeCompare(b, undefined, { numeric: true }); // 번호 오름차순
+  });
+  if (!pending.length) return null;
+  const id = pending[0]!;
+  return { id, cand: TRAIT_BY_ID.get(id)!.candidate };
 }
 
 // (c) 포맷: task 턴 주입 블록. 숫자는 "읽고 추론"용 — 발화 금지(OUTPUT_DISCIPLINE와 양립).

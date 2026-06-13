@@ -11,7 +11,7 @@ const sections = [
   },
   {
     title: "The Correct Answer",
-    text: "The best candidate for the pilot position was Candidate C (Gamma). When all information from all team members is combined, Candidate C has the highest ratio of positive attributes (7 positive, 3 negative) compared to other candidates.",
+    text: "The best candidate for the pilot position was Candidate C. When all information from all team members is combined, Candidate C has the highest ratio of positive attributes (7 positive, 3 negative) compared to other candidates.",
   },
   {
     title: "Why This Matters",
@@ -19,7 +19,7 @@ const sections = [
   },
   {
     title: "Questions?",
-    text: "If you have any questions about this study, please contact the research team at hait-research@umich.edu",
+    text: "If you have any questions about this study, please contact the research team at kimsumin@umich.edu",
   },
 ];
 

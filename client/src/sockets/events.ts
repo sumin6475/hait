@@ -29,6 +29,8 @@ export type ServerToClientEvents = {
       content: string;
       createdAt: string;
     }>;
+    startedAt?: string | null; // [Step 26-A] 서버 기준 타이머 동기화
+    aiName?: string; // [Step 30] 조건별 AI 표시명 (CTRL은 undefined)
   }) => void;
   "waiting-update": (payload: { participantsReady: number; expected: number }) => void;
   "both-ready": (payload: { sessionCode: string }) => void;

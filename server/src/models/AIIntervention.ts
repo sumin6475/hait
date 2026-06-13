@@ -50,6 +50,10 @@ const aiInterventionSchema = new mongoose.Schema(
     //judge 사유 문자열 (stay_silent/ speak 판단 근거) — Step 20
     why: { type: String },
 
+    //[Step 30] 지목 호명 overlay — 지목 DV (leader>0 · peer=0 비교)
+    calloutTarget: { type: String },
+    calloutCand: { type: String },
+
     //API 호출 실패 시 에러 메시지
     error: { type: String, default: "" },
   },

@@ -21,7 +21,8 @@ import {
   getParticipantSlots,
 } from "../lib/codeGen.js";
 import { computePoolingDV, computeDecisionAccuracy } from "../lib/poolingDV.js";
-import type { ConditionCode, Candidate } from "../types.js";
+import { stopPullEvalution } from "../sockets/index.js"; // [Step 31-⑦] 라우트→sockets 단방향 (순환 없음)
+import { GATE_ORDER, type ConditionCode, type Candidate, type GateId } from "../types.js";
 import { STATUS_CODES } from "http";
 
 export const sessionsRouter = Router();
@@ -33,9 +34,10 @@ const VALID_CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
 //isTest 기본값 true (안전한 기본값 — 실수로 실험 번호 발급 방지)
 sessionsRouter.post("/", requireAdmin, async (req, res) => {
   try {
-    const { conditionCode, isTest = true } = req.body as {
+    const { conditionCode, isTest = true, language = "en" } = req.body as {
       conditionCode?: string;
       isTest?: boolean;
+      language?: "en" | "ko"; // [KO-PILOT]
     };
 
     if (!conditionCode || !VALID_CONDITIONS.includes(conditionCode as ConditionCode)) {
@@ -57,6 +59,7 @@ sessionsRouter.post("/", requireAdmin, async (req, res) => {
       conditionCode: cond,
       aiProfile: cond === "CTRL" ? null : "Z",
       status: "waiting",
+      language: language === "ko" ? "ko" : "en", // [KO-PILOT] 화이트리스트 — ko만 ko, 그 외 en
     });
 
     //3. participant 생성 (CTRL은 3명, 그 외는 2명)
@@ -96,16 +99,22 @@ sessionsRouter.get("/", requireAdmin, async (_req, res) => {
   try {
     const sessions = await Session.find().sort({ createdAt: -1 }).lean();
 
-    //각 세션별 참가자 수 집계 (가볍게)
+    //각 세션별 참가자 수 + 게이트 도착 집계 (Step 32 — 쿼리 수는 countDocuments 시절과 동일)
     const sessionsWithCount = await Promise.all(
       sessions.map(async (s) => {
-        const participantCount = await Participant.countDocuments({ sessionId: s._id });
+        const parts = await Participant.find({ sessionId: s._id }).select("gateArrivals").lean();
         return {
           sessionCode: s.sessionCode,
           conditionCode: s.conditionCode,
           status: s.status,
           isTest: s.sessionCode.startsWith("T-"),
-          participantCount,
+          participantCount: parts.length,
+          gates: {
+            approvals: s.gateApprovals ?? {},
+            arrivals: Object.fromEntries(
+              GATE_ORDER.map((g) => [g, parts.filter((p) => p.gateArrivals?.[g]).length]),
+            ),
+          },
           startedAt: s.startedAt,
           endedAt: s.endedAt,
           createdAt: s.createdAt,
@@ -141,6 +150,7 @@ sessionsRouter.get("/:code", requireAdmin, async (req, res) => {
         conditionCode: session.conditionCode,
         status: session.status,
         isTest: session.sessionCode.startsWith("T-"),
+        language: (session as any).language ?? "en", // [KO-PILOT] 발급 확인용
         startedAt: session.startedAt,
         endedAt: session.endedAt,
         createdAt: session.createdAt,
@@ -194,6 +204,42 @@ sessionsRouter.delete("/:code", requireAdmin, async (req, res) => {
     });
   } catch (error) {
     console.error("[DELETE /api/sessions/:code]", error);
+    res.status(500).json({ ok: false, error: String(error) });
+  }
+});
+
+//---PATCH /api/sessions/:code/gates/:gate/approve: 게이트 승인 (Step 32)---
+//연구자가 대시보드에서 클릭 — 참가자 Hold 화면 폴링이 2.5초 내 감지해 다음 단계로 전환.
+//status 가드 없음 (연구자 escape hatch — 전원 도착 규칙은 UI가 담당)
+sessionsRouter.patch("/:code/gates/:gate/approve", requireAdmin, async (req, res) => {
+  try {
+    const { code, gate } = req.params;
+    if (!GATE_ORDER.includes(gate as GateId)) {
+      return res.status(400).json({
+        ok: false,
+        error: `Invalid gate. Use one of: ${GATE_ORDER.join(", ")}`,
+      });
+    }
+
+    const session = await Session.findOne({ sessionCode: code }).lean();
+    if (!session) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+
+    //이미 승인 → 그대로 ok (멱등 — 더블클릭/동시요청 안전)
+    if (session.gateApprovals?.[gate as GateId]) {
+      return res.json({ ok: true, approvals: session.gateApprovals });
+    }
+
+    const updated = await Session.findOneAndUpdate(
+      { sessionCode: code },
+      { $set: { [`gateApprovals.${gate}`]: new Date() } },
+      { returnDocument: "after", lean: true },
+    );
+    console.log(`[approve-gate] ${gate} approved for ${code}`);
+    res.json({ ok: true, approvals: updated?.gateApprovals ?? {} });
+  } catch (error) {
+    console.error("[PATCH /api/sessions/:code/gates/:gate/approve]", error);
     res.status(500).json({ ok: false, error: String(error) });
   }
 });
@@ -266,6 +312,7 @@ sessionsRouter.patch("/:code/team-decision", async (req, res) => {
       console.log(
         `[sessions] ${code} status: in_progress -> completed (all ${expected} submitted)`,
       );
+      stopPullEvalution(session.sessionCode); // [Step 31-⑦] 5초 틱 정지 — 빈 방 long-silence 유령 발화 차단
     }
 
     res.json({

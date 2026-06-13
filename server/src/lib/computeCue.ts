@@ -23,7 +23,8 @@ const MEDIATION_RE =
 
 // AI 호명(명시). 라이브의 'AI 메시지에 직접 reply'는 Step 6에서 추가.
 // 트리거 게이트(evaluate.ts)와 공유 — 단일 소스 (Step 5/F)
-export const ADDRESS_RE = /\balex\b/i;
+// [KO-PILOT] 한국어 호명 "알렉스" 추가 — 영어 세션엔 안 나타나 무해. 제거 시 |알렉스 만 삭제.
+export const ADDRESS_RE = /\balex\b|알렉스/i;
 
 export function computeCue(input: ComputeCueInput): SpeakingReason {
   const { messages, phase } = input;

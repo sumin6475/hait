@@ -6,6 +6,13 @@ import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
 import { TRAIT_DB, TRAIT_BY_ID, type Cand } from "./traitData.js";
+import { log } from "./log.js";
+
+// ── Step 28/C: 과추출 결정적 안전망 ────────────────────────────────
+// 실측 과추출(T-C2-009 seq35 · T-C4-008 seq30·31)은 17~59자 합의 멘트에서 trait 7개 —
+// 정상 공개는 trait 2개에 120자+. 짧은 메시지에 4개+ 는 비현실적 밀도 → 드롭.
+const OVEREXTRACT_MAX_IDS = 4;
+const OVEREXTRACT_MIN_LEN = 70;
 
 const client = new OpenAI({ apiKey: config.openaiApiKey });
 const EXTRACT_MODEL = "gpt-4o-mini";
@@ -29,7 +36,7 @@ const EXTRACT_SYSTEM = `Below is the full list of known traits of four candidate
 
 ${TRAIT_LIST}
 
-You will be given one chat message from a team discussion about these candidates. Return in "surfaced" the ids of ONLY the traits this message explicitly mentions or asserts about a candidate. Paraphrases count as mentions. Do not guess or extrapolate beyond what is said. If the message denies or disputes a trait ("A is not arrogant"), that trait is NOT surfaced. Ignore opinions, preferences, and judgments that don't state a trait. If nothing matches, return an empty array. Output JSON only.`;
+You will be given one chat message from a team discussion about these candidates. Return in "surfaced" the ids of ONLY the traits this message explicitly mentions or asserts about a candidate. Paraphrases count as mentions. Do not guess or extrapolate beyond what is said. If the message denies or disputes a trait ("A is not arrogant"), that trait is NOT surfaced. Ignore opinions, preferences, and judgments that don't state a trait. If nothing matches, return an empty array. A message that only expresses agreement, endorsement, preference, or a decision about a candidate ("I can get behind C", "Locking C", "C it is", "C's really grown on me") states NO traits — return []. Return an id ONLY if that trait's content is itself stated or paraphrased in THIS message; a candidate sounding good or bad is not a trait. A message that only ASKS about a candidate or a trait — a question requesting information ("what do you have on B?", "does anyone have more on B's weak side?") — states NO traits itself; return [] unless the message also states trait content outright. Output JSON only.`;
 
 export async function extractSurfacedTraits(messageText: string): Promise<string[]> {
   const ctrl = new AbortController();
@@ -51,7 +58,15 @@ export async function extractSurfacedTraits(messageText: string): Promise<string
     clearTimeout(to);
     const p = resp.output_parsed;
     if (!p) return [];
-    return p.surfaced.filter((id) => TRAIT_BY_ID.has(id)); // 모델 환각 id 제거
+    const ids = p.surfaced.filter((id) => TRAIT_BY_ID.has(id)); // 모델 환각 id 제거
+    // [Step 28-C] 과추출 가드 — 드롭은 warn으로 가시화 (조용한 데이터 손실 방지)
+    if (ids.length >= OVEREXTRACT_MAX_IDS && messageText.length < OVEREXTRACT_MIN_LEN) {
+      log.warn(
+        `[pooling] over-extraction guard dropped ${JSON.stringify(ids)} (len=${messageText.length})`,
+      );
+      return [];
+    }
+    return ids;
   } catch {
     clearTimeout(to);
     return []; // 타임아웃/네트워크/파싱 실패 → skip (다음 메시지에 보정)

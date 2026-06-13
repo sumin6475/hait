@@ -46,6 +46,12 @@ const revealStatsSchema = new mongoose.Schema(
   { _id: false },
 );
 
+//게이트별 타임스탬프 (Step 32) — Session.gateApprovals / Participant.gateArrivals 공용 모양
+const gateDatesSchema = new mongoose.Schema(
+  { consent: Date, demographics: Date, infoCards: Date, waiting: Date, teamDecision: Date, debrief: Date },
+  { _id: false },
+);
+
 //세션 메타 (요약 통계)
 const metadataSchema = new mongoose.Schema(
   {
@@ -81,6 +87,9 @@ const sessionSchema = new mongoose.Schema(
       index: true,
     },
 
+    // [KO-PILOT] 파일럿 한국어 채팅 토글 — 기본 en(영어 세션 무영향)
+    language: { type: String, enum: ["en", "ko"], default: "en" },
+
     //시작/종료 시간
     startedAt: Date,
     endedAt: Date,
@@ -89,6 +98,9 @@ const sessionSchema = new mongoose.Schema(
     teamDecision: { type: [String], enum: ["A", "B", "C", "D"] as Candidate[], default: [] },
 
     seqCounter: { type: Number, default: 0 }, // 메시지 seq 원자 발급용 단조 카운터 (Step 18)
+
+    //연구자 승인 게이트 — gateId → 승인 시각 (Step 32). 미존재 = 미승인 (기존 도큐먼트 마이그레이션 불필요)
+    gateApprovals: { type: gateDatesSchema, default: () => ({}) },
 
     //팀 결정 정답성 (완료 시 1회 계산, Step 20)
     decisionAccuracy: {

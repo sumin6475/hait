@@ -5,14 +5,19 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, buildSummaryPrompt, SOCIAL_PROMPT } from "./prompts.js";
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, buildSummaryPrompt, SOCIAL_PROMPT, buildZDripPrompt, buildExhaustionClosingPrompt } from "./prompts.js"; // [Step 36] buildZDripPrompt, buildExhaustionClosingPrompt
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
 import { computeTally, formatTally } from "./poolingTally.js";
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { allocSeq } from "./seq.js";
-import type { ConditionCode } from "../types.js";
+import type { ConditionCode, ParticipantRole } from "../types.js";
+import { log } from "./log.js";
+import { transcriptLabel } from "./labels.js";
+import { buildCalloutTail } from "./prompts.js";
+import { maybeKoLang } from "./koPilot.js"; // [KO-PILOT]
+import { TRAIT_BY_ID, type Cand } from "./traitData.js"; // [Step 36] TRAIT_BY_ID
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -36,11 +41,15 @@ export async function handleAITurn(
     summaryLeader?: string; // summary가 선언할 현재 1등
     summaryTransition?: string; // 전이 기록 (AIIntervention.why로 영속)
     recentSummaryLeader?: string; // Step 22/C-2: 직전 summary가 선언한 1등 (task 턴 wobble 가드)
+    callout?: { target: string; targetRole: ParticipantRole; cand?: Cand }; // [Step 30] 지목 호명 overlay
+    zdrip?: { id: string; cand: Cand }; // [Step 36] Z-drip: 안 깐 Z 1개 (task 턴, 조건 말투 tail)
+    exhaustionClose?: boolean; // [Step 36] 소진 close (전용 프롬프트, 픽 정책)
+    closeLeader?: Cand | null; // [Step 36] close 픽: confident-solo면 후보, null이면 중립
   },
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
-    console.log(`[ai-turn] skipped: ${sessionCode} already in progress`);
+    log.debug(`[ai-turn] skipped: ${sessionCode} already in progress`);
     return;
   }
   aiTurnLock.add(sessionCode);
@@ -54,43 +63,60 @@ export async function handleAITurn(
     // 직전 push가 방금 발화했으면 중단. closing은 예외(타이머 클로징은 마지막이 AI여도 발동).
     const last = allMessages[allMessages.length - 1];
     if (!opts?.closing && last && last.senderRole === "ai") {
-      console.log(`[ai-turn] skipped: last message already AI (anti-double-post) ${sessionCode}`);
+      log.debug(`[ai-turn] skipped: last message already AI (anti-double-post) ${sessionCode}`);
       return;
     }
-    const msgs = allMessages.map((m) => ({ sender: m.sender, content: m.content }));
+    // [Step 30] transcript 라벨 = 화면 라벨 ("Alex" / "Participant X") — 지목 시 부르는 이름 일치.
+    // DB Message.sender(participantCode)는 불변 — 프롬프트 층만 변경. computeCue는 content만 사용.
+    const msgs = allMessages.map((m) => ({
+      sender: transcriptLabel(m.senderRole),
+      content: m.content,
+    }));
 
     // cue/프롬프트 분기 — closing/summary(전용) / social·react(전용) / main(transcript로 계산)
     const isSocial = opts?.social === true;
     const isReact = opts?.react === true;
     const isSummary = opts?.summary === true;
+    const isZdrip = opts?.zdrip != null; // [Step 36]
     const cue: SpeakingReason = opts?.closing
       ? "closing"
-      : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
+      : isZdrip
+        ? "open_floor" // [Step 36] zdrip은 전용 프롬프트라 cue 미사용 — 로깅/안전값만
+        : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
 
-    // tally 주입 (Step 14a) — task 턴만 (social/react/closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
+    // tally 주입 (Step 14a) — task/zdrip 턴만 (social/react/closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
     let tallyText: string | undefined;
     if (!opts?.closing && !isSocial && !isReact && !isSummary) {
       const session = await Session.findById(sessionId).select("revealStats").lean();
       tallyText = formatTally(computeTally((session as any)?.revealStats));
     }
 
-    let systemPrompt = opts?.closing
-      ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
-      : isSocial
-        ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
-        : isReact
-          ? buildReactPrompt(conditionCode) // react: 전용 프롬프트 (Step 13) — 가벼운 ack, task 페르소나 우회
-          : isSummary
-            ? buildSummaryPrompt(conditionCode, opts!.summaryLeader!) // summary: leader 중간정리 (Step 22) — 선언형, tally/cue 미주입
-            : buildSystemPromptForTask(conditionCode, cue, tallyText); // Step 12 조립 + Step 14a tally
+    let systemPrompt = opts?.exhaustionClose
+      ? buildExhaustionClosingPrompt(conditionCode, opts.closeLeader ?? null) // [Step 36] 소진 close (픽 정책 내장)
+      : opts?.closing
+        ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
+        : isZdrip
+          ? buildZDripPrompt(conditionCode, opts!.zdrip!.cand, TRAIT_BY_ID.get(opts!.zdrip!.id)!.text, tallyText) // [Step 36] Z-drip + 조건 말투 tail
+          : isSocial
+            ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
+            : isReact
+              ? buildReactPrompt(conditionCode) // react: 전용 프롬프트 (Step 13) — 가벼운 ack, task 페르소나 우회
+              : isSummary
+                ? buildSummaryPrompt(conditionCode, opts!.summaryLeader!) // summary: leader 중간정리 (Step 22) — 선언형, tally/cue 미주입
+                : buildSystemPromptForTask(conditionCode, cue, tallyText); // Step 12 조립 + Step 14a tally
     // Step 22/C-2: 직전 summary로 선언한 1등과의 일관성 한 줄 (task 턴만, wobble 보강 — 주 가드는 tally)
-    if (!opts?.closing && !isSocial && !isReact && !isSummary && opts?.recentSummaryLeader) {
+    if (!opts?.closing && !isSocial && !isReact && !isSummary && !isZdrip && opts?.recentSummaryLeader) {
       systemPrompt += `\n\n[Moments ago you told the team ${opts.recentSummaryLeader} is looking strongest right now — stay consistent with that unless the table has genuinely shifted.]`;
     }
+    // [Step 30] 지목 호명 tail — task 턴에만 (closing/social/react/summary/zdrip엔 구조적으로 옵션이 안 옴)
+    if (!opts?.closing && !isSocial && !isReact && !isSummary && !isZdrip && opts?.callout) {
+      systemPrompt += buildCalloutTail(conditionCode, opts.callout.target, opts.callout.cand);
+    }
+    systemPrompt = await maybeKoLang(systemPrompt, sessionId); // [KO-PILOT] ko 세션이면 한국어 출력 지시 append (전 분기 단일 수렴점)
     const userPrompt = buildUserPromptFromMessages(msgs); // social/react도 transcript 받음 → 직전 맥락 반영
-    const loggedCue = isSocial ? "social" : isReact ? "react" : isSummary ? "summary" : cue; // 기록용 cue
+    const loggedCue = isSocial ? "social" : isReact ? "react" : isSummary ? "summary" : isZdrip ? "zdrip" : cue; // 기록용 cue ([Step 36] zdrip)
 
-    console.log(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
+    log.debug(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 
     //AI 호출 - structured output (stateless: previous_response_id 체이닝 제거 — Step 2/E)
     const result = await callAIStructured({ systemPrompt, userPrompt });
@@ -104,11 +130,13 @@ export async function handleAITurn(
       why: opts?.summaryTransition, // Step 22/D: summary 전이 기록 (예: "T2(A→C)") — S20 why 필드 재사용
       model: result.model,
       prompt: userPrompt,
+      calloutTarget: opts?.callout?.target, // [Step 30] "Participant Y" — 지목 DV (조건 간 비교: leader>0 · peer=0)
+      calloutCand: opts?.callout?.cand, // [Step 30] C4만
     };
 
     // 분기1 - 호출 실패
     if (!result.ok) {
-      console.error(`[ai-turn] failed: (${result.reason}): ${result.error}`);
+      log.error(`[ai-turn] failed: (${result.reason}): ${result.error}`);
       await AIIntervention.create({
         ...commonMeta,
         decision: "stay_silent",
@@ -157,16 +185,16 @@ export async function handleAITurn(
     if (result.parsed.content.length >= 15) {
       void extractSurfacedTraits(result.parsed.content)
         .then((ids) => {
-          if (ids.length) console.log(`[pooling] AI surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
+          if (ids.length) log.info(`[pooling] AI surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
           return updateAiSurfaced(sessionId, ids);
         })
-        .catch((e) => console.error("[pooling] AI extract error:", e));
+        .catch((e) => log.error("[pooling] AI extract error:", e));
     }
-    console.log(
+    log.info(
       `[ai-turn] AI spoke in ${sessionCode} seq=${savedMessage.seq} latency=${result.latencyMs}ms`,
     );
   } catch (error) {
-    console.error(`[ai-turn] error: ${error}`);
+    log.error(`[ai-turn] error: ${error}`);
   } finally {
     aiTurnLock.delete(sessionCode);
   }

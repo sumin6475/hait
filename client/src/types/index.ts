@@ -31,6 +31,7 @@ export interface Participant {
   sessionId: string;
   role: ParticipantRole;
   preDiscussionChoice?: Candidate;
+  recallTest?: { A: string; B: string; C: string; D: string }; //[Step 34]
   demographics?: { age: number; gender: string; major: string };
   connectedAt?: string;
   lastSeenAt?: string;
@@ -83,6 +84,7 @@ export interface ChatMessage {
   content: string;
   timestamp: Date;
   isStreaming?: boolean;
+  senderName: string; // [Step 30] 사람: "Participant X/Y/Z" · AI: ""(렌더 시 aiName state 사용)
 }
 
 export interface InfoCard {

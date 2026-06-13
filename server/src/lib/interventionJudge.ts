@@ -5,10 +5,12 @@ import { config } from "../config.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey });
 const JUDGE_MODEL = "gpt-4o-mini";
-const JUDGE_MAX_TOKENS = 80;
+const JUDGE_MAX_TOKENS = 120; // [Step 29-A2] truncation→파싱실패(null) 여유분 — 평소 출력 ~40토큰이라 비용 영향 없음
 const JUDGE_TIMEOUT_MS = 8_000;
 const JUDGE_WINDOW = 16;
 
+// [Step 29-A1 시도 후 revert] why-first 순서(why→reason→speak)는 mini가 서사를 먼저 확정하고
+// 숫자 거리 게이트(dist=1 침묵)를 무시하게 만들어 폐기 — probe로 ×3 확인. speak-first 유지.
 const JudgeSchema = z.object({
   speak: z.boolean(),
   reason: z.enum(["directed_followup", "build_on", "open_floor", "mediation", "react", "social"]),
@@ -34,6 +36,8 @@ Check these in order; the FIRST one that clearly holds decides the output:
 Cases 1 and 2 are the ONLY situations where Alex may voice a candidate opinion (its read, a comparison, a preference). Outside them Alex must NOT volunteer an opinion, even if it could — mediation, react, and social are lighter, non-opinion moves, so they may fire outside cases 1–2.
 
 You are told how many messages have passed since Alex last spoke. If that number is 1, output speak=false unless Alex was directly addressed (case 1). If it is small, lean hard toward silence unless Alex was directly addressed. Prefer react or silence over volunteering an opinion.
+
+Consistency rule: if your "why" describes the team as stuck, going in circles, or narrowing too early, and more than 2 messages have passed since Alex last spoke, you MUST output speak=true with reason=mediation — never describe a stuck team and stay silent.
 
 You are also shown your own recent intervention reasons. The history never changes which rule matches — always classify the current moment with the ordered checklist above first. Then apply one repeat check: if the matched reason is build_on, mediation, or open_floor, AND it is exactly the same reason as your most recent intervention (the last item in the list), AND the people are still saying essentially what they were saying before, output speak=false instead — do not re-make the move you just made. If the matched reason differs from your most recent intervention, speak as normal. This check never applies to directed_followup, react, or social — in particular, always answer when Alex is directly addressed.
 

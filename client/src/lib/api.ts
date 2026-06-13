@@ -7,6 +7,8 @@
 //모든 admin API 호출은 x-admin-token 헤더 자동 포함
 //에러는 throw — React Query가 잡아서 처리
 
+import type { GateApprovals, GateId } from "./gates";
+
 const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
 const ADMIN_TOKEN = import.meta.env.VITE_ADMIN_TOKEN ?? "";
 
@@ -39,6 +41,12 @@ export interface ProgressState {
   debrief?: boolean;
   complete?: boolean;
 }
+export interface RecallTest {
+  A: string;
+  B: string;
+  C: string;
+  D: string;
+} //[Step 34]
 export interface ParticipantState {
   participantCode: string;
   role: ParticipantRole;
@@ -47,7 +55,10 @@ export interface ParticipantState {
   conditionCode: ConditionCode;
   progress: ProgressState;
   preDiscussionChoice?: Candidate | null;
+  recallTest?: RecallTest | null; //[Step 34]
   completedAt?: string | null;
+  sessionStatus: SessionStatus; // [Step 25]
+  approvals?: GateApprovals; // [Step 32] 연구자 게이트 승인 (gateId → ISO 시각, truthy만 사용)
 }
 
 export interface SessionSummary {
@@ -56,6 +67,7 @@ export interface SessionSummary {
   status: SessionStatus;
   isTest: boolean;
   participantCount: number;
+  gates: { approvals: GateApprovals; arrivals: Record<GateId, number> }; // [Step 32]
   startedAt?: string | null;
   endedAt?: string | null;
   createdAt: string;
@@ -157,6 +169,7 @@ export async function getSession(sessionCode: string): Promise<SessionDetail> {
 export async function createSession(input: {
   conditionCode: ConditionCode;
   isTest?: boolean;
+  language?: "en" | "ko"; // [KO-PILOT]
 }): Promise<CreateSessionResponse> {
   const data = await adminFetch<{ ok: true } & CreateSessionResponse>("/api/sessions", {
     method: "POST",
@@ -241,6 +254,35 @@ export async function setPreChoice(participantCode: string, choice: Candidate): 
     },
   );
   return data.preDiscussionChoice;
+}
+
+//recall test 저장 (4칸 필수) (Step 34)
+export async function setRecallTest(
+  participantCode: string,
+  recall: RecallTest,
+): Promise<RecallTest> {
+  const data = await publicFetch<{ ok: true; recallTest: RecallTest }>(
+    `/api/participants/${encodeURIComponent(participantCode)}/recall`,
+    { method: "PATCH", body: JSON.stringify({ recall }) },
+  );
+  return data.recallTest;
+}
+
+//게이트 도착 기록 — Hold 화면 마운트 시 호출 (Step 32, 멱등)
+export async function markGateArrival(participantCode: string, gate: GateId): Promise<void> {
+  await publicFetch(`/api/participants/${encodeURIComponent(participantCode)}/gate-arrival`, {
+    method: "PATCH",
+    body: JSON.stringify({ gate }),
+  });
+}
+
+//게이트 승인 — 대시보드 Approve 버튼 (Step 32, 멱등)
+export async function approveGate(sessionCode: string, gate: GateId): Promise<GateApprovals> {
+  const data = await adminFetch<{ ok: true; approvals: GateApprovals }>(
+    `/api/sessions/${encodeURIComponent(sessionCode)}/gates/${encodeURIComponent(gate)}/approve`,
+    { method: "PATCH" },
+  );
+  return data.approvals;
 }
 
 //재접속 시 현재 상태 조회

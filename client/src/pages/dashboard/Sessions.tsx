@@ -12,8 +12,10 @@ import {
   useSessionDetail,
   useCreateSession,
   useDeleteSession,
+  useApproveGate,
 } from "@/hooks/useSessions";
 import type { ConditionCode, SessionSummary } from "@/lib/api";
+import { GATES } from "@/lib/gates";
 import { cn } from "@/lib/utils";
 
 const CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
@@ -52,11 +54,12 @@ const Sessions = () => {
 
   const [selectedCondition, setSelectedCondition] = useState<ConditionCode>("C1");
   const [isTest, setIsTest] = useState(true);
+  const [koPilot, setKoPilot] = useState(false); // [KO-PILOT]
   const [detailCode, setDetailCode] = useState<string | null>(null);
 
   const handleCreate = () => {
     createMutation.mutate(
-      { conditionCode: selectedCondition, isTest },
+      { conditionCode: selectedCondition, isTest, language: koPilot ? "ko" : "en" }, // [KO-PILOT]
       {
         onSuccess: (res) => {
           //생성 직후 바로 상세 모달 열기 — 어드민이 URL 복사하기 쉽게
@@ -107,6 +110,17 @@ const Sessions = () => {
           Test session (T- prefix)
         </label>
 
+        {/* [KO-PILOT] 임시 파일럿 한국어 채팅 */}
+        <label className="flex items-center gap-2 text-sm pb-2">
+          <input
+            type="checkbox"
+            checked={koPilot}
+            onChange={(e) => setKoPilot(e.target.checked)}
+            className="rounded"
+          />
+          Korean chat (pilot)
+        </label>
+
         <button
           onClick={handleCreate}
           disabled={createMutation.isPending}
@@ -138,6 +152,9 @@ const Sessions = () => {
                   Status
                 </th>
                 <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-5 py-3">
+                  Gate
+                </th>
+                <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-5 py-3">
                   Participants
                 </th>
                 <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-5 py-3">
@@ -159,7 +176,7 @@ const Sessions = () => {
               ))}
               {sessions && sessions.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-8 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="p-8 text-center text-sm text-muted-foreground">
                     No sessions yet. Create one above.
                   </td>
                 </tr>
@@ -202,6 +219,9 @@ function SessionRow({
         {conditionLabel[session.conditionCode]}
       </td>
       <td className="px-5 py-3">{statusBadge(session.status)}</td>
+      <td className="px-5 py-3">
+        <GateCell session={session} />
+      </td>
       <td className="px-5 py-3 text-sm">
         {session.participantCount}/{max}
       </td>
@@ -219,6 +239,63 @@ function SessionRow({
         </button>
       </td>
     </tr>
+  );
+}
+
+//---게이트 셀 (Step 32) — pending 게이트 표시 + Approve / force---
+//pending 계산은 클라 config(GATES) 기준 — disabled 게이트는 건너뜀
+function GateCell({ session }: { session: SessionSummary }) {
+  const approveMutation = useApproveGate();
+
+  const pending = GATES.find((g) => g.enabled && !session.gates?.approvals?.[g.id]);
+  if (session.status === "data_ready" || !pending) {
+    return <span className="text-sm text-muted-foreground">✓</span>;
+  }
+
+  const arrived = session.gates?.arrivals?.[pending.id] ?? 0;
+  const expected = session.participantCount;
+  const allArrived = arrived === expected;
+
+  const approve = (force: boolean) => {
+    const ok = force
+      ? confirm(
+          `아직 ${arrived}/${expected}명만 도착. 강제 승인? (솔로 테스트용)`,
+        )
+      : confirm(
+          `Approve '${pending.nextLabel}' for ${session.sessionCode}? 참가자들이 즉시 다음 화면으로 넘어갑니다. 되돌릴 수 없음.`,
+        );
+    if (!ok) return;
+    approveMutation.mutate(
+      { sessionCode: session.sessionCode, gate: pending.id },
+      { onError: (e) => alert(`승인 실패: ${(e as Error).message}`) },
+    );
+  };
+
+  return (
+    <div className="flex items-center gap-2 text-sm whitespace-nowrap">
+      <span className="text-muted-foreground">
+        → {pending.nextLabel}{" "}
+        <span className={cn("font-mono text-xs", allArrived && "text-status-success")}>
+          {arrived}/{expected}
+        </span>
+      </span>
+      <button
+        onClick={() => approve(false)}
+        disabled={!allArrived || approveMutation.isPending}
+        className="rounded-md bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium disabled:opacity-40"
+      >
+        Approve
+      </button>
+      {!allArrived && (
+        <button
+          onClick={() => approve(true)}
+          disabled={approveMutation.isPending}
+          className="text-[10px] text-muted-foreground hover:text-foreground underline"
+        >
+          force
+        </button>
+      )}
+    </div>
   );
 }
 

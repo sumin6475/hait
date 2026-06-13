@@ -10,8 +10,11 @@ const POSTSURVEY_URL =
 const PostSurvey = () => {
   const navigate = useNavigate();
   const participantCode = sessionStorage.getItem("participantCode") ?? "";
+  //Condition (C1~C4|CTRL) — Qualtrics post-survey 분기 로직용 (CTRL이면 AI 관련 섹션 숨김)
+  const conditionCode =
+    sessionStorage.getItem("conditionCode") ?? sessionStorage.getItem("condition") ?? "";
 
-  const surveyLinkWithCode = `${POSTSURVEY_URL}?ParticipantCode=${encodeURIComponent(participantCode)}`;
+  const surveyLinkWithCode = `${POSTSURVEY_URL}?ParticipantCode=${encodeURIComponent(participantCode)}&Condition=${encodeURIComponent(conditionCode)}`;
 
   const handleContinue = () => {
     const confirmed = window.confirm(
@@ -24,7 +27,7 @@ const PostSurvey = () => {
           console.error("[PostSurvey] markProgress failed:", error);
         });
       }
-      navigate("/chat/debrief");
+      navigate("/chat/hold/debrief");
     }
   };
 

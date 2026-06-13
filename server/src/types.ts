@@ -24,6 +24,10 @@ export type AIDecision = "speak" | "stay_silent";
 // 정보 긍정/부정
 export type Valence = "positive" | "negative";
 
+//연구자 승인 게이트 — id는 잠금 해제하는 단계명 (Step 32)
+export type GateId = "consent" | "demographics" | "infoCards" | "waiting" | "teamDecision" | "debrief";
+export const GATE_ORDER: GateId[] = ["consent", "demographics", "infoCards", "waiting", "teamDecision", "debrief"];
+
 //참가자 진행 단계 (재접속 분기용)
 export type ProgressStep =
   | "consent"

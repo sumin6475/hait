@@ -16,13 +16,16 @@ import {
   getSession,
   createSession,
   deleteSession,
+  approveGate,
   type ConditionCode,
 } from "@/lib/api";
+import type { GateId } from "@/lib/gates";
 
 const SESSIONS_KEY = ["sessions"] as const;
 
 //세션 목록
 //refetchInterval: 5초마다 자동 갱신 (참가자 입장/상태 변화 추적)
+//라이브 운영 중 게이트 도착 반영이 더 빨라야 하면 5000→3000 조정 포인트 (Step 32)
 export function useSessionList() {
   return useQuery({
     queryKey: SESSIONS_KEY,
@@ -46,9 +49,25 @@ export function useSessionDetail(sessionCode: string | undefined) {
 export function useCreateSession() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { conditionCode: ConditionCode; isTest?: boolean }) => createSession(input),
+    mutationFn: (input: {
+      conditionCode: ConditionCode;
+      isTest?: boolean;
+      language?: "en" | "ko"; // [KO-PILOT]
+    }) => createSession(input),
     onSuccess: () => {
       //목록 캐시 무효화 → 새 세션 즉시 반영
+      qc.invalidateQueries({ queryKey: SESSIONS_KEY });
+    },
+  });
+}
+
+//게이트 승인 (Step 32)
+export function useApproveGate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ sessionCode, gate }: { sessionCode: string; gate: GateId }) =>
+      approveGate(sessionCode, gate),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: SESSIONS_KEY });
     },
   });

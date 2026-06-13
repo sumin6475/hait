@@ -73,6 +73,10 @@ const CodeEntry = () => {
 
       //sessionStorage 저장 후 분기
       parseAndStore(trimmed);
+      //[Step 26-D] 서버 state 기준으로 저장 — WaitingRoom이 읽는 "conditionCode" 키
+      //(parseAndStore는 "condition" 키라 WaitingRoom isCTRL이 항상 false였음 → AI Alex 오표시)
+      sessionStorage.setItem("conditionCode", state.conditionCode);
+      sessionStorage.setItem("assignedProfile", state.role.replace("human", ""));
       const nextPath = resolveResumePath(state);
       navigate(nextPath);
     } catch (error) {

@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import type { ChatMessage } from "@/types";
+import type { ChatMessage, ParticipantRole } from "@/types";
 import type { SenderRole } from "@/types";
+import { ROLE_LABEL } from "@/lib/labels";
 import { MessageBubble } from "@/components/chat/MessageBubble";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { Timer } from "@/components/chat/Timer";
@@ -12,14 +13,31 @@ import { socket } from "@/lib/socket";
 const ChatRoom = () => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [startTime] = useState(new Date());
+  //[Step 26-A] 서버 startedAt 기준 (session-history로 수신) — 새로고침해도 타이머 리셋 안 됨
+  const [startTime, setStartTime] = useState<Date | null>(null);
   const [myRole, setMyRole] = useState<SenderRole | null>(null);
+  //[Step 30] 조건별 AI 표시명 (session-history로 수신) — 메시지 객체에 박지 않고 렌더 시 state로 읽음
+  const [aiName, setAiName] = useState("Alex"); // 폴백 — 서버가 안 보내도 동작
+  //[Step 36] 최소 토론 12분 경과 전엔 Exit 버튼 숨김 (서버 TRIGGER_CONFIG.MIN_DISCUSSION_MS와 일치)
+  const [canExit, setCanExit] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   //auto scroll to bottom
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  //[Step 36] 서버 startedAt 기준 12분 경과 시 Exit 버튼 노출 (1초 틱)
+  useEffect(() => {
+    if (!startTime || canExit) return;
+    const MIN_DISCUSSION_MS = 12 * 60 * 1000;
+    const check = () => {
+      if (Date.now() - startTime.getTime() >= MIN_DISCUSSION_MS) setCanExit(true);
+    };
+    check();
+    const id = setInterval(check, 1000);
+    return () => clearInterval(id);
+  }, [startTime, canExit]);
 
   //connect to socket
   useEffect(() => {
@@ -67,14 +85,19 @@ const ChatRoom = () => {
     });
 
     //session history
-    socket.on("session-history", ({ messages }) => {
+    socket.on("session-history", ({ messages, startedAt, aiName }) => {
       console.log(`[chatroom] session-history: ${messages.length} messages`);
+      //[Step 26-A] 서버 시작 시각으로 타이머 동기화 (없으면 클라 시각 fallback)
+      setStartTime(startedAt ? new Date(startedAt) : new Date());
+      if (aiName) setAiName(aiName); // [Step 30] 조건별 AI 라벨
       const mapped: ChatMessage[] = messages.map((m) => ({
         id: `msg-${m.seq}`,
         sender: m.sender,
         senderRole: m.senderRole === roleHint ? "you" : m.senderRole === "ai" ? "ai" : "other",
         content: m.content,
         timestamp: new Date(m.createdAt),
+        senderName:
+          m.senderRole === "ai" ? "" : (ROLE_LABEL[m.senderRole as ParticipantRole] ?? m.sender),
       }));
       setMessages(mapped);
     });
@@ -90,6 +113,10 @@ const ChatRoom = () => {
             msg.senderRole === roleHint ? "you" : msg.senderRole === "ai" ? "ai" : "other",
           content: msg.content,
           timestamp: new Date(msg.createdAt),
+          senderName:
+            msg.senderRole === "ai"
+              ? ""
+              : (ROLE_LABEL[msg.senderRole as ParticipantRole] ?? msg.sender),
         },
       ]);
     });
@@ -118,7 +145,7 @@ const ChatRoom = () => {
   };
 
   const handleTimerExpired = () => {
-    navigate("/chat/team-decision");
+    navigate("/chat/hold/teamDecision");
   };
 
   return (
@@ -127,9 +154,15 @@ const ChatRoom = () => {
         <div className="flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-primary" />
           <span className="font-semibold">HAIT Experiment</span>
-          {myRole && <span className="text-xs text-muted-foreground ml-2">(you: {myRole})</span>}
+          {myRole && (
+            <span className="text-xs text-muted-foreground ml-2">
+              (you: {ROLE_LABEL[myRole as ParticipantRole] ?? myRole})
+            </span>
+          )}
         </div>
-        <Timer durationMinutes={20} startTime={startTime} onExpired={handleTimerExpired} />
+        {startTime && (
+          <Timer durationMinutes={20} startTime={startTime} onExpired={handleTimerExpired} />
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
@@ -137,19 +170,20 @@ const ChatRoom = () => {
           <MessageBubble
             key={msg.id}
             message={msg}
-            senderName={msg.senderRole === "ai" ? "Alex — AI Moderator" : msg.sender}
+            senderName={msg.senderRole === "ai" ? aiName : msg.senderName}
           />
         ))}
         <div ref={bottomRef} />
       </div>
 
-      {messages.length > 6 && (
+      {/*[Step 36] 12분 경과 후에만 노출 (early-close 차단) + 라벨을 소진 close 프롬프트와 일치*/}
+      {canExit && (
         <div className="px-6 py-2 flex justify-center">
           <button
-            onClick={() => navigate("/chat/team-decision")}
+            onClick={() => navigate("/chat/hold/teamDecision")}
             className="text-xs text-muted-foreground hover:text-primary transition-colors underline"
           >
-            End discussion & make team decision
+            Exit &amp; Make Team Decision
           </button>
         </div>
       )}
