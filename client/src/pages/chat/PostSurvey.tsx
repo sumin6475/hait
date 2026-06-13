@@ -17,18 +17,13 @@ const PostSurvey = () => {
   const surveyLinkWithCode = `${POSTSURVEY_URL}?ParticipantCode=${encodeURIComponent(participantCode)}&Condition=${encodeURIComponent(conditionCode)}`;
 
   const handleContinue = () => {
-    const confirmed = window.confirm(
-      "Have you finished the post-discussion survey on Qualtrics?\n\nClick OK only if you have submitted your responses.",
-    );
-    if (confirmed) {
-      //progress step 마킹
-      if (participantCode) {
-        markProgress(participantCode, "postSurvey").catch((error) => {
-          console.error("[PostSurvey] markProgress failed:", error);
-        });
-      }
-      navigate("/chat/hold/debrief");
+    //버튼 클릭 자체가 완료 확인 — window.confirm()은 "추가 대화상자 차단" 체크 시 먹통(파일럿 중 발견)이라 제거.
+    if (participantCode) {
+      markProgress(participantCode, "postSurvey").catch((error) => {
+        console.error("[PostSurvey] markProgress failed:", error);
+      });
     }
+    navigate("/chat/hold/debrief");
   };
 
   return (

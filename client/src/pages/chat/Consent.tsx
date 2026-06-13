@@ -16,18 +16,14 @@ const Consent = () => {
   const consentLinkWithCode = `${CONSENT_URL}?ParticipantCode=${encodeURIComponent(participantCode)}`;
 
   const handleContinue = () => {
-    const confirmed = window.confirm(
-      "Have you finished the consent form on Qualtrics?\n\nClick OK only if you have submitted your consent.",
-    );
-    if (confirmed) {
-      //progress step 마킹
-      if (participantCode) {
-        markProgress(participantCode, "consent").catch((error) => {
-          console.error("[Consent] markProgress failed:", error);
-        });
-      }
-      navigate("/chat/hold/demographics");
+    //버튼 클릭 자체가 완료 확인 — 별도 window.confirm()은 브라우저 "추가 대화상자 차단" 체크 시
+    //영구히 false 반환되어 버튼이 먹통이 됨(파일럿 중 발견). 그래서 제거하고 바로 진행.
+    if (participantCode) {
+      markProgress(participantCode, "consent").catch((error) => {
+        console.error("[Consent] markProgress failed:", error);
+      });
     }
+    navigate("/chat/hold/demographics");
   };
 
   return (
