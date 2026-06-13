@@ -6,7 +6,7 @@
 //  - 세션 클릭 → 참가자 URL 보기/복사 (모달)
 //  - 세션 삭제
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useSessionList,
   useSessionDetail,
@@ -246,6 +246,11 @@ function SessionRow({
 //pending 계산은 클라 config(GATES) 기준 — disabled 게이트는 건너뜀
 function GateCell({ session }: { session: SessionSummary }) {
   const approveMutation = useApproveGate();
+  // 2단계 인라인 확인 — 1차 클릭 arm, 2차 클릭 실행. 브라우저 confirm()을 안 써서 "대화상자 차단"으로
+  // 영구 비활성화될 수 없음(기존 버그 원인). 4초 후 자동 해제.
+  const [armed, setArmed] = useState<null | "approve" | "force">(null);
+  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (armTimer.current) clearTimeout(armTimer.current); }, []);
 
   const pending = GATES.find((g) => g.enabled && !session.gates?.approvals?.[g.id]);
   if (session.status === "data_ready" || !pending) {
@@ -256,19 +261,23 @@ function GateCell({ session }: { session: SessionSummary }) {
   const expected = session.participantCount;
   const allArrived = arrived === expected;
 
-  const approve = (force: boolean) => {
-    const ok = force
-      ? confirm(
-          `아직 ${arrived}/${expected}명만 도착. 강제 승인? (솔로 테스트용)`,
-        )
-      : confirm(
-          `Approve '${pending.nextLabel}' for ${session.sessionCode}? 참가자들이 즉시 다음 화면으로 넘어갑니다. 되돌릴 수 없음.`,
-        );
-    if (!ok) return;
-    approveMutation.mutate(
-      { sessionCode: session.sessionCode, gate: pending.id },
-      { onError: (e) => alert(`승인 실패: ${(e as Error).message}`) },
-    );
+  const disarm = () => {
+    if (armTimer.current) clearTimeout(armTimer.current);
+    setArmed(null);
+  };
+  // 같은 버튼 두 번째 클릭 = 실행. 첫 클릭 = arm (4초 타이머).
+  const click = (which: "approve" | "force") => {
+    if (armed === which) {
+      disarm();
+      approveMutation.mutate(
+        { sessionCode: session.sessionCode, gate: pending.id },
+        { onError: (e) => alert(`승인 실패: ${(e as Error).message}`) },
+      );
+      return;
+    }
+    setArmed(which);
+    if (armTimer.current) clearTimeout(armTimer.current);
+    armTimer.current = setTimeout(() => setArmed(null), 4000);
   };
 
   return (
@@ -280,19 +289,39 @@ function GateCell({ session }: { session: SessionSummary }) {
         </span>
       </span>
       <button
-        onClick={() => approve(false)}
+        onClick={() => click("approve")}
         disabled={!allArrived || approveMutation.isPending}
-        className="rounded-md bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium disabled:opacity-40"
+        title={
+          armed === "approve"
+            ? "한 번 더 누르면 즉시 승인 — 참가자들이 다음 화면으로 넘어감 (되돌릴 수 없음)"
+            : `Approve '${pending.nextLabel}'`
+        }
+        className={cn(
+          "rounded-md px-2.5 py-1 text-xs font-medium disabled:opacity-40",
+          armed === "approve"
+            ? "bg-status-warning text-white"
+            : "bg-primary text-primary-foreground",
+        )}
       >
-        Approve
+        {armed === "approve" ? "Confirm?" : "Approve"}
       </button>
       {!allArrived && (
         <button
-          onClick={() => approve(true)}
+          onClick={() => click("force")}
           disabled={approveMutation.isPending}
-          className="text-[10px] text-muted-foreground hover:text-foreground underline"
+          title={
+            armed === "force"
+              ? `한 번 더 누르면 ${arrived}/${expected} 강제 승인 (솔로 테스트용)`
+              : "force approve (도착 미달)"
+          }
+          className={cn(
+            "text-[10px] underline",
+            armed === "force"
+              ? "text-status-warning font-medium"
+              : "text-muted-foreground hover:text-foreground",
+          )}
         >
-          force
+          {armed === "force" ? "force?" : "force"}
         </button>
       )}
     </div>
