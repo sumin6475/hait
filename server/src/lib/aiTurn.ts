@@ -5,10 +5,10 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildReactPrompt, buildSummaryPrompt, SOCIAL_PROMPT, buildZDripPrompt, buildExhaustionClosingPrompt } from "./prompts.js"; // [Step 36] buildZDripPrompt, buildExhaustionClosingPrompt
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildSummaryPrompt } from "./prompts.js";
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
-import { computeTally, formatTally } from "./poolingTally.js";
+import { computeTally, formatTally, underCoveredCandidates } from "./poolingTally.js";
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { allocSeq } from "./seq.js";
@@ -17,7 +17,8 @@ import { log } from "./log.js";
 import { transcriptLabel } from "./labels.js";
 import { buildCalloutTail } from "./prompts.js";
 import { maybeKoLang } from "./koPilot.js"; // [KO-PILOT]
-import { TRAIT_BY_ID, type Cand } from "./traitData.js"; // [Step 36] TRAIT_BY_ID
+import { type Cand } from "./traitData.js";
+import { TRIGGER_CONFIG } from "../config/triggers.js"; // [Step 37] DEPTH_MIN_PER_CAND
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -35,16 +36,11 @@ export async function handleAITurn(
   opts?: {
     closing?: boolean;
     reason?: SpeakingReason;
-    social?: boolean;
-    react?: boolean;
     summary?: boolean; // Step 22: leader 중간정리 (전용 프롬프트, tally/cue 미주입)
-    summaryLeader?: string; // summary가 선언할 현재 1등
+    summaryLeader?: Cand | null; // [Step 37] summary가 선언할 현재 1등 (null=동률→박빙 분기)
     summaryTransition?: string; // 전이 기록 (AIIntervention.why로 영속)
     recentSummaryLeader?: string; // Step 22/C-2: 직전 summary가 선언한 1등 (task 턴 wobble 가드)
     callout?: { target: string; targetRole: ParticipantRole; cand?: Cand }; // [Step 30] 지목 호명 overlay
-    zdrip?: { id: string; cand: Cand }; // [Step 36] Z-drip: 안 깐 Z 1개 (task 턴, 조건 말투 tail)
-    exhaustionClose?: boolean; // [Step 36] 소진 close (전용 프롬프트, 픽 정책)
-    closeLeader?: Cand | null; // [Step 36] close 픽: confident-solo면 후보, null이면 중립
   },
 ) {
   //락 체크
@@ -73,48 +69,42 @@ export async function handleAITurn(
       content: m.content,
     }));
 
-    // cue/프롬프트 분기 — closing/summary(전용) / social·react(전용) / main(transcript로 계산)
-    const isSocial = opts?.social === true;
-    const isReact = opts?.react === true;
+    // cue/프롬프트 분기 — closing/summary(전용) / main(transcript로 계산)
     const isSummary = opts?.summary === true;
-    const isZdrip = opts?.zdrip != null; // [Step 36]
     const cue: SpeakingReason = opts?.closing
       ? "closing"
-      : isZdrip
-        ? "open_floor" // [Step 36] zdrip은 전용 프롬프트라 cue 미사용 — 로깅/안전값만
-        : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
+      : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
 
-    // tally 주입 (Step 14a) — task/zdrip 턴만 (social/react/closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
+    // tally + depth 주입 (Step 14a/37) — task 턴만 (closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
     let tallyText: string | undefined;
-    if (!opts?.closing && !isSocial && !isReact && !isSummary) {
+    let depthNote: string | undefined;
+    if (!opts?.closing && !isSummary) {
       const session = await Session.findById(sessionId).select("revealStats").lean();
-      tallyText = formatTally(computeTally((session as any)?.revealStats));
+      const rs = (session as any)?.revealStats;
+      tallyText = formatTally(computeTally(rs));
+      // [Step 37] 얕은 후보(도입됐지만 <임계) 있으면 조기 이탈 차단 노트. 없으면 미주입.
+      const under = underCoveredCandidates(rs, TRIGGER_CONFIG.DEPTH_MIN_PER_CAND);
+      depthNote = under.length
+        ? `[Depth — these candidates are on the table but barely explored so far: ${under.join(", ")}. Keep the team on them and draw more out; don't move the discussion to a fresh candidate until the current one is properly covered.]`
+        : undefined;
     }
 
-    let systemPrompt = opts?.exhaustionClose
-      ? buildExhaustionClosingPrompt(conditionCode, opts.closeLeader ?? null) // [Step 36] 소진 close (픽 정책 내장)
-      : opts?.closing
-        ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
-        : isZdrip
-          ? buildZDripPrompt(conditionCode, opts!.zdrip!.cand, TRAIT_BY_ID.get(opts!.zdrip!.id)!.text, tallyText) // [Step 36] Z-drip + 조건 말투 tail
-          : isSocial
-            ? SOCIAL_PROMPT // social: 전용 프롬프트 (Step 9/P2) — task 페르소나(조작) 우회, 조건 무관
-            : isReact
-              ? buildReactPrompt(conditionCode) // react: 전용 프롬프트 (Step 13) — 가벼운 ack, task 페르소나 우회
-              : isSummary
-                ? buildSummaryPrompt(conditionCode, opts!.summaryLeader!) // summary: leader 중간정리 (Step 22) — 선언형, tally/cue 미주입
-                : buildSystemPromptForTask(conditionCode, cue, tallyText); // Step 12 조립 + Step 14a tally
+    let systemPrompt = opts?.closing
+      ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
+      : isSummary
+        ? buildSummaryPrompt(conditionCode, opts?.summaryLeader ?? null) // summary: leader 중간정리 (Step 22/37) — 선언형 or 박빙
+        : buildSystemPromptForTask(conditionCode, cue, tallyText, depthNote); // Step 12 조립 + tally + depth
     // Step 22/C-2: 직전 summary로 선언한 1등과의 일관성 한 줄 (task 턴만, wobble 보강 — 주 가드는 tally)
-    if (!opts?.closing && !isSocial && !isReact && !isSummary && !isZdrip && opts?.recentSummaryLeader) {
+    if (!opts?.closing && !isSummary && opts?.recentSummaryLeader) {
       systemPrompt += `\n\n[Moments ago you told the team ${opts.recentSummaryLeader} is looking strongest right now — stay consistent with that unless the table has genuinely shifted.]`;
     }
-    // [Step 30] 지목 호명 tail — task 턴에만 (closing/social/react/summary/zdrip엔 구조적으로 옵션이 안 옴)
-    if (!opts?.closing && !isSocial && !isReact && !isSummary && !isZdrip && opts?.callout) {
+    // [Step 30] 지목 호명 tail — task 턴에만 (closing/summary엔 구조적으로 옵션이 안 옴)
+    if (!opts?.closing && !isSummary && opts?.callout) {
       systemPrompt += buildCalloutTail(conditionCode, opts.callout.target, opts.callout.cand);
     }
     systemPrompt = await maybeKoLang(systemPrompt, sessionId); // [KO-PILOT] ko 세션이면 한국어 출력 지시 append (전 분기 단일 수렴점)
-    const userPrompt = buildUserPromptFromMessages(msgs); // social/react도 transcript 받음 → 직전 맥락 반영
-    const loggedCue = isSocial ? "social" : isReact ? "react" : isSummary ? "summary" : isZdrip ? "zdrip" : cue; // 기록용 cue ([Step 36] zdrip)
+    const userPrompt = buildUserPromptFromMessages(msgs);
+    const loggedCue = isSummary ? "summary" : cue; // 기록용 cue
 
     log.debug(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 

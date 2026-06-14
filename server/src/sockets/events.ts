@@ -6,6 +6,7 @@ export type ClientToServerEvents = {
   "join-session": (payload: { sessionCode: string; participantCode: string }) => void;
   "send-message": (payload: { content: string }) => void;
   "join-waiting": (payload: { sessionCode: string; participantCode: string }) => void;
+  "typing": (payload: { isTyping: boolean }) => void; // 입력 중 표시 (작성중)
 };
 
 export type ServerToClientEvents = {
@@ -21,6 +22,7 @@ export type ServerToClientEvents = {
   "message-failed": (payload: { reason: string }) => void;
   "peer-disconnected": (payload: { role: ParticipantRole }) => void;
   "peer-reconnected": (payload: { role: ParticipantRole }) => void;
+  "peer-typing": (payload: { role: ParticipantRole; isTyping: boolean }) => void; // 상대 입력 중 (작성중)
   "session-history": (payload: {
     messages: Array<{
       seq: number;

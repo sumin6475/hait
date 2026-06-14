@@ -176,6 +176,69 @@ sessionsRouter.get("/:code", requireAdmin, async (req, res) => {
   }
 });
 
+//---GET /api/sessions/:code/export: 런 전체 덤프 (메시지 + AI 개입 결정)---
+//Test Harness 다운로드용. 대화 품질 분석을 위해 AI가 매 턴 왜 말했/침묵했는지(why)까지 포함.
+sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
+  try {
+    const session = await Session.findOne({ sessionCode: req.params.code }).lean();
+    if (!session) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+
+    const participants = await Participant.find({ sessionId: session._id })
+      .sort({ assignedProfile: 1 })
+      .lean();
+    const messages = await Message.find({ sessionId: session._id }).sort({ seq: 1 }).lean();
+    const interventions = await AIIntervention.find({ sessionId: session._id })
+      .sort({ turnIndex: 1, createdAt: 1 })
+      .lean();
+
+    res.json({
+      ok: true,
+      session: {
+        sessionCode: session.sessionCode,
+        conditionCode: session.conditionCode,
+        status: session.status,
+        isTest: session.sessionCode.startsWith("T-"),
+        language: (session as any).language ?? "en",
+        startedAt: session.startedAt,
+        endedAt: session.endedAt,
+        createdAt: session.createdAt,
+      },
+      participants: participants.map((p) => ({
+        participantCode: p.participantCode,
+        role: p.role,
+        assignedProfile: p.assignedProfile,
+      })),
+      messages: messages.map((m) => ({
+        seq: m.seq,
+        sender: m.sender,
+        senderRole: m.senderRole,
+        content: m.content,
+        createdAt: m.createdAt,
+      })),
+      interventions: interventions.map((i) => ({
+        turnIndex: i.turnIndex,
+        decision: i.decision,
+        triggerReason: i.triggerReason,
+        cue: i.cue,
+        why: i.why,
+        calloutTarget: i.calloutTarget,
+        calloutCand: i.calloutCand,
+        model: i.model,
+        latencyMs: i.latencyMs,
+        inputTokens: i.inputTokens,
+        outputTokens: i.outputTokens,
+        error: i.error,
+        createdAt: (i as any).createdAt,
+      })),
+    });
+  } catch (error) {
+    console.error("[GET /api/sessions/:code/export]", error);
+    res.status(500).json({ ok: false, error: String(error) });
+  }
+});
+
 //---DELETE /api/sessions/:code: cascade 삭제---
 //단순 모드: 모든 상태 삭제 가능 (실험 데이터 보호 정책은 운영자가 직접)
 sessionsRouter.delete("/:code", requireAdmin, async (req, res) => {

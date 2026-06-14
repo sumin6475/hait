@@ -1,7 +1,7 @@
 // poolingTally — revealStats 갱신($addToSet) + Alex-시점 tally 계산 + task 턴 주입 블록 포맷 (Step 14a).
 // tally = Alex의 Z(상시 보유) ∪ 표면화된 것(revealedIds) — on-table만, hidden-profile 보존, 조건 무관(통제).
 import { Session } from "../models/Session.js";
-import { ALEX_Z_IDS, ALEX_Z_UNIQUE_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
+import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 
 // (a) 갱신: 원자적 $addToSet — 동시 async 추출에 안전, dedup 자동.
 // 카운트는 저장하지 않고 읽을 때 revealedIds에서 파생한다 (read-modify-write 레이스 회피).
@@ -95,22 +95,24 @@ export function leastCoveredCandidate(revealStats: any): Cand {
   )[0]!;
 }
 
-// [Step 36] Alex 고유 Z 중 아직 테이블에 안 올라온 것 → 긍정 먼저, id 번호 오름차순. 없으면 null.
-// surfaced = 사람 revealedIds ∪ AI aiSurfacedIds (이미 드립한 것 제외 → 중복 드립 방지).
-export function nextUnsurfacedZ(revealStats: any): { id: string; cand: Cand } | null {
-  const surfaced = new Set<string>([
-    ...CANDS.flatMap((c) => revealStats?.byCandidate?.[c]?.revealedIds ?? []),
-    ...(revealStats?.aiSurfacedIds ?? []),
-  ]);
-  const pending = ALEX_Z_UNIQUE_IDS.filter((id) => !surfaced.has(id)).sort((a, b) => {
-    const A = TRAIT_BY_ID.get(a)!;
-    const B = TRAIT_BY_ID.get(b)!;
-    if (A.valence !== B.valence) return A.valence === "pos" ? -1 : 1; // 긍정 먼저
-    return a.localeCompare(b, undefined, { numeric: true }); // 번호 오름차순
-  });
-  if (!pending.length) return null;
-  const id = pending[0]!;
-  return { id, cand: TRAIT_BY_ID.get(id)!.candidate };
+// [Step 37] Depth 데이터 훅 — 후보별 distinct 표면화 수 (사람 revealedIds ∪ AI aiSurfaced 중 해당 후보).
+// Alex 미발화 Z 패는 revealedIds·aiSurfacedIds 어디에도 없어 자동 제외 = "테이블에 올라온 것"만 카운트.
+export function surfacedByCandidate(revealStats: any): Record<Cand, number> {
+  const out: Record<Cand, number> = { A: 0, B: 0, C: 0, D: 0 };
+  const ai: string[] = revealStats?.aiSurfacedIds ?? [];
+  for (const c of CANDS) {
+    const set = new Set<string>(revealStats?.byCandidate?.[c]?.revealedIds ?? []);
+    for (const id of ai) if (TRAIT_BY_ID.get(id)?.candidate === c) set.add(id);
+    out[c] = set.size;
+  }
+  return out;
+}
+
+// [Step 37] 도입(≥1)됐지만 얕은(<threshold) 후보 = 조기 이탈 방지 대상.
+// count===0(미도입)은 leader의 정당한 다음 의제라 제외 → {c | 1 <= count(c) < threshold}.
+export function underCoveredCandidates(revealStats: any, threshold: number): Cand[] {
+  const by = surfacedByCandidate(revealStats);
+  return CANDS.filter((c) => by[c] >= 1 && by[c] < threshold);
 }
 
 // (c) 포맷: task 턴 주입 블록. 숫자는 "읽고 추론"용 — 발화 금지(OUTPUT_DISCIPLINE와 양립).

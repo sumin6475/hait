@@ -5,7 +5,6 @@
 
 export type SpeakingReason =
   | "opening"
-  | "open_floor"
   | "build_on"
   | "directed_followup"
   | "mediation"
@@ -41,5 +40,5 @@ export function computeCue(input: ComputeCueInput): SpeakingReason {
     .join(" ");
   if (MEDIATION_RE.test(recentText)) return "mediation"; // 4. split/조기축소
 
-  return "open_floor"; // 5. 기본: 한 포인트, 픽 강요 안 함
+  return "build_on"; // 5. [Step 37] 기본: 마지막 말 받기 (45s 안전망 = 직전 발화 위에 한 포인트)
 }

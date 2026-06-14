@@ -26,6 +26,7 @@ import Overview from "./pages/dashboard/Overview.tsx";
 import Conditions from "./pages/dashboard/Conditions.tsx";
 import Sessions from "./pages/dashboard/Sessions.tsx";
 import ChatLogs from "./pages/dashboard/ChatLogs.tsx";
+import TestHarness from "./pages/dashboard/TestHarness.tsx";
 import Analytics from "./pages/dashboard/Analytics.tsx";
 import Surveys from "./pages/dashboard/Surveys.tsx";
 
@@ -61,6 +62,7 @@ const App = () => {
               <Route path="conditions" element={<Conditions />} />
               <Route path="sessions" element={<Sessions />} />
               <Route path="chat-logs" element={<ChatLogs />} />
+              <Route path="test-harness" element={<TestHarness />} />
               <Route path="analytics" element={<Analytics />} />
               <Route path="surveys" element={<Surveys />} />
             </Route>

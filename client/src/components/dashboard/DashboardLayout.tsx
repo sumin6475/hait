@@ -21,6 +21,7 @@ const navGroups = [
       { to: "/dashboard/conditions", icon: Settings2, label: "Conditions" },
       { to: "/dashboard/sessions", icon: Users, label: "Sessions" },
       { to: "/dashboard/chat-logs", icon: MessageSquare, label: "Chat Logs" },
+      { to: "/dashboard/test-harness", icon: FlaskConical, label: "Test Harness" },
     ],
   },
   {

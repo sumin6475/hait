@@ -20,12 +20,14 @@ const ChatRoom = () => {
   const [aiName, setAiName] = useState("Alex"); // 폴백 — 서버가 안 보내도 동작
   //[Step 36] 최소 토론 12분 경과 전엔 Exit 버튼 숨김 (서버 TRIGGER_CONFIG.MIN_DISCUSSION_MS와 일치)
   const [canExit, setCanExit] = useState(false);
+  //현재 입력 중(작성중)인 상대 역할들 — peer-typing으로 갱신, 메시지 도착/퇴장 시 해제
+  const [typingRoles, setTypingRoles] = useState<ParticipantRole[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  //auto scroll to bottom
+  //auto scroll to bottom (작성중 표시 등장 시에도 따라 내려감)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, typingRoles]);
 
   //[Step 36] 서버 startedAt 기준 12분 경과 시 Exit 버튼 노출 (1초 틱)
   useEffect(() => {
@@ -41,12 +43,14 @@ const ChatRoom = () => {
 
   //connect to socket
   useEffect(() => {
-    //1. sessionStorage 우선 (정상 흐름: CodeEntry → ... → ChatRoom)
-    //2. URL 파라미터 fallback (테스트/직접 URL 접속 시: ?session=...&participant=...)
+    //1. URL 파라미터 우선 (테스트 하니스/직접 URL 접속: ?session=...&participant=...)
+    //2. sessionStorage fallback (정상 흐름: CodeEntry → ... → ChatRoom, 쿼리스트링 없음)
+    //   순서를 URL 먼저로 둔 이유: Test Harness는 같은 탭 두 iframe이 sessionStorage를
+    //   공유하므로, 쿼리로 X/Y를 구분해야 한다. 정상 흐름은 쿼리가 없어 자동으로 storage로 폴백.
     const params = new URLSearchParams(window.location.search);
-    const sessionCode = sessionStorage.getItem("sessionCode") ?? params.get("session") ?? undefined;
+    const sessionCode = params.get("session") ?? sessionStorage.getItem("sessionCode") ?? undefined;
     const participantCode =
-      sessionStorage.getItem("participantCode") ?? params.get("participant") ?? undefined;
+      params.get("participant") ?? sessionStorage.getItem("participantCode") ?? undefined;
 
     if (!sessionCode || !participantCode) {
       console.warn("[chatroom] no session/participant in sessionStorage or URL");
@@ -102,8 +106,20 @@ const ChatRoom = () => {
       setMessages(mapped);
     });
 
+    //peer-typing: 상대 입력 중 표시 갱신 (서버가 본인 제외 릴레이)
+    socket.on("peer-typing", ({ role, isTyping }) => {
+      setTypingRoles((prev) => {
+        const has = prev.includes(role);
+        if (isTyping && !has) return [...prev, role];
+        if (!isTyping && has) return prev.filter((r) => r !== role);
+        return prev;
+      });
+    });
+
     //new message
     socket.on("new-message", (msg) => {
+      //메시지를 보냈으면 더 이상 작성중 아님 → 해제
+      setTypingRoles((prev) => prev.filter((r) => r !== msg.senderRole));
       setMessages((prev) => [
         ...prev,
         {
@@ -127,6 +143,8 @@ const ChatRoom = () => {
 
     socket.on("peer-disconnected", ({ role }) => {
       console.log(`[chatroom] peer-disconnected: ${role}`);
+      //나간 상대의 작성중 잔상 제거
+      setTypingRoles((prev) => prev.filter((r) => r !== role));
     });
 
     socket.on("peer-reconnected", ({ role }) => {
@@ -173,6 +191,10 @@ const ChatRoom = () => {
             senderName={msg.senderRole === "ai" ? aiName : msg.senderName}
           />
         ))}
+        {/*작성중 표시 — 입력 중인 상대마다 한 줄 (메시지 도착·퇴장 시 자동 해제)*/}
+        {typingRoles.map((role) => (
+          <TypingIndicator key={role} name={ROLE_LABEL[role] ?? role} />
+        ))}
         <div ref={bottomRef} />
       </div>
 
@@ -188,7 +210,10 @@ const ChatRoom = () => {
         </div>
       )}
 
-      <MessageInput onSend={handleSend} />
+      <MessageInput
+        onSend={handleSend}
+        onTyping={(isTyping) => socket.emit("typing", { isTyping })}
+      />
     </div>
   );
 };

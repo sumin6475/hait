@@ -12,13 +12,14 @@ export const TRIGGER_CONFIG = {
   //Pull 트리거 평가 추기 (setInterval 간격)
   PULL_EVALUATION_INTERVAL_MS: 5_000,
 
-  // AI 발화 후, 사람 메시지가 N개 오기 전까지는 (호명 제외) silent — 독점 방지 (Step 5/F)
-  COOLDOWN_MIN_MSGS: 2,
+  // [Step 37] 단일 빈도 가드 — AI 직후 연속 발화만 차단 (호명 제외). 1 = messagesSinceLastAI<1이면 침묵.
+  COOLDOWN_MIN_MSGS: 1,
 
   // 토론 총 길이 — 클라이언트 Timer(ChatRoom.tsx durationMinutes, 현재 20)와 반드시 일치. (단일소스화 추후)
   DISCUSSION_DURATION_MS: 20 * 60 * 1000,
-  // [Step 36] 이 전엔 소진 close 금지 + Exit 버튼 숨김 (클라 ChatRoom.tsx와 일치). 소진 시 프로브/Z-drip로 채움.
-  MIN_DISCUSSION_MS: 12 * 60 * 1000,
   // 종료 N ms 전부터 leader 조건은 일반 트리거 차단 + closing 1회. (쉽게 조정 가능)
   CLOSING_LEAD_MS: 60 * 1000,
+
+  // [Step 37] Depth 게이트 — 후보당 distinct 표면화 임계. 이 미만이면 "얕은 후보"로 보고 조기 이탈 차단. (튜너블)
+  DEPTH_MIN_PER_CAND: 3,
 } as const;

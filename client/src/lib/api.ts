@@ -165,6 +165,45 @@ export async function getSession(sessionCode: string): Promise<SessionDetail> {
   return { session: data.session, participants: data.participants, messages: data.messages };
 }
 
+//세션 런 전체 덤프 (메시지 + AI 개입 결정) — Test Harness 다운로드용
+export interface InterventionLog {
+  turnIndex: number;
+  decision: "speak" | "stay_silent";
+  triggerReason: string;
+  cue?: string | null;
+  why?: string | null;
+  calloutTarget?: string | null;
+  calloutCand?: string | null;
+  model?: string | null;
+  latencyMs?: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
+  error?: string | null;
+  createdAt: string;
+}
+export interface SessionExport {
+  session: SessionDetail["session"] & { language: string };
+  participants: Array<{
+    participantCode: string;
+    role: ParticipantRole;
+    assignedProfile: ProfileSlot;
+  }>;
+  messages: SessionDetail["messages"];
+  interventions: InterventionLog[];
+}
+
+export async function exportSession(sessionCode: string): Promise<SessionExport> {
+  const data = await adminFetch<{ ok: true } & SessionExport>(
+    `/api/sessions/${encodeURIComponent(sessionCode)}/export`,
+  );
+  return {
+    session: data.session,
+    participants: data.participants,
+    messages: data.messages,
+    interventions: data.interventions,
+  };
+}
+
 //세션 생성
 export async function createSession(input: {
   conditionCode: ConditionCode;

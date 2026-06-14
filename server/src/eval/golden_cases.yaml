@@ -192,7 +192,7 @@ cases:
     regression_risk: normal
     cue:
       {
-        speaking_reason: open_floor,
+        speaking_reason: build_on,
         addressed_to_ai: false,
         references_last_ai_turn: false,
         quiet_member: null,
@@ -328,7 +328,7 @@ cases:
     regression_risk: normal
     cue:
       {
-        speaking_reason: open_floor,
+        speaking_reason: build_on,
         addressed_to_ai: false,
         references_last_ai_turn: false,
         quiet_member: P2,
@@ -430,7 +430,7 @@ cases:
     regression_risk: high(+strategy) # FORM x SCOPE both fire in one turn -> top leakage point
     cue:
       {
-        speaking_reason: open_floor,
+        speaking_reason: build_on,
         addressed_to_ai: false,
         references_last_ai_turn: false,
         quiet_member: null,

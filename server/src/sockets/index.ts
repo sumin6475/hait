@@ -15,7 +15,6 @@ import {
   computeTally,
   countSurfaced,
   leastCoveredCandidate,
-  nextUnsurfacedZ, // [Step 36]
 } from "../lib/poolingTally.js";
 import { aiDisplayName, PARTICIPANT_LABEL } from "../lib/labels.js";
 import type { Cand } from "../lib/traitData.js";
@@ -57,66 +56,20 @@ const CLOSING_TRIGGER: Trigger = { name: "closing", shouldFire: () => false };
 const ADDRESS_TRIGGER: Trigger = { name: "address", shouldFire: () => false };
 const JUDGE_TRIGGER: Trigger = { name: "judge", shouldFire: () => false };
 const SILENCE_TRIGGER: Trigger = { name: "long-silence", shouldFire: () => false };
-// ── Step 28/B: mediation 자기모순 재판정 가드 ──────────────────────
-const REJUDGE_MIN_DIST = 4; // Alex 발화 후 이만큼 지났는데 '교착 진단+침묵'이면 재판정
-// ── [Step 31-①] leader mediation 간격 가드 (R1 연발: 같은 재확장 변주 ~4할 → 결정적 차단) ──
-const LEADER_MEDIATION_MIN_GAP_MSGS = 4; // mediation 발화 간 최소 메시지 수 (사람+AI seq 기준)
-const lastMediationAtSeq = new Map<string, number>(); // leader mediation-내용 발화 시점
-// ── Step 16/Part B: peer mediation 침묵 하한선 ─────────────────────
-const PEER_MEDIATION_FLOOR_K = 3; // [Step 31-③] 5→3 — peer 침묵 6msg 구간(C1·C3 2/2) 단축. 도달 시 react로 치환.
-const peerMediationStreak = new Map<string, number>(); // sessionCode → 연속 peer-mediation 억제 횟수
-const PEER_FLOOR_TRIGGER: Trigger = { name: "peer-mediation-floor", shouldFire: () => false };
-// ── [Step 35] open-room silence floor — Step 34 leader mediation floor 일반화 ──
-const LEADER_OPENROOM_FLOOR_K = 3; // 연속 거른 '활발한 방' 침묵 3번째마다 react 1회 (Step 34 K 유지)
-const OPEN_ROOM_SILENCE_REASONS = new Set<string>(["build_on", "mediation", "open_floor"]); // Alex 관여 기대 구간 (directed_followup=항상발화/social=잡담/react=fill 제외)
-const leaderOpenRoomSilenceStreak = new Map<string, number>(); // sessionCode → 연속 leader speak=false open-room 침묵 횟수
-const LEADER_FLOOR_TRIGGER: Trigger = { name: "leader-mediation-floor", shouldFire: () => false }; // 이름 유지 (트리거 라벨)
-// [Step 34] 실제 발화 시 mediation 침묵 카운터 동시 리셋 (peer/leader 같은 철학 — 두 줄이 항상 같이 다님)
-function resetMediationStreaks(sessionCode: string) {
-  peerMediationStreak.set(sessionCode, 0);
-  leaderOpenRoomSilenceStreak.set(sessionCode, 0); // [Step 35] was leaderMediationFalseStreak
-}
-// ── [Step 36] 종료 국면 (소진 감지 → 프로브 → Z-drip → min-게이트 close) ──
-const EXHAUSTION_NOYIELD_K = 3; // 신규 추출 0인 사람 메시지 연속 (AI 제외) → 소진 판정
-const EXHAUSTION_MIN_SURFACED = 8; // [Step 36 fix 06-13] 충분히 깔린 뒤에만 probe/drip — 인사/초반 no-yield 오발동 차단
-const EXHAUSTION_RE =
-  /없\s*(어|어요|네|습니다)|이게\s*다|더\s*(이상\s*)?(없|모르)|모르겠|that'?s\s+(all|it)|nothing\s+(else|more)|i'?m\s+(out|done)/i;
-const exhaustionPhase = new Map<string, "active" | "probed" | "draining" | "closed">();
-const noYieldStreak = new Map<string, number>(); // sessionCode → 연속 무수확 사람 메시지 수
-const ZDRIP_TRIGGER: Trigger = { name: "zdrip", shouldFire: () => false };
-const EXH_PROBE_TRIGGER: Trigger = { name: "exhaustion-probe", shouldFire: () => false };
-const EXH_CLOSE_TRIGGER: Trigger = { name: "exhaustion-close", shouldFire: () => false };
-// ── Step 22: leader summary (중간정리) 게이트 상태 ─────────────────
-const summaryPrevLeader = new Map<string, Cand | null>(); // 직전 체크 시 1등 (전이 감지)
-const summaryArmedLeader = new Map<string, Cand>(); // 안정성 대기 중인 새 1등 (가드②)
-const lastSummaryAtSeq = new Map<string, number>(); // 마지막 summary 시점 seq (가드③ 쿨다운)
-const lastSummaryLeader = new Map<string, Cand>(); // 마지막 summary가 선언한 1등 (wobble 컨텍스트·재정리 방지)
+// ── [Step 37] Summary 게이트 — 단순 트리거(전이/armed/쿨다운 제거). 세션 1회. ──
+const lastSummaryAtSeq = new Map<string, number>(); // 마지막 summary 시점 seq (callout spacing 읽기용 잔존)
+const lastSummaryLeader = new Map<string, Cand>(); // 마지막 summary가 선언한 1등 (task 턴 wobble 컨텍스트)
+const summaryDone = new Set<string>(); // sessionCode (세션 1회 가드 = 큰 간격의 최단형)
 const SUMMARY_TRIGGER: Trigger = { name: "summary", shouldFire: () => false };
-const SUMMARY_MIN_SURFACED = 8; // ① 표면화된 distinct trait 최소 (총 40 중) — 초반 성급 차단
-const SUMMARY_COOLDOWN_MSGS = 8; // ③ 마지막 summary 후 최소 사람+AI 메시지 수 (≈4~5턴)
-// ② 안정성 = "한 박자" = 전이 후 다음 체크에도 같은 1등이면 발동 (armedLeader 메커니즘)
+const SUMMARY_MIN_SURFACED = 8; // ① 표면화된 distinct trait 최소 — 초반 성급 차단
+const SUMMARY_AFTER_MSGS = 12; // ② 토론 경과 (총 메시지) — 초반 차단
 
-// ── [Step 30] leader 지목 호명 overlay (방향 A — 기존 발화에 형식만) ──
+// ── [Step 30] leader 지목 호명 overlay (G1·G2·G3만 — Step 37서 G4·G5·G6 제거) ──
 const CALLOUT_MAX_PER_SESSION = 2; // G1 세션 상한
-const CALLOUT_COOLDOWN_MSGS = 8; // G2 지목 간 최소 메시지 (summary와 동일 스케일)
-const CALLOUT_SUMMARY_SPACING_MSGS = 4; // G4 summary와 최소 간격 (lastSummaryAtSeq 읽기 전용)
-const CALLOUT_CLOSING_MARGIN_MS = 180_000; // G5 마지막 3분 지목 금지
-const CALLOUT_MIN_SURFACED = 4; // G6 초반 금지 (깔린 정보)
-const CALLOUT_MIN_MSGS = 6; //    초반 금지 (총 메시지)
+const CALLOUT_COOLDOWN_MSGS = 8; // G2 지목 간 최소 메시지
 const calloutCount = new Map<string, number>();
 const lastCalloutAtSeq = new Map<string, number>();
 const lastCalloutTarget = new Map<string, ParticipantRole>(); // G3 무응답 잠금용
-
-// ── Step 21: judge 개입 이력 (soft anti-repeat용) ──────────────────
-// GroupGPT(Shen et al. 2026)의 judge 입력 포맷 이식 — 직전 개입 reason을 judge가 보게 한다.
-const RECENT_REASONS_K = 4; // judge에 보여줄 최근 발화 reason 개수
-const recentReasons = new Map<string, string[]>(); // sessionCode → 오래된→최신 (최대 K)
-function pushReason(sessionCode: string, reason: string) {
-  const arr = recentReasons.get(sessionCode) ?? [];
-  arr.push(reason);
-  while (arr.length > RECENT_REASONS_K) arr.shift();
-  recentReasons.set(sessionCode, arr);
-}
 
 async function insertLeaderOpening(
   io: IO,
@@ -214,9 +167,10 @@ async function hasUnansweredAddress(sessionId: string): Promise<boolean> {
   return msgs.slice(lastAi + 1).some((m) => m.sender !== "ai" && ADDRESS_RE.test(m.content));
 }
 
-// ── Step 22: leader summary 게이트 (leader 전용, judge 우회·결정적) ──
-// 전이 = computeTally().leader가 단독(non-null)이고 직전 체크와 다름. 가드: ①충분히 쌓임 ②한 박자 안정 ③쿨다운 + A-4 양보.
-// pre-filter 뒤에서 호출되므로 직전 메시지는 항상 사람 → handleAITurn 더블포스트 가드를 그대로 존중(예외 없음).
+// ── [Step 37] leader summary 게이트 (leader 전용, 단순 트리거) ──
+// 전이/armed/쿨다운 제거. 가드: ①충분히 쌓임 ②토론 경과 ③세션 1회 + 호명 양보.
+// leader=computeTally().leader(Cand|null)는 내용일 뿐 발동을 막지 않음 — null이면 박빙 분기(§5D, T-C4-010 수정).
+// pre-filter 뒤에서 호출되므로 직전 메시지는 항상 사람 → handleAITurn 더블포스트 가드를 그대로 존중.
 async function maybeLeaderSummary(
   io: IO,
   sessionCode: string,
@@ -224,47 +178,24 @@ async function maybeLeaderSummary(
   conditionCode: ConditionCode,
   ctx: SessionContext,
 ): Promise<boolean> {
+  if (summaryDone.has(sessionCode)) return false; // ③ 세션 1회
   const sess = await Session.findById(sessionId).select("revealStats").lean();
   const rs = (sess as any)?.revealStats;
-  const cur = computeTally(rs).leader; // Cand | null
-
-  // [Step 27-B] summaryPrevLeader = "마지막으로 확정(=정리)한 1등". 매 체크 갱신 금지 — 발동 시에만.
-  // (구버전은 매 체크 덮어써서 '전이'가 1체크짜리 사건이 됨 → 가드②가 연속 2회 전이를 요구 = 구조적 발동 불가)
-  const confirmed = summaryPrevLeader.get(sessionCode) ?? null;
-
-  // 전이 아님: 1등 없음(동률) 또는 이미 정리한 1등 그대로 → 무장 해제
-  if (cur === null || cur === confirmed) {
-    summaryArmedLeader.delete(sessionCode);
-    return false;
-  }
-
-  // 가드② 안정성("한 박자"): 새 1등 1번째 목격 → 무장만 (다른 새 1등으로 바뀌면 재무장)
-  if (summaryArmedLeader.get(sessionCode) !== cur) {
-    summaryArmedLeader.set(sessionCode, cur);
-    return false;
-  }
-
-  // ── 같은 새 1등 연속 2회+ 목격 (전이 확인됨) ──
-  // 가드①③·A-4 미충족 시 "무장 유지한 채 보류" → 충족되는 첫 체크에서 발동 (cur가 유지되는 한)
-  if (countSurfaced(rs) < SUMMARY_MIN_SURFACED) return false;
-  const lastAt = lastSummaryAtSeq.get(sessionCode) ?? -Infinity;
-  if (ctx.lastMessageSeq - lastAt < SUMMARY_COOLDOWN_MSGS) return false;
+  if (countSurfaced(rs) < SUMMARY_MIN_SURFACED) return false; // ① 정보 충분
+  if (ctx.totalMessageCount < SUMMARY_AFTER_MSGS) return false; // ② 토론 경과
   if (await hasUnansweredAddress(sessionId)) {
     log.info(`[gate] summary deferred → unanswered address (session=${sessionCode})`);
     return false;
   }
 
-  // 발동 — confirmed(summaryPrevLeader) 갱신은 오직 여기
-  summaryArmedLeader.delete(sessionCode);
-  summaryPrevLeader.set(sessionCode, cur);
+  const leader = computeTally(rs).leader; // Cand | null — 발동 막지 않음
+  summaryDone.add(sessionCode);
   lastSummaryAtSeq.set(sessionCode, ctx.lastMessageSeq);
-  lastSummaryLeader.set(sessionCode, cur);
-  const transition = confirmed === null ? "T4(tie→solo)" : `T2(${confirmed}→${cur})`;
-  log.info(`[gate] leader summary (leader=${cur}, ${transition}, session=${sessionCode})`);
+  if (leader) lastSummaryLeader.set(sessionCode, leader); // wobble: leader≠null일 때만 (동률 뒤엔 강제할 1등 없음)
+  log.info(`[gate] leader summary (leader=${leader ?? "tied"}, session=${sessionCode})`);
   await handleAITurn(io, sessionCode, sessionId, SUMMARY_TRIGGER, ctx, conditionCode, {
     summary: true,
-    summaryLeader: cur,
-    summaryTransition: transition,
+    summaryLeader: leader,
   });
   return true;
 }
@@ -272,8 +203,7 @@ async function maybeLeaderSummary(
 // ── [Step 30] 지목 호명 overlay 게이트 ──────────────────────────────
 type CalloutOpts = { target: string; targetRole: ParticipantRole; cand?: Cand };
 
-// [Step 36] callout 대상(WHOM)+cand 선정 — maybeCalloutOverlay와 exhaustion probe가 공유.
-// 순수 선정만 (G가드·상태변이는 호출부 책임 — probe는 G1~G6 우회). rs는 호출부가 이미 로드해 전달.
+// callout 대상(WHOM)+cand 선정 — 순수 선정만 (G가드·상태변이는 호출부 책임). rs는 호출부가 로드해 전달.
 async function pickCalloutTarget(
   sessionId: string,
   conditionCode: ConditionCode,
@@ -300,8 +230,8 @@ async function maybeCalloutOverlay(
   reason: string,
 ): Promise<CalloutOpts | null> {
   try {
-    // 트리거 매칭 (G7 leader-only 함의) — directed_followup·open_floor 등은 여기서 걸러짐
-    // [Step 31-④] C2: build_on(희박 — 리더 발화 패턴상 중반 슬롯 없음, 2런 실증) ∪ mediation(C4에서 검증된 서식지)
+    // 트리거 매칭 (leader-only) — directed_followup 등은 여기서 걸러짐
+    // [Step 31-④] C2: build_on ∪ mediation / C4: mediation
     const isC2 = conditionCode === "C2" && (reason === "build_on" || reason === "mediation");
     const isC4 = conditionCode === "C4" && reason === "mediation";
     if (!isC2 && !isC4) return null;
@@ -325,26 +255,9 @@ async function maybeCalloutOverlay(
       }
     }
 
-    // G4 summary 간격 (읽기 전용 — summary 상태 변이 금지)
-    const sumAt = lastSummaryAtSeq.get(sessionCode);
-    if (sumAt !== undefined && ctx.lastMessageSeq - sumAt < CALLOUT_SUMMARY_SPACING_MSGS)
-      return null;
-
-    // G5 종반 마진
-    const startedMs = sessionStartedAt.get(sessionCode);
-    if (
-      startedMs !== undefined &&
-      startedMs + TRIGGER_CONFIG.DISCUSSION_DURATION_MS - Date.now() < CALLOUT_CLOSING_MARGIN_MS
-    )
-      return null;
-
-    // G6 초반 금지
-    if (ctx.totalMessageCount < CALLOUT_MIN_MSGS) return null;
+    // WHOM/cand 선정 — 공유 헬퍼. (G4·G5·G6 제거 — Step 37)
     const sess = await Session.findById(sessionId).select("revealStats").lean();
     const rs = (sess as any)?.revealStats;
-    if (countSurfaced(rs) < CALLOUT_MIN_SURFACED) return null;
-
-    // WHOM/cand 선정 — [Step 36] 공유 헬퍼 (probe와 동일 로직). G6 통과로 사람 메시지 존재 보장.
     const { target, targetRole, cand } = await pickCalloutTarget(sessionId, conditionCode, rs);
 
     // 상태 갱신은 발동 직전 1회 (summary 선례 — handleAITurn 내부 skip 시 1회 소모는 수용)
@@ -381,7 +294,6 @@ async function maybeAITurn(
       if (!closingDone.has(sessionCode)) {
         closingDone.add(sessionCode);
         const ctx = await buildSessionContext(sessionId, sessionCode);
-        resetMediationStreaks(sessionCode); // 실제 발화 → 연속 억제 끊김 (Step 16/B-3)
         await handleAITurn(io, sessionCode, sessionId, CLOSING_TRIGGER, ctx, conditionCode, {
           closing: true,
         });
@@ -396,8 +308,6 @@ async function maybeAITurn(
   // ① 호명 fast-path (push·pull 공통, judge보다 우선·결정적)
   if (!ctx.lastMessageIsAI && ADDRESS_RE.test(ctx.lastMessageText)) {
     log.info(`[gate] address (session=${sessionCode})`);
-    resetMediationStreaks(sessionCode); // 실제 발화 → 연속 억제 끊김 (Step 16/B-3)
-    pushReason(sessionCode, "directed_followup"); // Step 21
     await handleAITurn(io, sessionCode, sessionId, ADDRESS_TRIGGER, ctx, conditionCode, {
       reason: "directed_followup",
       recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
@@ -405,70 +315,10 @@ async function maybeAITurn(
     return;
   }
 
-  // ② pre-filter: AI 발화 후 새 사람 메시지 없으면 아무것도 안 함
-  if (ctx.messagesSinceLastAI < 1) return;
+  // ② [Step 37] cooldown — 단일 빈도 가드. AI 직후 새 사람 메시지 없으면 침묵 (호명은 위에서 면제).
+  if (ctx.messagesSinceLastAI < TRIGGER_CONFIG.COOLDOWN_MIN_MSGS) return;
 
-  // ②.4 [Step 36] 종료 국면 — leader+peer. summary/judge/floor/45s 안전망 선점.
-  {
-    const phase = exhaustionPhase.get(sessionCode) ?? "active";
-    if (phase !== "closed") {
-      const streak = noYieldStreak.get(sessionCode) ?? 0;
-      const exhausted = streak >= EXHAUSTION_NOYIELD_K || EXHAUSTION_RE.test(ctx.lastMessageText);
-      const startedMs2 = sessionStartedAt.get(sessionCode);
-      const elapsed = startedMs2 !== undefined ? Date.now() - startedMs2 : 0;
-      if (exhausted) {
-        const sess = await Session.findById(sessionId).select("revealStats").lean();
-        const rs = (sess as any)?.revealStats;
-        if (elapsed >= TRIGGER_CONFIG.MIN_DISCUSSION_MS) {
-          // ⑤ CLOSE (최우선; phase=closed, closingDone — 이후 영구 침묵)
-          exhaustionPhase.set(sessionCode, "closed");
-          closingDone.add(sessionCode);
-          resetMediationStreaks(sessionCode);
-          const tallyLeader = computeTally(rs).leader; // Cand | null (confident-solo 픽 정책)
-          log.info(`[gate] exhaustion close (leader=${tallyLeader ?? "none"}, session=${sessionCode})`);
-          await handleAITurn(io, sessionCode, sessionId, EXH_CLOSE_TRIGGER, ctx, conditionCode, {
-            closing: true,
-            exhaustionClose: true,
-            closeLeader: tallyLeader,
-          });
-          return;
-        }
-        // [Step 36 fix 06-13] 초반/인사 단계 오발동 차단 — surfaced가 충분히 쌓인 뒤에만 probe·drip
-        if (countSurfaced(rs) >= EXHAUSTION_MIN_SURFACED) {
-        if (isLeader && phase === "active") {
-          // ② PROBE (leader만 — 절차 pull은 status로 정당화). callout 머신 재사용, G가드 우회.
-          exhaustionPhase.set(sessionCode, "probed");
-          noYieldStreak.set(sessionCode, 0);
-          const probe = await pickCalloutTarget(sessionId, conditionCode, rs);
-          resetMediationStreaks(sessionCode);
-          pushReason(sessionCode, "mediation");
-          log.info(`[gate] exhaustion probe (target=${probe.target}${probe.cand ? `, cand=${probe.cand}` : ""}, session=${sessionCode})`);
-          await handleAITurn(io, sessionCode, sessionId, EXH_PROBE_TRIGGER, ctx, conditionCode, {
-            reason: "mediation",
-            callout: probe,
-          });
-          return;
-        }
-        const z = nextUnsurfacedZ(rs);
-        if (z) {
-          // ④ Z-DRIP (leader+peer) — 안 깐 Z 1개를 조건 말투로 기여
-          exhaustionPhase.set(sessionCode, "draining");
-          noYieldStreak.set(sessionCode, 0);
-          resetMediationStreaks(sessionCode);
-          pushReason(sessionCode, "open_floor");
-          log.info(`[gate] exhaustion z-drip (id=${z.id}, cand=${z.cand}, session=${sessionCode})`);
-          await handleAITurn(io, sessionCode, sessionId, ZDRIP_TRIGGER, ctx, conditionCode, {
-            zdrip: z,
-          });
-          return;
-        }
-        } // [Step 36 fix] surfaced≥MIN 가드 닫기
-        // else: 초반(덜 깔림) 또는 Z 소진 → 조용 (open-room floor가 dead-air 받침, MIN까지 대기)
-      }
-    }
-  }
-
-  // ②.5 [Step 22] leader summary 게이트 (leader 전용, judge 우회·결정적)
+  // ②.5 [Step 22/37] leader summary 게이트 (leader 전용, judge 우회·결정적)
   if (isLeader) {
     const fired = await maybeLeaderSummary(io, sessionCode, sessionId, conditionCode, ctx);
     if (fired) return; // summary 발화함 → 이번 사이클 종료
@@ -483,13 +333,7 @@ async function maybeAITurn(
       const win = await loadWindow(sessionId);
       const reason = computeCue({ messages: win.cue, phase: "main" });
       log.info(`[gate] long-silence safety (session=${sessionCode})`);
-      resetMediationStreaks(sessionCode); // 실제 발화 → 연속 억제 끊김 (Step 16/B-3)
-      pushReason(sessionCode, reason); // Step 21
       const callout = await maybeCalloutOverlay(sessionCode, sessionId, conditionCode, ctx, reason); // [Step 30]
-      // [Step 31-①] 안전망 mediation 발화도 간격 기준점으로 포함 (발화 자체는 억제 안 함 — 45초 정적은 별개)
-      if (reason === "mediation" && isLeader) {
-        lastMediationAtSeq.set(sessionCode, ctx.lastMessageSeq);
-      }
       await handleAITurn(io, sessionCode, sessionId, SILENCE_TRIGGER, ctx, conditionCode, {
         reason,
         recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
@@ -499,136 +343,45 @@ async function maybeAITurn(
     return;
   }
 
-  // ④ push = 개입 judge (조건-블라인드)
+  // ④ push = 개입 judge (조건-블라인드, Step 37: 1회·순수 분류)
   const win = await loadWindow(sessionId);
-  const decision = await judgeIntervention(
-    win.labeled,
-    ctx.messagesSinceLastAI,
-    recentReasons.get(sessionCode) ?? [],
-  );
+  const decision = await judgeIntervention(win.labeled, ctx.messagesSinceLastAI);
   if (decision === null) {
     const fired = await evaluateTriggers(ctx);
     if (fired) {
-      resetMediationStreaks(sessionCode); // 실제 발화 → 연속 억제 끊김 (Step 16/B-3)
       await handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode, {
         recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
       });
     }
     return;
   }
-  log.info(
-    `[judge] speak=${decision.speak} reason=${decision.reason} why="${decision.why}" (session=${sessionCode})`,
-  );
-  // [Step 28-B] 재판정 가드: '교착 진단(mediation)인데 침묵 + Alex가 멀리' 패턴만 judge 1회 재호출.
-  // 강제 플립이 아니라 재시험 — 두 번 중 한 번이라도 speak=true면 발화 (mini 자기모순 플립 노이즈 흡수).
-  let final = decision;
-  if (
-    !decision.speak &&
-    decision.reason === "mediation" &&
-    ctx.messagesSinceLastAI >= REJUDGE_MIN_DIST
-  ) {
-    const retry = await judgeIntervention(
-      win.labeled,
-      ctx.messagesSinceLastAI,
-      recentReasons.get(sessionCode) ?? [],
-    );
-    log.info(
-      `[judge] re-judge (false∧mediation∧dist≥${REJUDGE_MIN_DIST}) → speak=${retry?.speak ?? "null"} (session=${sessionCode})`,
-    );
-    if (retry?.speak) final = retry;
+  log.info(`[judge] speak=${decision.speak} reason=${decision.reason} (session=${sessionCode})`);
+
+  // 침묵: 평가받고 침묵한 결정 영속 (Step 20). cooldown이 거리 게이트를 외재화하므로 judge는 기본 침묵.
+  if (!decision.speak) {
+    logSilence(sessionId, ctx.lastMessageSeq, "judge", decision.reason, "");
+    return;
   }
 
-  if (final.speak) {
-    // [Step 31-①] leader mediation 간격 가드 — 직전 mediation 발화에서 4msg 미만이면 억제 (재확장 연발 차단).
-    // callout(④)보다 앞: 턴 자체가 억제되면 지목 시도도 없음 (지목 카운트 미소모). pushReason도 미호출 (이력 오염 0).
-    if (final.reason === "mediation" && isLeader) {
-      const lastMed = lastMediationAtSeq.get(sessionCode);
-      if (lastMed !== undefined && ctx.lastMessageSeq - lastMed < LEADER_MEDIATION_MIN_GAP_MSGS) {
-        log.info(
-          `[gate] leader mediation gap hold (dist=${ctx.lastMessageSeq - lastMed}/${LEADER_MEDIATION_MIN_GAP_MSGS}, session=${sessionCode})`,
-        );
-        logSilence(sessionId, ctx.lastMessageSeq, "leader-mediation-gap", "mediation", final.why); // S20 — 분석용
-        return;
-      }
-    }
-    // peer(C1/C3)는 mediation(리더 전용 행동)을 하지 않는다 → 기본은 침묵.
-    // 단, 연속 억제가 K회에 달하면 영영 묵게 두지 않고 그 1회를 react(가벼운 맞장구)로 풀어준다 — Step 16/고려사항2 · Step 31-③
-    if (final.reason === "mediation" && (conditionCode === "C1" || conditionCode === "C3")) {
-      const streak = (peerMediationStreak.get(sessionCode) ?? 0) + 1;
-      if (streak < PEER_MEDIATION_FLOOR_K) {
-        peerMediationStreak.set(sessionCode, streak);
-        log.info(
-          `[gate] peer mediation suppressed → silent (streak=${streak}/${PEER_MEDIATION_FLOOR_K}, session=${sessionCode})`,
-        );
-        logSilence(sessionId, ctx.lastMessageSeq, "peer-mediation-suppressed", "mediation", final.why); // Step 20 — 조건 효과 분석용
-        return;
-      }
-      // [Step 31-③] 하한선 도달: mediation 대신 react(가벼운 맞장구) 1회 + 카운터 리셋.
-      // react는 judge anti-repeat 면제 reason — 연쇄 부작용 없음. peer는 react 기본문만(leader 추가문은 isLeader 분기).
-      // 분석 단절점: K=5/open_floor 세션(~T-C3-005까지)과 K=3/react 세션의 peer 발화 분포는 비교 불가 — 본실험은 전부 Step 31+ 기준.
-      resetMediationStreaks(sessionCode);
-      log.info(
-        `[gate] peer mediation floor reached (streak=${streak}) → remap to react (session=${sessionCode})`,
-      );
-      pushReason(sessionCode, "react"); // Step 21
-      await handleAITurn(io, sessionCode, sessionId, PEER_FLOOR_TRIGGER, ctx, conditionCode, {
-        react: true,
-      });
-      return;
-    }
-    resetMediationStreaks(sessionCode); // mediation 억제 통과 = 실제 발화 확정 → 연속 억제 끊김 (Step 16/B-3)
-    pushReason(sessionCode, final.reason); // Step 21 — judge 발화 전부 (social/react/task 공통)
-    if (final.reason === "social") {
-      // social: 전용 SOCIAL_PROMPT로 분기 (task cue 미주입, 조건 무관 통제). transcript로 맥락 반영.
-      await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
-        social: true,
-      });
-    } else if (final.reason === "react") {
-      // react: 전용 buildReactPrompt로 분기 (Step 13) — 가벼운 ack, task cue 미주입.
-      await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
-        react: true,
-      });
-    } else {
-      const callout = await maybeCalloutOverlay(
-        sessionCode,
-        sessionId,
-        conditionCode,
-        ctx,
-        final.reason,
-      ); // [Step 30] — 발화 확정 후 형식만 결정 (발화 여부에 0 관여)
-      // [Step 31-①] mediation 발화 기준점 갱신 (간격 가드용)
-      if (final.reason === "mediation" && isLeader) {
-        lastMediationAtSeq.set(sessionCode, ctx.lastMessageSeq);
-      }
-      await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
-        reason: final.reason,
-        recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
-        ...(callout && { callout }),
-      });
-    }
-  } else {
-    // [Step 35] open-room silence floor — speak=false인데 '활발한 방' reason이면 한 카운터로 세고 K번째마다 react.
-    // 진짜 발화(speak=true)·gap 가드·summary·callout·peer 경로 전부 무변경. 여기는 '거른 것'만 가볍게 줍는다.
-    if (isLeader && OPEN_ROOM_SILENCE_REASONS.has(final.reason)) {
-      const streak = (leaderOpenRoomSilenceStreak.get(sessionCode) ?? 0) + 1;
-      if (streak < LEADER_OPENROOM_FLOOR_K) {
-        leaderOpenRoomSilenceStreak.set(sessionCode, streak);
-        log.info(
-          `[gate] leader open-room floor suppressed → silent (reason=${final.reason}, streak=${streak}/${LEADER_OPENROOM_FLOOR_K}, session=${sessionCode})`,
-        );
-        logSilence(sessionId, ctx.lastMessageSeq, "leader-openroom-floor-suppressed", final.reason, final.why); // [Step 35] 실제 reason 보존 (분석)
-        return;
-      }
-      // 하한 도달 → react 1회 + 리셋. callout 미시도(react는 지목 대상 아님). buildReactPrompt(무접촉) 그대로.
-      leaderOpenRoomSilenceStreak.set(sessionCode, 0);
-      log.info(`[gate] leader open-room floor reached (reason=${final.reason}, streak=${streak}) → remap to react (session=${sessionCode})`);
-      pushReason(sessionCode, "react");
-      await handleAITurn(io, sessionCode, sessionId, LEADER_FLOOR_TRIGGER, ctx, conditionCode, { react: true });
-      return;
-    }
-    // Step 20: 평가받고 침묵한 결정 영속 (open-room 아닌 reason = social 등은 여기로)
-    logSilence(sessionId, ctx.lastMessageSeq, "judge", decision.reason, decision.why);
+  // peer(C1/C3)는 mediation(리더 전용 행동)을 하지 않는다 → 침묵. (Step 37: react remap·floor 제거)
+  if (decision.reason === "mediation" && (conditionCode === "C1" || conditionCode === "C3")) {
+    logSilence(sessionId, ctx.lastMessageSeq, "peer-mediation", "mediation", "");
+    return;
   }
+
+  // 발화 확정 — leader면 callout 오버레이(형식만, 발화 여부엔 0 관여)
+  const callout = await maybeCalloutOverlay(
+    sessionCode,
+    sessionId,
+    conditionCode,
+    ctx,
+    decision.reason,
+  ); // [Step 30]
+  await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
+    reason: decision.reason,
+    recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
+    ...(callout && { callout }),
+  });
 }
 
 function startPullEvalution(
@@ -656,23 +409,16 @@ export function stopPullEvalution(sessionCode: string) {
     sessionIntervals.delete(sessionCode);
     log.debug(`[pull-trigger] stopped for ${sessionCode}`);
   }
-  // closing 게이트 상태 정리 (메모리 누수 방지)
+  // closing/summary/callout 게이트 상태 정리 (메모리 누수 방지)
   sessionStartedAt.delete(sessionCode);
   closingDone.delete(sessionCode);
   openingDone.delete(sessionCode);
-  peerMediationStreak.delete(sessionCode);
-  leaderOpenRoomSilenceStreak.delete(sessionCode); // [Step 35] was leaderMediationFalseStreak
-  recentReasons.delete(sessionCode);
-  summaryPrevLeader.delete(sessionCode);
-  summaryArmedLeader.delete(sessionCode);
+  summaryDone.delete(sessionCode); // [Step 37]
   lastSummaryAtSeq.delete(sessionCode);
   lastSummaryLeader.delete(sessionCode);
   calloutCount.delete(sessionCode); // [Step 30]
   lastCalloutAtSeq.delete(sessionCode);
   lastCalloutTarget.delete(sessionCode);
-  lastMediationAtSeq.delete(sessionCode); // [Step 31-①]
-  exhaustionPhase.delete(sessionCode); // [Step 36]
-  noYieldStreak.delete(sessionCode); // [Step 36]
 }
 
 // [Step 32-⑥] 인터벌만 정지 — stopPullEvalution과 달리 게이트 상태 맵(closingDone/openingDone/
@@ -955,22 +701,9 @@ export function registerSocketHandlers(io: IO) {
           void extractSurfacedTraits(trimmed)
             .then((ids) => {
               if (ids.length) log.info(`[pooling] surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
-              return updateRevealStats(sessionId, ids); // [Step 36] 새로 추가된 distinct 수 반환
-            })
-            .then((addedNew) => {
-              // [Step 36] no-yield 추적 (lag: fire-and-forget이라 다음 사이클 반영 — 최대 1메시지)
-              if (addedNew > 0) {
-                noYieldStreak.set(sessionCode, 0);
-                const ph = exhaustionPhase.get(sessionCode);
-                if (ph === "probed" || ph === "draining") exhaustionPhase.set(sessionCode, "active"); // 끌어내기 성공 → 재무장
-              } else {
-                noYieldStreak.set(sessionCode, (noYieldStreak.get(sessionCode) ?? 0) + 1);
-              }
+              return updateRevealStats(sessionId, ids);
             })
             .catch((e) => log.error("[pooling] extract error:", e));
-        } else if (conditionCode !== "CTRL") {
-          // [Step 36] <15자 잡담 = 무수확 취급 → no-yield streak 증가 (동기)
-          noYieldStreak.set(sessionCode, (noYieldStreak.get(sessionCode) ?? 0) + 1);
         }
 
         //6. Push 트리거 평가 - AI 호출은 비동기 (핸들러 안 막음)
@@ -984,6 +717,13 @@ export function registerSocketHandlers(io: IO) {
         socket.emit("message-failed", { reason: "Server error while saving message" });
       }
     });
+    // 입력 중(작성중) 표시 — DB 저장 없이 같은 방의 상대에게만 릴레이 (본인 제외).
+    socket.on("typing", ({ isTyping }) => {
+      const { sessionCode, role } = socket.data;
+      if (!sessionCode || !role) return;
+      socket.to(sessionCode).emit("peer-typing", { role, isTyping });
+    });
+
     socket.on("disconnect", async (reason) => {
       log.debug(`[socket] disconnected: ${socket.id} (${reason})`);
       //socket.data에 정보 있으면 peer 에게 알림
