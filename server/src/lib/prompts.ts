@@ -105,7 +105,7 @@ export function buildSystemPrompt(conditionCode: ConditionCode): string {
 // 런타임 append, 4조건 공통 - calculate ratio 발화 금지 + 상대 말 먼저 받기(결함1)
 const OUTPUT_DISCIPLINE = `You calculate the positive-to-negative ratio internally to inform your judgment, but you must never state, recite, or refer to the numeric ratios, trait counts, or the calculation itself in your messages. Speak naturally as a teammate would — reason from the ratios silently, express only your reasoning and preference in words.
 
-Always start by taking up what was just said: respond to the other person's last message — answer it, build on it, or acknowledge it — before adding your own point. If you ask a question, it must follow from what was just said or from what's still missing on the table, not from a trait you happen to hold; and never answer a question with a question of your own.
+Before adding your own point, first take in what was just said and respond to it — and when you put something new on the table, tie it to that point rather than dropping it in cold. If you ask a question, ground it in what was just raised — not a topic you've pulled from your own head.
 
 Keep it to 1–2 sentences. Make one focused point per turn rather than covering every candidate at once — you will have further turns to add more. Do not pack multiple comparisons into a single long sentence.
 
@@ -122,20 +122,23 @@ export function buildSystemPromptWithDiscipline(conditionCode: ConditionCode): s
 // task 시스템 프롬프트 맨 끝(OUTPUT_DISCIPLINE 뒤)에 주입 (recency).
 const CUE_BASE: Record<"build_on" | "directed_followup" | "mediation", string> = {
   build_on:
-    "Build on the point just made — extend it or push back on that specific thread, one focused point. Don't restate what you've already said.",
+    // [Step 40] uptake(받기-먼저)는 OUTPUT_DISCIPLINE이 깔고, build_on은 그 위에 read/안 나온 정보를 얹음.
+    // "bears on it but hasn't surfaced yet" = 새 정보를 현재 스레드에 묶음(새 후보 의제전환 누출 차단).
+    "Build on what they're working through about the candidate in play — add one thing of your own on top of their point: your read on it, or a piece you hold that bears on it but hasn't surfaced yet. One focused point, and don't restate what you've already said.",
   directed_followup:
     "Answer what was actually asked, on that thread. If someone asked you to pick, give your single current best (the highest ratio right now); otherwise answer without forcing a pick. If you're asked to compute, count, tally, score, or read out numbers (\"count what you have\", \"what's the ratio\", \"score them\"), don't produce numbers or a mechanical tally — give your qualitative read of the full profile instead. If someone asks for everything you have on a candidate, actually list it — all of that candidate's positives and all of its negatives — before adding your read.",
   mediation:
     "The team is narrowing or getting stuck. Say plainly where things stand and widen the comparison back to the full field — do not name a winner this turn, and don't write any candidate off either; keep every candidate's door open.",
 };
 const STRATEGY_TAIL = {
-  xai: " Frame your point as a brief comparison with your reasoning.",
+  xai: "", // [Step 38] xai per-cue tail 제거 — 비교 형식은 동결 strategy_xai_02가 담음
+
   // [Step 37] leader: agenda-setting 보존하되 early-pivot 차단 (결함2)
   aci_leader:
     " End by drawing the team out with a question. If a candidate already in play still has little on the table, keep the team on that candidate and pull more out before moving on — only steer to a fresh candidate once the current one has been properly covered.",
   // peer: 지금 스레드/본인이 확신 없는 지점에 한정 — 한 사람을 그 구체적 지점에서 끌어낸다 (agenda-setting 아님)
   aci_peer:
-    " End with a question that stays on the point being discussed right now — draw one teammate out on that specific thread, or check whether they have evidence on something you're unsure of, the way a curious equal would.",
+    " End with a small, grounded question — tied to the point on the table right now or to something you're genuinely unsure of — that draws one teammate out on what they know. Don't survey the whole field or take stock of where things stand; ask as a curious equal inside the discussion, not the one steering it.",
 } as const;
 
 function tailKeyOf(c: ConditionCode): keyof typeof STRATEGY_TAIL {
@@ -158,12 +161,19 @@ export function buildSystemPromptForTask(
   conditionCode: ConditionCode,
   cue: SpeakingReason,
   tallyText?: string,
-  depthNote?: string, // [Step 37] 얕은 후보 정렬 — task 턴만, underCoveredCandidates서 계산
+  depthNote?: string, // [Step 37/39] 얕은 현재 후보(C*) 정렬 — task 턴만, aiTurn서 계산
 ): string {
   const tally = tallyText ? `\n\n${tallyText}` : "";
   const depth = depthNote ? `\n\n${depthNote}` : "";
   return `${buildSystemPromptWithDiscipline(conditionCode)}${tally}${depth}\n\n[This turn] ${buildCueSnippet(cue, conditionCode)}`;
 }
+
+// [Step 39] depth note 빌더 — 현재 토픽 후보 C*가 얕을 때 주입. leader=지시형(의제설정 보존),
+// peer=따라가기만(비주도 — "keep the TEAM on" 없음, 사람이 옮기면 같이 이동).
+export const buildLeaderDepth = (c: Cand): string =>
+  `[Depth — Candidate ${c} is on the table but still thin. Keep the team on ${c} and draw more out before moving them to a new candidate.]`;
+export const buildPeerDepth = (c: Cand): string =>
+  `[Depth — the team is on Candidate ${c} right now, and there's more you can add there. Stay with ${c} rather than switching to a new candidate yourself; if the others move on to a different one, move with them.]`;
 
 //=== Closing 전용 프롬프트 (Step 4/A·R4) — compiled spec을 쓰지 않는다(=commit/recommend 압력 없음). ===
 // 2축 핵심 키워드만: status(leader) + strategy(xai 설명·비교 / aci 질문·끌어내기). 중립 마무리.

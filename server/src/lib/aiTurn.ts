@@ -5,10 +5,10 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildSummaryPrompt } from "./prompts.js";
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildSummaryPrompt, buildLeaderDepth, buildPeerDepth } from "./prompts.js"; // [Step 39] depth 빌더
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
-import { computeTally, formatTally, underCoveredCandidates } from "./poolingTally.js";
+import { computeTally, formatTally, surfacedByCandidate, currentTopicCandidate } from "./poolingTally.js"; // [Step 39]
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { allocSeq } from "./seq.js";
@@ -82,11 +82,13 @@ export async function handleAITurn(
       const session = await Session.findById(sessionId).select("revealStats").lean();
       const rs = (session as any)?.revealStats;
       tallyText = formatTally(computeTally(rs));
-      // [Step 37] 얕은 후보(도입됐지만 <임계) 있으면 조기 이탈 차단 노트. 없으면 미주입.
-      const under = underCoveredCandidates(rs, TRIGGER_CONFIG.DEPTH_MIN_PER_CAND);
-      depthNote = under.length
-        ? `[Depth — these candidates are on the table but barely explored so far: ${under.join(", ")}. Keep the team on them and draw more out; don't move the discussion to a fresh candidate until the current one is properly covered.]`
-        : undefined;
+      // [Step 39] depth v2 — 고정 리스트 대신 '지금 사람들이 다루는 후보 C*'를 추적.
+      // C*가 얕으면(<임계) 조건별 노트 주입. C* null(언급 없음/비교 중) 또는 충분히 표면화 → 미주입(자동 릴리스).
+      const cstar = currentTopicCandidate(msgs);
+      const thin =
+        cstar != null && (surfacedByCandidate(rs)[cstar] ?? 0) < TRIGGER_CONFIG.DEPTH_MIN_PER_CAND;
+      const isLeader = conditionCode === "C2" || conditionCode === "C4";
+      depthNote = thin ? (isLeader ? buildLeaderDepth(cstar!) : buildPeerDepth(cstar!)) : undefined;
     }
 
     let systemPrompt = opts?.closing

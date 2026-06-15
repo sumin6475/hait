@@ -345,7 +345,12 @@ async function maybeAITurn(
 
   // ④ push = 개입 judge (조건-블라인드, Step 37: 1회·순수 분류)
   const win = await loadWindow(sessionId);
-  const decision = await judgeIntervention(win.labeled, ctx.messagesSinceLastAI);
+  // [Step 40] prevTurnWasAlex: msgsSinceLastAI===1 ⟺ 마지막 메시지 직전 턴이 Alex (그 직후 1턴)
+  const decision = await judgeIntervention(
+    win.labeled,
+    ctx.messagesSinceLastAI,
+    ctx.messagesSinceLastAI === 1,
+  );
   if (decision === null) {
     const fired = await evaluateTriggers(ctx);
     if (fired) {
@@ -360,6 +365,14 @@ async function maybeAITurn(
   // 침묵: 평가받고 침묵한 결정 영속 (Step 20). cooldown이 거리 게이트를 외재화하므로 judge는 기본 침묵.
   if (!decision.speak) {
     logSilence(sessionId, ctx.lastMessageSeq, "judge", decision.reason, "");
+    return;
+  }
+
+  // [Step 40] follow-up 윈도우 컷: 이름 없는 directed_followup은 'Alex 직후 1턴'(msgsSinceLastAI===1)에만 유효.
+  // (호명은 위 ① fast-path가 이미 결정적 처리 → 여기 오는 directed_followup은 judge의 추론.)
+  // 강등(→build_on) 대신 보수적 침묵: 잘못된 강등이 도미넌스/오답을 만드는 것보다 한 박자 쉼이 안전.
+  if (decision.reason === "directed_followup" && ctx.messagesSinceLastAI !== 1) {
+    logSilence(sessionId, ctx.lastMessageSeq, "followup-window-closed", "directed_followup", "");
     return;
   }
 

@@ -22,4 +22,6 @@ export const TRIGGER_CONFIG = {
 
   // [Step 37] Depth 게이트 — 후보당 distinct 표면화 임계. 이 미만이면 "얕은 후보"로 보고 조기 이탈 차단. (튜너블)
   DEPTH_MIN_PER_CAND: 3,
+  // [Step 39] 현재 토픽 후보(C*) 탐지 시 거슬러 볼 '사람' 메시지 수 (튜너블)
+  DEPTH_LOOKBACK_MSGS: 4,
 } as const;
