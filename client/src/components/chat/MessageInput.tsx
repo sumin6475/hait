@@ -15,6 +15,7 @@ export const MessageInput = ({ onSend, onTyping, disabled }: MessageInputProps) 
   const [value, setValue] = useState("");
   const isTypingRef = useRef(false); // 중복 emit 방지 — 상태 변할 때만 알림
   const idleTimer = useRef<ReturnType<typeof setTimeout>>();
+  const composingRef = useRef(false); // IME(한글 등) 조합 중 여부 — 조합 확정 Enter를 전송과 분리
 
   // 작성중 상태를 한 곳에서만 전이 (멱등) — true/false 중복 emit 차단
   const setTyping = (next: boolean) => {
@@ -57,6 +58,9 @@ export const MessageInput = ({ onSend, onTyping, disabled }: MessageInputProps) 
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
+      // IME(한글/일어/중국어) 조합 중 Enter는 "조합 확정"이지 전송이 아님 — 무시.
+      // (조합 중 전송하면 "안녕" 전송 후 확정된 "녕"이 또 올라가는 이중전송 발생)
+      if (composingRef.current || e.nativeEvent.isComposing) return;
       e.preventDefault();
       handleSend();
     }
@@ -68,6 +72,8 @@ export const MessageInput = ({ onSend, onTyping, disabled }: MessageInputProps) 
         type="text"
         value={value}
         onChange={(e) => handleChange(e.target.value)}
+        onCompositionStart={() => (composingRef.current = true)}
+        onCompositionEnd={() => (composingRef.current = false)}
         onKeyDown={handleKeyDown}
         placeholder="Type your message..."
         disabled={disabled}
