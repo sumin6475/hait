@@ -41,6 +41,7 @@ export async function handleAITurn(
     summaryTransition?: string; // 전이 기록 (AIIntervention.why로 영속)
     recentSummaryLeader?: string; // Step 22/C-2: 직전 summary가 선언한 1등 (task 턴 wobble 가드)
     callout?: { target: string; targetRole: ParticipantRole; cand?: Cand }; // [Step 30] 지목 호명 overlay
+    bypassDoublePost?: boolean; // [Step 43] anti-double-post 면제 — 답→summary 쌍의 summary 한정
   },
 ) {
   //락 체크
@@ -58,7 +59,7 @@ export async function handleAITurn(
     // 더블포스트 가드 (Step 13/결함 2): 사람 메시지 2개가 거의 동시에 push 2개를 통과시켜도
     // 직전 push가 방금 발화했으면 중단. closing은 예외(타이머 클로징은 마지막이 AI여도 발동).
     const last = allMessages[allMessages.length - 1];
-    if (!opts?.closing && last && last.senderRole === "ai") {
+    if (!opts?.closing && !opts?.bypassDoublePost && last && last.senderRole === "ai") {
       log.debug(`[ai-turn] skipped: last message already AI (anti-double-post) ${sessionCode}`);
       return;
     }

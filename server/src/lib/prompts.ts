@@ -149,14 +149,16 @@ const CUE_BASE: Record<"build_on" | "directed_followup" | "mediation", string> =
   directed_followup:
     "Answer what was actually asked, on that thread, in one or two sentences — make your single most relevant point, not a roundup of the candidate. If someone asked you to pick, give your single current best (the highest ratio right now); otherwise answer without forcing a pick. If you're asked to compute, count, tally, score, or read out numbers (\"count what you have\", \"what's the ratio\", \"score them\"), don't produce numbers or a mechanical tally — give your qualitative read instead. Only when someone EXPLICITLY asks for all of a candidate's traits (e.g. \"what are all of A's traits\", \"list everything you have on A\") do you list every positive and negative; a loose \"what do you have?\" or \"can we talk about A?\" is NOT that request — answer those with one point.",
   mediation:
-    "When the team stalls, repeats itself, or narrows to one or two candidates too early, step in as the person keeping the room on track: say plainly where the discussion stands — what's been covered and what hasn't — and steer it back to the fuller field, without naming a winner on that turn. Here you're redirecting the flow, not comparing candidates or quizzing anyone — keep every candidate in play, then hand the floor back.",
+    // [Step 43] widen 방향 유지, 그 앞에 "지금 포커스 받기" 한 절 (uptake-before-steer).
+    "When the team stalls, repeats itself, or narrows to one or two candidates too early, step in as the person keeping the room on track: first take in what they're focused on right now and acknowledge it, then say plainly where the discussion stands — what's been covered and what hasn't — and steer it back to the fuller field, without naming a winner on that turn. Here you're redirecting the flow, not comparing candidates or quizzing anyone — keep every candidate in play, then hand the floor back.",
 };
 const STRATEGY_TAIL = {
   xai: "", // [Step 38] xai per-cue tail 제거 — 비교 형식은 동결 strategy_xai_02가 담음
 
   // [Step 37] leader: agenda-setting 보존하되 early-pivot 차단 (결함2)
+  // [Step 43] steer 방향 유지, agenda 무브 앞에 "지금 보는 후보 받기" 한 절 — 데려가는 리더 (라이브 T-C4-013).
   aci_leader:
-    " End by drawing the team out with a question. If a candidate already in play still has little on the table, keep the team on that candidate and pull more out before moving on — only steer to a fresh candidate once the current one has been properly covered.",
+    " End by drawing the team out with a question. First take in the candidate the team is focused on right now — especially if they just asked to stay on it — and add one thing on that candidate before you move. If a candidate already in play still has little on the table, keep the team on it and pull more out. Only once the current candidate is properly covered, acknowledge where the team is and then bridge them to a fresh candidate, rather than cutting away.",
   // peer: 지금 스레드/본인이 확신 없는 지점에 한정 — 한 사람을 그 구체적 지점에서 끌어낸다 (agenda-setting 아님)
   aci_peer:
     " End with a small, grounded question — tied to the point on the table right now or to something you're genuinely unsure of — that draws one teammate out on what they know. Don't survey the whole field or take stock of where things stand; ask as a curious equal inside the discussion, not the one steering it.",

@@ -192,6 +192,30 @@ async function maybeLeaderSummary(
   summaryDone.add(sessionCode);
   lastSummaryAtSeq.set(sessionCode, ctx.lastMessageSeq);
   if (leader) lastSummaryLeader.set(sessionCode, leader); // wobble: leader≠null일 때만 (동률 뒤엔 강제할 1등 없음)
+
+  // [Step 43] 직전 메시지가 (호명 아닌) 질문이면 summary가 가로채지 않게 답 → summary 2연속.
+  // (호명 last-message는 ① fast-path가 이미 처리하므로 여기 도달 시 ADDRESS_RE는 사실상 비활성 — 방어적 OR.)
+  const pendingQ =
+    !ctx.lastMessageIsAI &&
+    (/\?\s*$/.test(ctx.lastMessageText) || ADDRESS_RE.test(ctx.lastMessageText));
+  if (pendingQ) {
+    log.info(`[gate] leader summary — answer→summary pair (leader=${leader ?? "tied"}, session=${sessionCode})`);
+    // (1) 답 — directed_followup (EXP면 natural recipe로 자동). last가 사람이라 더블포스트 가드 자연 통과.
+    await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
+      reason: "directed_followup",
+      recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
+    });
+    // 답 직후 transcript 변동 → ctx 재계산 (summary는 갱신된 맥락 기반)
+    const ctx2 = await buildSessionContext(sessionId, sessionCode);
+    // (2) summary — 자기 답 직후라 anti-double-post에 막히므로 그 가드만 면제 (cooldown은 이 경로에 없음)
+    await handleAITurn(io, sessionCode, sessionId, SUMMARY_TRIGGER, ctx2, conditionCode, {
+      summary: true,
+      summaryLeader: leader,
+      bypassDoublePost: true,
+    });
+    return true;
+  }
+
   log.info(`[gate] leader summary (leader=${leader ?? "tied"}, session=${sessionCode})`);
   await handleAITurn(io, sessionCode, sessionId, SUMMARY_TRIGGER, ctx, conditionCode, {
     summary: true,
