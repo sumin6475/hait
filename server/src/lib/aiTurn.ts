@@ -5,7 +5,7 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildSummaryPrompt, buildLeaderDepth, buildPeerDepth } from "./prompts.js"; // [Step 39] depth 빌더
+import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildSummaryPrompt, buildLeaderDepth, buildPeerDepth, buildNaturalPrompt } from "./prompts.js"; // [Step 39] depth 빌더 / [EXP] buildNaturalPrompt
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
 import { computeTally, formatTally, surfacedByCandidate, currentTopicCandidate } from "./poolingTally.js"; // [Step 39]
@@ -74,6 +74,8 @@ export async function handleAITurn(
     const cue: SpeakingReason = opts?.closing
       ? "closing"
       : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
+    // [EXP] directed_followup이면 status-only 자연발화 경로 — tally/depth 미주입.
+    const isNatural = TRIGGER_CONFIG.EXP_NATURAL_DIRECTED && cue === "directed_followup";
 
     // tally + depth 주입 (Step 14a/37) — task 턴만 (closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
     let tallyText: string | undefined;
@@ -89,13 +91,18 @@ export async function handleAITurn(
         cstar != null && (surfacedByCandidate(rs)[cstar] ?? 0) < TRIGGER_CONFIG.DEPTH_MIN_PER_CAND;
       const isLeader = conditionCode === "C2" || conditionCode === "C4";
       depthNote = thin ? (isLeader ? buildLeaderDepth(cstar!) : buildPeerDepth(cstar!)) : undefined;
+      // [depth obs · 임시] 주입 여부만 — 실제 발화에 먹혔는지는 메시지로 확인. natural 턴은 depth 미사용이라 제외.
+      if (!isNatural)
+        log.info(`[depth] ${depthNote ? `active (${cstar})` : "none"} (session=${sessionCode})`);
     }
 
     let systemPrompt = opts?.closing
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
       : isSummary
         ? buildSummaryPrompt(conditionCode, opts?.summaryLeader ?? null) // summary: leader 중간정리 (Step 22/37) — 선언형 or 박빙
-        : buildSystemPromptForTask(conditionCode, cue, tallyText, depthNote); // Step 12 조립 + tally + depth
+        : isNatural
+          ? buildNaturalPrompt(conditionCode) // [EXP] status-only 자연발화 (행동스펙·tally·depth 미주입)
+          : buildSystemPromptForTask(conditionCode, cue, tallyText, depthNote); // Step 12 조립 + tally + depth
     // Step 22/C-2: 직전 summary로 선언한 1등과의 일관성 한 줄 (task 턴만, wobble 보강 — 주 가드는 tally)
     if (!opts?.closing && !isSummary && opts?.recentSummaryLeader) {
       systemPrompt += `\n\n[Moments ago you told the team ${opts.recentSummaryLeader} is looking strongest right now — stay consistent with that unless the table has genuinely shifted.]`;

@@ -12,8 +12,8 @@ export const TRIGGER_CONFIG = {
   //Pull 트리거 평가 추기 (setInterval 간격)
   PULL_EVALUATION_INTERVAL_MS: 5_000,
 
-  // [Step 37] 단일 빈도 가드 — AI 직후 연속 발화만 차단 (호명 제외). 1 = messagesSinceLastAI<1이면 침묵.
-  COOLDOWN_MIN_MSGS: 1,
+  // [Step 37] 단일 빈도 가드 — AI 발화 후 사람 메시지가 N개 오기 전엔 침묵 (호명 제외). 2 = messagesSinceLastAI<2면 침묵.
+  COOLDOWN_MIN_MSGS: 2,
 
   // 토론 총 길이 — 클라이언트 Timer(ChatRoom.tsx durationMinutes, 현재 20)와 반드시 일치. (단일소스화 추후)
   DISCUSSION_DURATION_MS: 20 * 60 * 1000,
@@ -24,4 +24,8 @@ export const TRIGGER_CONFIG = {
   DEPTH_MIN_PER_CAND: 3,
   // [Step 39] 현재 토픽 후보(C*) 탐지 시 거슬러 볼 '사람' 메시지 수 (튜너블)
   DEPTH_LOOKBACK_MSGS: 4,
+  // [Step 41] social 발화 최소 간격(메시지) — 직전 social 후 이만큼 안 지나면 억제. (callout 쿨다운과 동급)
+  SOCIAL_COOLDOWN_MSGS: 4,
+
+  EXP_NATURAL_DIRECTED: true, // [EXP] 자연발화 프로빙. 실데이터 수집 전 false로.
 } as const;
