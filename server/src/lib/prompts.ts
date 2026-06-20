@@ -126,7 +126,7 @@ export function buildNaturalPrompt(conditionCode: ConditionCode): string {
 // 런타임 append, 4조건 공통 - calculate ratio 발화 금지 + 상대 말 먼저 받기(결함1)
 const OUTPUT_DISCIPLINE = `You calculate the positive-to-negative ratio internally to inform your judgment, but you must never state, recite, or refer to the numeric ratios, trait counts, or the calculation itself in your messages. Speak naturally as a teammate would — reason from the ratios silently, express only your reasoning and preference in words.
 
-Before adding your own point, first take in what was just said and respond to it. You can put something new on the table — including a candidate or trait that hasn't surfaced yet — but tie it to what was just said rather than dropping it in cold; if you ask a question, anchor it the same way.
+Before adding your own point, first take in what was just said and respond to it. You can put something new on the table — including a candidate or trait that hasn't surfaced yet — but tie it to what was just said rather than dropping it in cold; if you ask a question, anchor it the same way. If your own read shifts as new information lands, name the shift in a natural half-line tied to what moved you (e.g. "oh, then B looks better to me now, since…") instead of switching your pick with no signal.
 
 Keep it to 1–2 sentences and make one focused point per turn — you will have further turns to add more. When you put your own information on the table, share one trait or piece at a time, not a list — unless someone explicitly asks for everything on a candidate. Don't cover multiple candidates at once, and don't pack multiple comparisons into one long sentence.
 

@@ -21,7 +21,7 @@ import {
   getParticipantSlots,
 } from "../lib/codeGen.js";
 import { computePoolingDV, computeDecisionAccuracy } from "../lib/poolingDV.js";
-import { stopPullEvalution } from "../sockets/index.js"; // [Step 31-⑦] 라우트→sockets 단방향 (순환 없음)
+import { stopPullEvalution, forceMuteAI } from "../sockets/index.js"; // [Step 31-⑦] 라우트→sockets 단방향 (순환 없음)
 import { GATE_ORDER, type ConditionCode, type Candidate, type GateId } from "../types.js";
 import { STATUS_CODES } from "http";
 
@@ -303,6 +303,25 @@ sessionsRouter.patch("/:code/gates/:gate/approve", requireAdmin, async (req, res
     res.json({ ok: true, approvals: updated?.gateApprovals ?? {} });
   } catch (error) {
     console.error("[PATCH /api/sessions/:code/gates/:gate/approve]", error);
+    res.status(500).json({ ok: false, error: String(error) });
+  }
+});
+
+//---POST /api/sessions/:code/stop-ai: 연구자 킬스위치 (Alex 음소거)---
+//연구자가 대시보드 버튼으로 특정 세션의 Alex를 영구 음소거. 사람·채팅·타이머는 그대로.
+//토론을 끝내거나 team-decision으로 넘기지 않음(그건 Exit 버튼). status 가드 없음 — escape hatch.
+sessionsRouter.post("/:code/stop-ai", requireAdmin, async (req, res) => {
+  try {
+    const { code } = req.params;
+    const session = await Session.findOne({ sessionCode: code });
+    if (!session) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+    forceMuteAI(session.sessionCode); // [Step 31-⑦] 패턴: 모델의 sessionCode(string) 전달
+    console.log(`[stop-ai] AI muted by researcher for ${session.sessionCode}`);
+    res.json({ ok: true, sessionCode: session.sessionCode, muted: true });
+  } catch (error) {
+    console.error("[POST /api/sessions/:code/stop-ai]", error);
     res.status(500).json({ ok: false, error: String(error) });
   }
 });

@@ -13,6 +13,7 @@ import {
   useCreateSession,
   useDeleteSession,
   useApproveGate,
+  useStopAI,
 } from "@/hooks/useSessions";
 import type { ConditionCode, SessionSummary } from "@/lib/api";
 import { GATES } from "@/lib/gates";
@@ -51,6 +52,7 @@ const Sessions = () => {
   const { data: sessions, isLoading, error } = useSessionList();
   const createMutation = useCreateSession();
   const deleteMutation = useDeleteSession();
+  const stopAIMutation = useStopAI();
 
   const [selectedCondition, setSelectedCondition] = useState<ConditionCode>("C1");
   const [isTest, setIsTest] = useState(true);
@@ -74,6 +76,15 @@ const Sessions = () => {
     if (!confirm(`Delete ${code}? 참가자/메시지 모두 삭제됩니다.`)) return;
     deleteMutation.mutate(code, {
       onError: (e) => alert(`삭제 실패: ${(e as Error).message}`),
+    });
+  };
+
+  //연구자 킬스위치 — Alex를 이 세션에서 영구 음소거 (사람·채팅·타이머는 계속)
+  const handleStopAI = (code: string) => {
+    if (!confirm(`Alex를 이 세션(${code})에서 음소거할까요? 되돌릴 수 없습니다.`)) return;
+    stopAIMutation.mutate(code, {
+      onSuccess: () => alert("AI muted"),
+      onError: (e) => alert(`음소거 실패: ${(e as Error).message}`),
     });
   };
 
@@ -172,6 +183,8 @@ const Sessions = () => {
                   session={s}
                   onOpen={() => setDetailCode(s.sessionCode)}
                   onDelete={() => handleDelete(s.sessionCode)}
+                  onStopAI={() => handleStopAI(s.sessionCode)}
+                  stopAIPending={stopAIMutation.isPending}
                 />
               ))}
               {sessions && sessions.length === 0 && (
@@ -197,12 +210,18 @@ function SessionRow({
   session,
   onOpen,
   onDelete,
+  onStopAI,
+  stopAIPending,
 }: {
   session: SessionSummary;
   onOpen: () => void;
   onDelete: () => void;
+  onStopAI: () => void;
+  stopAIPending: boolean;
 }) {
   const max = session.conditionCode === "CTRL" ? 3 : 2;
+  //AI 음소거는 진행 중 세션 + AI 있는 조건(CTRL 제외)에서만 의미 있음
+  const canStopAI = session.status === "in_progress" && session.conditionCode !== "CTRL";
   return (
     <tr className="hover:bg-muted/20 transition-colors">
       <td className="px-5 py-3 font-mono text-sm font-medium">
@@ -233,7 +252,17 @@ function SessionRow({
           minute: "2-digit",
         })}
       </td>
-      <td className="px-5 py-3 text-right">
+      <td className="px-5 py-3 text-right whitespace-nowrap">
+        {canStopAI && (
+          <button
+            onClick={onStopAI}
+            disabled={stopAIPending}
+            title="Alex를 이 세션에서 영구 음소거 (사람·채팅·타이머는 계속)"
+            className="text-xs text-status-warning hover:underline font-medium mr-3 disabled:opacity-40"
+          >
+            Stop AI
+          </button>
+        )}
         <button onClick={onDelete} className="text-xs text-destructive hover:underline font-medium">
           Delete
         </button>

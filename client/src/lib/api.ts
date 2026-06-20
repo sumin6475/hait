@@ -332,6 +332,15 @@ export async function getParticipantState(participantCode: string): Promise<Part
   return data.state;
 }
 
+//AI 음소거 (연구자 킬스위치) — 그 세션의 Alex를 영구 침묵. 사람·채팅·타이머는 그대로.
+export async function stopAI(sessionCode: string): Promise<{ muted: boolean }> {
+  const data = await adminFetch<{ ok: true; sessionCode: string; muted: boolean }>(
+    `/api/sessions/${encodeURIComponent(sessionCode)}/stop-ai`,
+    { method: "POST" },
+  );
+  return { muted: data.muted };
+}
+
 //team-decision 저장 (참가자가 호출, status: in_progress -> completed)
 export async function submitTeamDecision(
   sessionCode: string,

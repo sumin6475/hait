@@ -17,6 +17,7 @@ import {
   createSession,
   deleteSession,
   approveGate,
+  stopAI,
   type ConditionCode,
 } from "@/lib/api";
 import type { GateId } from "@/lib/gates";
@@ -67,6 +68,17 @@ export function useApproveGate() {
   return useMutation({
     mutationFn: ({ sessionCode, gate }: { sessionCode: string; gate: GateId }) =>
       approveGate(sessionCode, gate),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: SESSIONS_KEY });
+    },
+  });
+}
+
+//AI 음소거 (연구자 킬스위치) — 음소거 후 목록 갱신
+export function useStopAI() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionCode: string) => stopAI(sessionCode),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: SESSIONS_KEY });
     },

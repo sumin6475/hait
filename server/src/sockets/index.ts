@@ -505,6 +505,15 @@ function pausePullEvalution(sessionCode: string) {
   }
 }
 
+// [killswitch] 연구자 수동 음소거 — closingDone 래치(영구 침묵) + pull 틱 정지(latch 보존). 토론·사람은 계속.
+// stopPullEvalution 금지: 그 함수는 closingDone을 삭제해 음소거가 풀림. 인터벌만 멈추는 pausePullEvalution을 씀.
+// 재입장으로 pull 틱이 다시 켜져도 closingDone 래치가 남아 maybeAITurn line 316에서 즉시 return → 발화 0.
+export function forceMuteAI(sessionCode: string) {
+  closingDone.add(sessionCode); // durable: maybeAITurn 진입부에서 return
+  pausePullEvalution(sessionCode); // 인터벌만 — closingDone 유지
+  log.info(`[killswitch] AI muted by researcher (session=${sessionCode})`);
+}
+
 export function registerSocketHandlers(io: IO) {
   io.on("connection", (socket: AppSocket) => {
     log.debug(`[socket] connected: ${socket.id}`);

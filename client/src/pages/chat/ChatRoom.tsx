@@ -20,6 +20,8 @@ const ChatRoom = () => {
   const [aiName, setAiName] = useState("Alex"); // 폴백 — 서버가 안 보내도 동작
   //[Step 36] 최소 토론 12분 경과 전엔 Exit 버튼 숨김 (서버 TRIGGER_CONFIG.MIN_DISCUSSION_MS와 일치)
   const [canExit, setCanExit] = useState(false);
+  //타이머 만료 시 자동 넘김 제거 — 참가자가 Exit 버튼을 눌러야만 진행. timeUp은 안내 문구용.
+  const [timeUp, setTimeUp] = useState(false);
   //현재 입력 중(작성중)인 상대 역할들 — peer-typing으로 갱신, 메시지 도착/퇴장 시 해제
   const [typingRoles, setTypingRoles] = useState<ParticipantRole[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -162,8 +164,9 @@ const ChatRoom = () => {
     //ui에는 추가 안함
   };
 
+  //자동 넘김 제거 — 만료돼도 navigate 안 함. Exit 버튼(수동)만 team-decision으로 진행.
   const handleTimerExpired = () => {
-    navigate("/chat/hold/teamDecision");
+    setTimeUp(true);
   };
 
   return (
@@ -197,6 +200,13 @@ const ChatRoom = () => {
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {/*타이머 만료 시 자동 전환 없음 — 참가자가 Exit를 눌러야 함을 안내*/}
+      {timeUp && (
+        <p className="text-center text-xs text-muted-foreground px-6">
+          Time's up — click Exit below when your team is ready.
+        </p>
+      )}
 
       {/*[Step 36] 12분 경과 후에만 노출 (early-close 차단) + 라벨을 소진 close 프롬프트와 일치*/}
       {canExit && (

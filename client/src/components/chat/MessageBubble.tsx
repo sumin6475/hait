@@ -28,7 +28,7 @@ export const MessageBubble = ({ message, senderName }: MessageBubbleProps) => {
       </div>
       <div
         className={cn(
-          "rounded-2xl px-4 py-2.5 text-sm leading-relaxed",
+          "rounded-2xl px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words",
           isYou && "bg-chat-user text-chat-user-foreground rounded-br-md",
           !isYou && !isAI && "bg-chat-other text-chat-other-foreground rounded-bl-md",
           isAI && "bg-chat-ai text-chat-ai-foreground rounded-bl-md border border-chat-ai-badge/20",
