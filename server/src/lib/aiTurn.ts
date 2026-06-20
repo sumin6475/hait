@@ -119,7 +119,12 @@ export async function handleAITurn(
     log.debug(`[ai-turn] calling AI for session ${sessionCode} (trigger=${trigger.name})`);
 
     //AI 호출 - structured output (stateless: previous_response_id 체이닝 제거 — Step 2/E)
-    const result = await callAIStructured({ systemPrompt, userPrompt });
+    // [Step 44] summary는 board recap 포맷이라 더 길다 → 토큰 캡 상향 (다른 턴은 기본 140 유지).
+    const result = await callAIStructured({
+      systemPrompt,
+      userPrompt,
+      ...(isSummary ? { maxOutputTokens: 320 } : {}),
+    });
 
     //공통 메타 - 성공/실패 둘 다 기록
     const commonMeta = {

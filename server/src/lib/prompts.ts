@@ -207,10 +207,10 @@ export const LEADER_OPENING =
   "Let's get started. We'll go through the four candidates together — let's each lay out what we know so we have the full picture before we decide.";
 
 const CLOSING_PROMPTS: Partial<Record<ConditionCode, string>> = {
-  // C2 = leader_xai
-  C2: `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. The discussion time is almost up. Give a brief closing remark that wraps up where the discussion has landed and hands the final decision to the team. Your style is explanatory and comparative — you reason by weighing candidates against each other. Do NOT pick a winner or give your own recommendation; leave the choice to the team. Do not mention any numbers or trait counts. Keep it to 1–2 sentences, in your own words.`,
-  // C4 = leader_aci
-  C4: `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. The discussion time is almost up. Give a brief closing remark that wraps up where the discussion has landed and hands the final decision to the team. Your style is to ask and draw the team out rather than to declare. Do NOT pick a winner or give your own recommendation; leave the choice to the team. Do not mention any numbers or trait counts. Keep it to 1–2 sentences, in your own words.`,
+  // C2 = leader_xai — [Step 44] 고른 board 통합 + 넘기기 (설명·비교형)
+  C2: `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. The discussion is wrapping up. Give a closing that briefly pulls the board together — recap, evenly, the picture that built up on the candidates the team weighed (good and bad), weighing every trait the same and not singling any one trait out as decisive. Your style is explanatory and comparative. Then hand the final decision to the team. Do NOT pick a winner or give a recommendation — the choice is theirs. Do not state numbers, ratios, or counts (naming traits is fine). Keep it tight, a few sentences.`,
+  // C4 = leader_aci — [Step 44] 고른 board 통합 + 끌어내기형 넘기기
+  C4: `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. The discussion is wrapping up. Give a closing that briefly pulls the board together — recap, evenly, the picture that built up on the candidates the team weighed (good and bad), weighing every trait the same and not singling any one trait out as decisive. Your style is to draw the team toward their own read rather than to declare — pull the picture together, then turn the final decision back to them. Then hand the final decision to the team. Do NOT pick a winner or give a recommendation — the choice is theirs. Do not state numbers, ratios, or counts (naming traits is fine). Keep it tight, a few sentences.`,
 };
 
 export function buildClosingPrompt(conditionCode: ConditionCode): string {
@@ -244,10 +244,20 @@ export function buildCalloutTail(
   throw new Error(`callout tail is leader-only, got "${conditionCode}"`);
 }
 
-// [Step 37] leader = Cand | null. null(동률) = "박빙 선언"(억지 1등 금지 — leader 본질은 orient).
-const SUMMARY_LEADER = (leader: Cand) =>
-  `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. Open with one short, natural signpost that you're pausing to take stock — in the spirit of "Ok, let's pause for a sec and see where we're at." — in your own words, don't copy it verbatim. Then mark where the discussion stands right now: on what the team has put on the table so far, ${leader} is looking like the strongest fit, while the others have slipped behind or haven't caught up. State it plainly as the lead keeping the team oriented — do NOT mention any numbers or trait counts. Keep it to 2–3 short sentences total, in your own words.`;
-const SUMMARY_TIED = `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. Open with one short, natural signpost that you're pausing to take stock — in the spirit of "Ok, let's pause for a sec and see where we're at." — in your own words, don't copy it verbatim. Then mark where the discussion stands right now: on what the team has put on the table so far, it's genuinely close — no candidate has pulled clearly ahead yet, so this is worth digging into more rather than settling. State it plainly as the lead keeping the team oriented and do NOT mention any numbers or trait counts. Keep it to 2–3 short sentences total, in your own words.`;
+// [Step 44] convergence: 승자 지목 없는 board recap(키워드 포맷) + "고르게 보라" 중립 마감.
+// neutral → leader 값 미사용(LEADER/TIED 동일 본문). buildSummaryPrompt 시그니처 불변.
+const SUMMARY_BODY = `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. Pause to lay the whole board out for the team — fuller than a normal turn, in a clear recap format so everyone can see the coverage at a glance.
+Use this exact shape:
+- One short, natural signpost that you're taking stock, in your own words.
+- Then, for each candidate the team has actually discussed, on its own lines:
+    Candidate X
+    +: <its positive traits that have come up, as short keywords, comma-separated>
+    −: <its negative traits that have come up, as short keywords, comma-separated>
+  Pull only from what's been said; short keywords, not sentences.
+- Then one closing read, weighing every trait equally: none of them runs away with it — each has real upsides and real rough edges, so it's worth reading the whole picture evenly rather than leaning on any single strength or flaw.
+Do NOT name a winner, do NOT tell them to decide, do NOT ask a question, and do NOT state any numbers, ratios, or trait counts (naming traits as keywords is fine; counting them is not).`;
+const SUMMARY_LEADER = (leader: Cand) => SUMMARY_BODY; // [Step 44] neutral — leader 미사용
+const SUMMARY_TIED = SUMMARY_BODY;
 
 export function buildSummaryPrompt(conditionCode: ConditionCode, leader: Cand | null): string {
   if (conditionCode !== "C2" && conditionCode !== "C4") {
