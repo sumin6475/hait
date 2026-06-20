@@ -8,6 +8,7 @@
     "start": "node dist/index.js",
     "eval": "tsx src/scripts/eval-scenarios.ts",
     "golden": "tsx src/eval/run-golden.ts",
+    "judge:cases": "tsx src/eval/run-judge.ts",
     "test:seq": "tsx src/scripts/test-seq-atomic.ts"
   },
   "dependencies": {
