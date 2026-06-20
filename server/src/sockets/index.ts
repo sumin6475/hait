@@ -397,10 +397,11 @@ async function maybeAITurn(
     return;
   }
 
-  // peer(C1/C3)는 mediation(리더 전용 행동)을 하지 않는다 → 침묵. (Step 37: react remap·floor 제거)
+  // peer(C1/C3)는 mediation(리더 전용 행동)을 하지 않는다 → 강제 침묵 대신 self-scoped 자연발화로 리라우트.
+  // judge 침묵→directed_followup reroute(위)와 동일 처리로 비대칭 제거. buildNaturalPrompt는 팀 중재 안 함 → 직교성 안전.
   if (decision.reason === "mediation" && (conditionCode === "C1" || conditionCode === "C3")) {
-    logSilence(sessionId, ctx.lastMessageSeq, "peer-mediation", "mediation", "");
-    return;
+    log.info(`[judge] peer-mediation → directed_followup reroute (session=${sessionCode})`);
+    decision = { speak: true, reason: "directed_followup" };
   }
 
   // 발화 확정 — leader면 callout 오버레이(형식만, 발화 여부엔 0 관여)

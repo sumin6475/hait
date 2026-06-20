@@ -27,5 +27,5 @@ export const TRIGGER_CONFIG = {
   // [Step 41] social 발화 최소 간격(메시지) — 직전 social 후 이만큼 안 지나면 억제. (callout 쿨다운과 동급)
   SOCIAL_COOLDOWN_MSGS: 4,
 
-  EXP_NATURAL_DIRECTED: true, // [EXP] 자연발화 프로빙. 실데이터 수집 전 false로.
+  EXP_NATURAL_DIRECTED: true, // [EXP] 자연발화 프로빙.
 } as const;
