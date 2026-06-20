@@ -15,6 +15,7 @@ import {
   computeTally,
   countSurfaced,
   leastCoveredCandidate,
+  floorMet, // [Step 45] 수렴 양면 floor
 } from "../lib/poolingTally.js";
 import { aiDisplayName, PARTICIPANT_LABEL } from "../lib/labels.js";
 import type { Cand } from "../lib/traitData.js";
@@ -63,6 +64,10 @@ const summaryDone = new Set<string>(); // sessionCode (세션 1회 가드 = 큰 
 const SUMMARY_TRIGGER: Trigger = { name: "summary", shouldFire: () => false };
 const SUMMARY_MIN_SURFACED = 8; // ① 표면화된 distinct trait 최소 — 초반 성급 차단
 const SUMMARY_AFTER_MSGS = 12; // ② 토론 경과 (총 메시지) — 초반 차단
+
+// ── [Step 45] 수렴 소진 추적 (leader 조기-closing 게이트) ──
+const lastSurfacedCount = new Map<string, number>(); // 마지막으로 관측한 표면화 distinct 총수
+const lastGrowthSeq = new Map<string, number>(); // 그 총수가 마지막으로 증가한 시점 seq
 
 // ── [Step 30] leader 지목 호명 overlay (G1·G2·G3만 — Step 37서 G4·G5·G6 제거) ──
 const CALLOUT_MAX_PER_SESSION = 2; // G1 세션 상한
@@ -344,6 +349,36 @@ async function maybeAITurn(
     return;
   }
 
+  // ②.3 [Step 45] 수렴 마무리 — 소진(새 trait K턴 0) ∧ 양면 floor면 정리→마무리로 조기 closing (leader 전용).
+  // ① 직접 호명 fast-path는 위에 있어 질문 중엔 안 끊김. 발동 시 closingDone 래치 → 이후 전 사이클 차단(mediation 억제·물러남 자동).
+  if (isLeader && !closingDone.has(sessionCode)) {
+    const sess = await Session.findById(sessionId).select("revealStats").lean();
+    const rs = (sess as any)?.revealStats;
+    const total = countSurfaced(rs); // = 표면화 distinct 총수 (소진 판정)
+    if (total > (lastSurfacedCount.get(sessionCode) ?? 0)) {
+      lastSurfacedCount.set(sessionCode, total);
+      lastGrowthSeq.set(sessionCode, ctx.lastMessageSeq); // 새 trait 관측 → 성장 시점 갱신
+    }
+    const grewAt = lastGrowthSeq.get(sessionCode) ?? ctx.lastMessageSeq;
+    const exhausted = ctx.lastMessageSeq - grewAt >= TRIGGER_CONFIG.EXHAUST_K;
+
+    if (exhausted && floorMet(rs)) {
+      closingDone.add(sessionCode); // 래치 = 영구 침묵 (기존 메커니즘 재사용)
+      log.info(`[gate] converge wrap-up (exhausted ∧ floor, session=${sessionCode})`);
+      const leader = computeTally(rs).leader; // neutral summary라 값 무관 (Cand|null)
+      await handleAITurn(io, sessionCode, sessionId, SUMMARY_TRIGGER, ctx, conditionCode, {
+        summary: true,
+        summaryLeader: leader,
+      }); // Step 44 +/− 보드
+      const ctx2 = await buildSessionContext(sessionId, sessionCode); // summary 후 transcript 갱신
+      await handleAITurn(io, sessionCode, sessionId, CLOSING_TRIGGER, ctx2, conditionCode, {
+        closing: true,
+        bypassDoublePost: true,
+      }); // Step 44 통합 마무리 — 백투백 (closing은 이미 anti-double-post 면제, 플래그는 의도 명시)
+      return;
+    }
+  }
+
   // ②.5 [Step 22/37] leader summary 게이트 (leader 전용, judge 우회·결정적)
   if (isLeader) {
     const fired = await maybeLeaderSummary(io, sessionCode, sessionId, conditionCode, ctx);
@@ -451,6 +486,8 @@ export function stopPullEvalution(sessionCode: string) {
   summaryDone.delete(sessionCode); // [Step 37]
   lastSummaryAtSeq.delete(sessionCode);
   lastSummaryLeader.delete(sessionCode);
+  lastSurfacedCount.delete(sessionCode); // [Step 45]
+  lastGrowthSeq.delete(sessionCode);
   calloutCount.delete(sessionCode); // [Step 30]
   lastCalloutAtSeq.delete(sessionCode);
   lastCalloutTarget.delete(sessionCode);

@@ -109,6 +109,26 @@ export function surfacedByCandidate(revealStats: any): Record<Cand, number> {
   return out;
 }
 
+// [Step 45] 양면 floor — 네 후보 각각 surfaced에 pos≥1 ∧ neg≥1 표면화됐나 (수렴 마무리 게이트용).
+// surfacedByCandidate와 동일 소스(사람 revealedIds ∪ AI aiSurfaced) — Alex 미발화 Z는 자동 제외.
+// 소진 총개수는 countSurfaced(rs) 재사용 (별도 totalSurfaced 불필요 — 동일 정의).
+export function floorMet(revealStats: any): boolean {
+  const ai: string[] = revealStats?.aiSurfacedIds ?? [];
+  for (const c of CANDS) {
+    const set = new Set<string>(revealStats?.byCandidate?.[c]?.revealedIds ?? []);
+    for (const id of ai) if (TRAIT_BY_ID.get(id)?.candidate === c) set.add(id);
+    let pos = false;
+    let neg = false;
+    for (const id of set) {
+      const v = TRAIT_BY_ID.get(id)?.valence;
+      if (v === "pos") pos = true;
+      else if (v === "neg") neg = true;
+    }
+    if (!pos || !neg) return false; // 이 후보가 한쪽 면이라도 비면 floor 미달
+  }
+  return true;
+}
+
 // [Step 37] 도입(≥1)됐지만 얕은(<threshold) 후보 = 조기 이탈 방지 대상.
 // count===0(미도입)은 leader의 정당한 다음 의제라 제외 → {c | 1 <= count(c) < threshold}.
 // [Step 39] depthNote가 currentTopicCandidate로 교체되어 미사용화 — 보존만(다른 분석 진입점 가능성).
