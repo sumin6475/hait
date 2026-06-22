@@ -81,6 +81,7 @@ export async function handleAITurn(
     // tally + depth 주입 (Step 14a/37) — task 턴만 (closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
     let tallyText: string | undefined;
     let depthNote: string | undefined;
+    let isOpening = false; // [opening] 자연발화 ∧ 테이블에 후보 0 ∧ 극초반 → 인사 recipe
     if (!opts?.closing && !isSummary) {
       const session = await Session.findById(sessionId).select("revealStats").lean();
       const rs = (session as any)?.revealStats;
@@ -88,6 +89,9 @@ export async function handleAITurn(
       // [Step 39] depth v2 — 고정 리스트 대신 '지금 사람들이 다루는 후보 C*'를 추적.
       // C*가 얕으면(<임계) 조건별 노트 주입. C* null(언급 없음/비교 중) 또는 충분히 표면화 → 미주입(자동 릴리스).
       const cstar = currentTopicCandidate(msgs);
+      // [opening] 인사/세팅 단계: 자연발화인데 아직 다룰 후보가 없고 토론 극초반이면 인사로 받기.
+      isOpening =
+        isNatural && cstar == null && ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS;
       const thin =
         cstar != null && (surfacedByCandidate(rs)[cstar] ?? 0) < TRIGGER_CONFIG.DEPTH_MIN_PER_CAND;
       const isLeader = conditionCode === "C2" || conditionCode === "C4";
@@ -102,7 +106,7 @@ export async function handleAITurn(
       : isSummary
         ? buildSummaryPrompt(conditionCode, opts?.summaryLeader ?? null) // summary: leader 중간정리 (Step 22/37) — 선언형 or 박빙
         : isNatural
-          ? buildNaturalPrompt(conditionCode) // [EXP] status-only 자연발화 (행동스펙·tally·depth 미주입)
+          ? buildNaturalPrompt(conditionCode, isOpening) // [EXP] status-only 자연발화 (opening이면 인사 recipe)
           : buildSystemPromptForTask(conditionCode, cue, tallyText, depthNote); // Step 12 조립 + tally + depth
     // Step 22/C-2: 직전 summary로 선언한 1등과의 일관성 한 줄 (task 턴만, wobble 보강 — 주 가드는 tally)
     if (!opts?.closing && !isSummary && opts?.recentSummaryLeader) {

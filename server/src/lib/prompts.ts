@@ -110,16 +110,20 @@ const EXP_PEER_ROLE =
   "You're an equal member of this team — one voice among the others, not the lead. Keep it easygoing.";
 const EXP_NATURAL_TURN =
   "Just respond naturally to what's happening in the chat right now, the way a real teammate would. If something was actually asked of you, answer it briefly; otherwise just react in a line. One short sentence — no lists, no full breakdowns.";
+// [opening] 토론 시작 전(인사·세팅, 테이블에 후보 0) 전용 turn. 인사로 받고 후보 의견은 보류 — peer가 콜드오픈에 선호 들이미는 문제 차단.
+const EXP_OPENING_TURN =
+  "The discussion hasn't started yet — people are just greeting each other or settling in, and there's no candidate on the table. Reply the way a real teammate would right now: a brief, warm hello or a light 'ready when you are.' Don't share, name, or lean toward any candidate yet — there's nothing to weigh in on. Keep it to one short, natural line.";
 
 // 동결 prompt를 "# Behavioral Specification"에서 절단 → 그 앞부분만(wrapper+Task Env+Profile Z+Calling Model = 4조건 공통).
 // 행동스펙(xai/aci form·tally·cue)은 전부 버림. status만 EXP role로 얹는다.
 const EXP_SPEC_MARKER = "# Behavioral Specification";
-export function buildNaturalPrompt(conditionCode: ConditionCode): string {
+export function buildNaturalPrompt(conditionCode: ConditionCode, isOpening = false): string {
   const full = buildSystemPrompt(conditionCode); // CTRL이면 throw (기존과 동일)
   const idx = full.indexOf(EXP_SPEC_MARKER);
   const scaffold = (idx >= 0 ? full.slice(0, idx) : full).trimEnd();
   const isLeader = conditionCode === "C2" || conditionCode === "C4";
-  return `${scaffold}\n\n# Your Role\n${isLeader ? EXP_LEADER_ROLE : EXP_PEER_ROLE}\n\n${OUTPUT_DISCIPLINE}\n\n[This turn] ${EXP_NATURAL_TURN}`;
+  const turn = isOpening ? EXP_OPENING_TURN : EXP_NATURAL_TURN; // [opening] 인사/세팅 단계만 분기
+  return `${scaffold}\n\n# Your Role\n${isLeader ? EXP_LEADER_ROLE : EXP_PEER_ROLE}\n\n${OUTPUT_DISCIPLINE}\n\n[This turn] ${turn}`;
 }
 
 //=== Output discipline (Step 37: slim + Uptake-먼저) ===
