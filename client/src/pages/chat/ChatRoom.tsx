@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { ChatMessage, ParticipantRole } from "@/types";
 import type { SenderRole } from "@/types";
@@ -7,8 +7,11 @@ import { MessageBubble } from "@/components/chat/MessageBubble";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { Timer } from "@/components/chat/Timer";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
+import { InfoCardPanel } from "@/components/chat/InfoCardPanel";
 import { FlaskConical } from "lucide-react";
 import { socket } from "@/lib/socket";
+import { getParticipantState, type ProfileSlot } from "@/lib/api";
+import { DISCUSSION_DURATION_MINUTES, MIN_DISCUSSION_MINUTES } from "@/lib/sessionConfig";
 
 const ChatRoom = () => {
   const navigate = useNavigate();
@@ -16,9 +19,10 @@ const ChatRoom = () => {
   //[Step 26-A] 서버 startedAt 기준 (session-history로 수신) — 새로고침해도 타이머 리셋 안 됨
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [myRole, setMyRole] = useState<SenderRole | null>(null);
+  const [profile, setProfile] = useState<ProfileSlot | null>(null);
   //[Step 30] 조건별 AI 표시명 (session-history로 수신) — 메시지 객체에 박지 않고 렌더 시 state로 읽음
-  const [aiName, setAiName] = useState("Alex"); // 폴백 — 서버가 안 보내도 동작
-  //[Step 36] 최소 토론 12분 경과 전엔 Exit 버튼 숨김 (서버 TRIGGER_CONFIG.MIN_DISCUSSION_MS와 일치)
+  const [aiName, setAiName] = useState("Alex"); // 폴백 — 서버가 안내도 동작
+  //[Step 36] 최소 토론 12분 경과 전엔 Exit 버튼 숨김
   const [canExit, setCanExit] = useState(false);
   //타이머 만료 시 자동 넘김 제거 — 참가자가 Exit 버튼을 눌러야만 진행. timeUp은 안내 문구용.
   const [timeUp, setTimeUp] = useState(false);
@@ -31,10 +35,10 @@ const ChatRoom = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typingRoles]);
 
-  //[Step 36] 서버 startedAt 기준 12분 경과 시 Exit 버튼 노출 (1초 틱)
+  //[Step 36] 서버 startedAt 기준 최소 토론 시간 경과 시 Exit 버튼 노출 (1초 틱)
   useEffect(() => {
     if (!startTime || canExit) return;
-    const MIN_DISCUSSION_MS = 12 * 60 * 1000;
+    const MIN_DISCUSSION_MS = MIN_DISCUSSION_MINUTES * 60 * 1000;
     const check = () => {
       if (Date.now() - startTime.getTime() >= MIN_DISCUSSION_MS) setCanExit(true);
     };
@@ -42,6 +46,23 @@ const ChatRoom = () => {
     const id = setInterval(check, 1000);
     return () => clearInterval(id);
   }, [startTime, canExit]);
+
+  //서버 authoritative 프로필 — 본인 info-card만 표시 (소켓/타 참가자 데이터 사용 안 함)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const participantCode =
+      params.get("participant") ?? sessionStorage.getItem("participantCode") ?? undefined;
+
+    if (!participantCode) return;
+
+    getParticipantState(participantCode)
+      .then((state) => setProfile(state.assignedProfile))
+      .catch((error) => {
+        console.error("[chatroom] getParticipantState failed:", error);
+        const fallback = sessionStorage.getItem("assignedProfile") as ProfileSlot | null;
+        if (fallback) setProfile(fallback);
+      });
+  }, []);
 
   //connect to socket
   useEffect(() => {
@@ -171,7 +192,7 @@ const ChatRoom = () => {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      <div className="flex items-center justify-between px-6 py-3 border-b bg-card">
+      <div className="flex items-center justify-between px-6 py-3 border-b bg-card shrink-0">
         <div className="flex items-center gap-2">
           <FlaskConical className="w-5 h-5 text-primary" />
           <span className="font-semibold">HAIT Experiment</span>
@@ -182,48 +203,71 @@ const ChatRoom = () => {
           )}
         </div>
         {startTime && (
-          <Timer durationMinutes={20} startTime={startTime} onExpired={handleTimerExpired} />
+          <Timer
+            durationMinutes={DISCUSSION_DURATION_MINUTES}
+            startTime={startTime}
+            onExpired={handleTimerExpired}
+          />
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {messages.map((msg) => (
-          <MessageBubble
-            key={msg.id}
-            message={msg}
-            senderName={msg.senderRole === "ai" ? aiName : msg.senderName}
+      <div className="flex flex-1 min-h-0">
+        <div className="flex flex-[2] flex-col min-w-0">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4 min-h-0">
+            {messages.map((msg) => (
+              <MessageBubble
+                key={msg.id}
+                message={msg}
+                senderName={msg.senderRole === "ai" ? aiName : msg.senderName}
+              />
+            ))}
+            {typingRoles.map((role) => (
+              <TypingIndicator key={role} name={ROLE_LABEL[role] ?? role} />
+            ))}
+            <div ref={bottomRef} />
+          </div>
+
+          {timeUp && (
+            <p className="text-center text-xs text-muted-foreground px-6 shrink-0">
+              Time's up — click Exit below when your team is ready.
+            </p>
+          )}
+
+          {canExit && (
+            <div className="px-6 py-2 flex justify-center shrink-0">
+              <button
+                onClick={() => navigate("/chat/hold/teamDecision")}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors underline"
+              >
+                Exit &amp; Make Team Decision
+              </button>
+            </div>
+          )}
+
+          <MessageInput
+            onSend={handleSend}
+            onTyping={(isTyping) => socket.emit("typing", { isTyping })}
           />
-        ))}
-        {/*작성중 표시 — 입력 중인 상대마다 한 줄 (메시지 도착·퇴장 시 자동 해제)*/}
-        {typingRoles.map((role) => (
-          <TypingIndicator key={role} name={ROLE_LABEL[role] ?? role} />
-        ))}
-        <div ref={bottomRef} />
-      </div>
-
-      {/*타이머 만료 시 자동 전환 없음 — 참가자가 Exit를 눌러야 함을 안내*/}
-      {timeUp && (
-        <p className="text-center text-xs text-muted-foreground px-6">
-          Time's up — click Exit below when your team is ready.
-        </p>
-      )}
-
-      {/*[Step 36] 12분 경과 후에만 노출 (early-close 차단) + 라벨을 소진 close 프롬프트와 일치*/}
-      {canExit && (
-        <div className="px-6 py-2 flex justify-center">
-          <button
-            onClick={() => navigate("/chat/hold/teamDecision")}
-            className="text-xs text-muted-foreground hover:text-primary transition-colors underline"
-          >
-            Exit &amp; Make Team Decision
-          </button>
         </div>
-      )}
 
-      <MessageInput
-        onSend={handleSend}
-        onTyping={(isTyping) => socket.emit("typing", { isTyping })}
-      />
+        <aside className="hidden md:flex flex-[1] min-w-[240px] max-w-[420px] flex-col border-l bg-muted/20 overflow-y-auto">
+          {profile ? (
+            <InfoCardPanel
+              profile={profile}
+              variant="static"
+              compact
+              showNote={false}
+              showTitle
+            />
+          ) : (
+            <div className="p-4 space-y-3 animate-pulse">
+              <div className="h-4 bg-muted rounded w-3/4" />
+              <div className="h-20 bg-muted rounded" />
+              <div className="h-20 bg-muted rounded" />
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   );
 };

@@ -15,8 +15,8 @@ export const TRIGGER_CONFIG = {
   // [Step 37] 단일 빈도 가드 — AI 발화 후 사람 메시지가 N개 오기 전엔 침묵 (호명 제외). 2 = messagesSinceLastAI<2면 침묵.
   COOLDOWN_MIN_MSGS: 2,
 
-  // 토론 총 길이 — 클라이언트 Timer(ChatRoom.tsx durationMinutes, 현재 20)와 반드시 일치. (단일소스화 추후)
-  DISCUSSION_DURATION_MS: 20 * 60 * 1000,
+  // 토론 총 길이 — 클라이언트 sessionConfig.ts DISCUSSION_DURATION_MINUTES(현재 30)와 반드시 일치. (단일소스화 추후)
+  DISCUSSION_DURATION_MS: 30 * 60 * 1000,
   // 종료 N ms 전부터 leader 조건은 일반 트리거 차단 + closing 1회. (쉽게 조정 가능)
   CLOSING_LEAD_MS: 60 * 1000,
 
