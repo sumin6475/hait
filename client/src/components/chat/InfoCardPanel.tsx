@@ -22,6 +22,43 @@ interface InfoCardPanelProps {
   showTitle?: boolean;
 }
 
+// Step 46 — always-visible task criterion. Condition-invariant (shown incl. CTRL):
+// it states the equal-weighting rule the briefing/video promised would stay on screen.
+// Broad domains only — never the company's enumerated criteria, never a candidate letter.
+const CompanyStandardCard = ({ compact }: { compact?: boolean }) => (
+  <div
+    className={cn(
+      // opaque, not translucent: cards scroll underneath it in the discussion aside
+      "sticky top-0 z-20 rounded-lg border bg-secondary",
+      compact ? "p-3" : "p-4",
+    )}
+  >
+    <h3 className={cn("font-semibold", compact ? "text-xs" : "text-sm")}>The Company's Standard</h3>
+    <ul
+      className={cn(
+        "mt-1.5 list-disc space-y-1 pl-4 text-muted-foreground",
+        compact ? "text-[11px] leading-snug" : "text-xs",
+      )}
+    >
+      <li>
+        The company already decided what this role needs — things like skill, reliability, teamwork,
+        and conduct.
+      </li>
+      <li>
+        On the cards: <ThumbsUp className="inline w-3 h-3 text-status-success align-[-1px]" /> ={" "}
+        <strong>matches</strong> a company requirement,{" "}
+        <ThumbsDown className="inline w-3 h-3 text-destructive align-[-1px]" /> ={" "}
+        <strong>misses</strong> one.
+      </li>
+      <li>
+        All requirements count the same. Best fit = the most{" "}
+        <ThumbsUp className="inline w-3 h-3 text-status-success align-[-1px]" />, the fewest{" "}
+        <ThumbsDown className="inline w-3 h-3 text-destructive align-[-1px]" />.
+      </li>
+    </ul>
+  </div>
+);
+
 interface InfoCardItemProps {
   card: InfoCard;
   variant: InfoCardPanelVariant;
@@ -137,6 +174,8 @@ export const InfoCardPanel = ({
           </h2>
         </div>
       )}
+
+      <CompanyStandardCard compact={compact} />
 
       {showNote && (
         <div
