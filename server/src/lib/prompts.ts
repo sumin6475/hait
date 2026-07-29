@@ -214,7 +214,7 @@ export const LEADER_OPENING =
 // Chair는 "이끌며" 열고 Member는 "인사만" 한다 — 이 차이가 status 조작을 지탱한다.
 // 후보/의제/질문 금지. C1·C3 공통(전략 중립). LLM 호출 아님.
 export const PEER_OPENING =
-  "Hi everyone — I'm Alex, glad to be part of the committee. Ready when you are.";
+  "Hi everyone — I'm Alex, glad to be part of the committee.";
 
 const CLOSING_PROMPTS: Partial<Record<ConditionCode, string>> = {
   // C2 = leader_xai — [Step 44] 고른 board 통합 + 넘기기 (설명·비교형)
