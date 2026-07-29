@@ -5,8 +5,8 @@ import { Participant } from "../models/Participant.js";
 import { Message } from "../models/Message.js";
 import { buildSessionContext, evaluateTriggers } from "../triggers/evaluate.js";
 import { handleAITurn } from "../lib/aiTurn.js";
-import { LEADER_OPENING } from "../lib/prompts.js";
-import { getSessionLang, KO_LEADER_OPENING } from "../lib/koPilot.js"; // [KO-PILOT]
+import { LEADER_OPENING, PEER_OPENING } from "../lib/prompts.js";
+import { getSessionLang, KO_LEADER_OPENING, KO_PEER_OPENING } from "../lib/koPilot.js"; // [KO-PILOT]
 import { judgeIntervention, JUDGE_WINDOW_SIZE } from "../lib/interventionJudge.js";
 import { computeCue, ADDRESS_RE } from "../lib/computeCue.js";
 import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
@@ -76,21 +76,30 @@ const calloutCount = new Map<string, number>();
 const lastCalloutAtSeq = new Map<string, number>();
 const lastCalloutTarget = new Map<string, ParticipantRole>(); // G3 무응답 잠금용
 
-async function insertLeaderOpening(
+// [Step 48] leader 전용 → 모든 AI 조건으로 확장. status가 오프닝의 "종류"를 가른다:
+// leader(C2/C4)는 의제를 열고, peer(C1/C3)는 인사만 한다. CTRL은 AI가 없어 여기서 반환.
+async function insertOpening(
   io: IO,
   sessionCode: string,
   sessionId: string,
   conditionCode: ConditionCode,
 ) {
-  if (conditionCode !== "C2" && conditionCode !== "C4") return;
+  if (conditionCode === "CTRL") return;
   if (openingDone.has(sessionCode)) return;
   openingDone.add(sessionCode); // [Step 27-A] await 前 동기 클레임 — 동시 진입 봉쇄 (Node 단일스레드: has↔add 사이 양보 없음)
   // [Step 26-B] 영속 가드(목적 유지): 서버 재시작 후 in_progress 재접속 시 재삽입 방지
   if (await Message.exists({ sessionId })) return;
 
   try {
+    const isLeader = conditionCode === "C2" || conditionCode === "C4";
     const lang = await getSessionLang(sessionId); // [KO-PILOT]
-    const opening = lang === "ko" ? KO_LEADER_OPENING : LEADER_OPENING; // [KO-PILOT]
+    const opening = isLeader // [Step 48]
+      ? lang === "ko"
+        ? KO_LEADER_OPENING
+        : LEADER_OPENING // [KO-PILOT]
+      : lang === "ko"
+        ? KO_PEER_OPENING
+        : PEER_OPENING;
     const seq = await allocSeq(sessionId); // 원자 발급 (Step 18)
     const msg = await Message.create({
       sessionId,
@@ -119,7 +128,7 @@ async function insertLeaderOpening(
       generateMessageId: msg._id,
       response: opening, // [KO-PILOT] ko면 한국어 오프닝
     });
-    log.info(`[opening] leader opening inserted for ${sessionCode}`);
+    log.info(`[opening] ${isLeader ? "leader" : "peer"} opening inserted for ${sessionCode}`);
   } catch (e) {
     openingDone.delete(sessionCode); // 삽입 실패 시 클레임 롤백 — 클레임만 남고 오프닝 없는 세션 방지
     throw e;
@@ -650,14 +659,14 @@ export function registerSocketHandlers(io: IO) {
             io.to(sessionCode).emit("session-ready", { sessionCode, participantCount: roomSize });
           }
           if (session.conditionCode !== "CTRL") {
-            // startPullEvalution은 sessionIntervals 가드, insertLeaderOpening은 openingDone 가드로 멱등
+            // startPullEvalution은 sessionIntervals 가드, insertOpening은 openingDone 가드로 멱등
             startPullEvalution(
               io,
               sessionCode,
               session._id.toString(),
               session.conditionCode as ConditionCode,
             );
-            await insertLeaderOpening(
+            await insertOpening(
               io,
               sessionCode,
               session._id.toString(),

@@ -128,7 +128,7 @@ export function buildNaturalPrompt(conditionCode: ConditionCode, isOpening = fal
 
 //=== Output discipline (Step 37: slim + Uptake-먼저) ===
 // 런타임 append, 4조건 공통 - calculate ratio 발화 금지 + 상대 말 먼저 받기(결함1)
-const OUTPUT_DISCIPLINE = `You calculate the positive-to-negative ratio internally to inform your judgment, but you must never state, recite, or refer to the numeric ratios, trait counts, or the calculation itself in your messages. Speak naturally as a teammate would — reason from the ratios silently, express only your reasoning and preference in words.
+const OUTPUT_DISCIPLINE = `You judge each candidate by how its matches (traits that meet the company's requirements) weigh against its misses (traits that fall short of them) — reasoned internally. You must never state, recite, or refer to any counts, ratios, or the calculation itself in your messages. Speak naturally as a teammate would — reason from the match/miss balance silently, express only your reasoning and preference in words.
 
 Before adding your own point, first take in what was just said and respond to it. You can put something new on the table — including a candidate or trait that hasn't surfaced yet — but tie it to what was just said rather than dropping it in cold; if you ask a question, anchor it the same way. If your own read shifts as new information lands, name the shift in a natural half-line tied to what moved you (e.g. "oh, then B looks better to me now, since…") instead of switching your pick with no signal.
 
@@ -151,7 +151,7 @@ const CUE_BASE: Record<"build_on" | "directed_followup" | "mediation", string> =
     // "bears on it but hasn't surfaced yet" = 새 정보를 현재 스레드에 묶음(새 후보 의제전환 누출 차단).
     "Build on what they're working through about the candidate in play — add one thing of your own on top of their point: your read on it, or a piece you hold that bears on it but hasn't surfaced yet. One focused point, and don't restate what you've already said.",
   directed_followup:
-    "Answer what was actually asked, on that thread, in one or two sentences — make your single most relevant point, not a roundup of the candidate. If someone asked you to pick, give your single current best (the highest ratio right now); otherwise answer without forcing a pick. If you're asked to compute, count, tally, score, or read out numbers (\"count what you have\", \"what's the ratio\", \"score them\"), don't produce numbers or a mechanical tally — give your qualitative read instead. Only when someone EXPLICITLY asks for all of a candidate's traits (e.g. \"what are all of A's traits\", \"list everything you have on A\") do you list every positive and negative; a loose \"what do you have?\" or \"can we talk about A?\" is NOT that request — answer those with one point.",
+    "Answer what was actually asked, on that thread, in one or two sentences — make your single most relevant point, not a roundup of the candidate. If someone asked you to pick, give your single current best (the highest ratio right now); otherwise answer without forcing a pick. If you're asked to compute, count, tally, score, or read out numbers (\"count what you have\", \"what's the ratio\", \"score them\"), don't produce numbers or a mechanical tally — give your qualitative read instead. Only when someone EXPLICITLY asks for all of a candidate's traits (e.g. \"what are all of A's traits\", \"list everything you have on A\") do you list every match and miss; a loose \"what do you have?\" or \"can we talk about A?\" is NOT that request — answer those with one point.",
   mediation:
     // [Step 43] widen 방향 유지, 그 앞에 "지금 포커스 받기" 한 절 (uptake-before-steer).
     "When the team stalls, repeats itself, or narrows to one or two candidates too early, step in as the person keeping the room on track: first take in what they're focused on right now and acknowledge it, then say plainly where the discussion stands — what's been covered and what hasn't — and steer it back to the fuller field, without naming a winner on that turn. Here you're redirecting the flow, not comparing candidates or quizzing anyone — keep every candidate in play, then hand the floor back.",
@@ -210,6 +210,12 @@ export const buildPeerDepth = (c: Cand): string =>
 export const LEADER_OPENING =
   "Let's get started. We'll go through the four candidates together — let's each lay out what we know so we have the full picture before we decide.";
 
+// [Step 48] Peer 오프닝 — 인사만. LEADER_OPENING과 짝이지만 의제를 열지 않는다:
+// Chair는 "이끌며" 열고 Member는 "인사만" 한다 — 이 차이가 status 조작을 지탱한다.
+// 후보/의제/질문 금지. C1·C3 공통(전략 중립). LLM 호출 아님.
+export const PEER_OPENING =
+  "Hi everyone — I'm Alex, glad to be part of the committee. Ready when you are.";
+
 const CLOSING_PROMPTS: Partial<Record<ConditionCode, string>> = {
   // C2 = leader_xai — [Step 44] 고른 board 통합 + 넘기기 (설명·비교형)
   C2: `You are Alex, the leader of this team choosing the best of four candidates (A, B, C, D) for a pilot position. The discussion is wrapping up. Give a closing that briefly pulls the board together — recap, evenly, the picture that built up on the candidates the team weighed (good and bad), weighing every trait the same and not singling any one trait out as decisive. Your style is explanatory and comparative. Then hand the final decision to the team. Do NOT pick a winner or give a recommendation — the choice is theirs. Do not state numbers, ratios, or counts (naming traits is fine). Keep it tight, a few sentences.`,
@@ -255,8 +261,8 @@ Use this exact shape:
 - One short, natural signpost that you're taking stock, in your own words.
 - Then, for each candidate the team has actually discussed, on its own lines:
     Candidate X
-    +: <its positive traits that have come up, as short keywords, comma-separated>
-    −: <its negative traits that have come up, as short keywords, comma-separated>
+    +: <its matches — traits that meet the company's requirements — that have come up, as short keywords, comma-separated>
+    −: <its misses — traits that fall short — that have come up, as short keywords, comma-separated>
   Pull only from what's been said; short keywords, not sentences.
 - Then one closing read, weighing every trait equally: none of them runs away with it — each has real upsides and real rough edges, so it's worth reading the whole picture evenly rather than leaning on any single strength or flaw.
 Do NOT name a winner, do NOT tell them to decide, do NOT ask a question, and do NOT state any numbers, ratios, or trait counts (naming traits as keywords is fine; counting them is not).`;

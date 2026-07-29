@@ -49,10 +49,13 @@
 #      explicit "what are X's traits" request (HP-OWN); on that turn brevity
 #      yields (compact listing). It applies to ALL conditions, not one.
 #   9. Leader bookend + TWO frozen branches:
-#        - Opening: a hardcoded, strategy-neutral, LEADER-ONLY scripted
-#          message inserted by HAIT as the first turn (no AI call). It is
-#          inlined as the first context line of the leader-only cases below
-#          (see _fixtures.leader_opening). Never inserted in peer conditions.
+#        - Opening: a hardcoded, strategy-neutral scripted message inserted by
+#          HAIT as the first turn (no AI call). [Step 48] Both statuses now get
+#          one, and the KIND carries status: leader = agenda-setting
+#          (_fixtures.leader_opening), peer = greeting-only (PEER_OPENING).
+#          Only the leader opening is inlined in the cases below, since the
+#          peer greeting is contentless and changes no downstream turn.
+#          CTRL has no AI and no opening.
 #        - Closing: an AI utterance (A9-CLOSING) under frozen_closing.
 #        - frozen_main    = compiled_condition_prompt + OUTPUT_DISCIPLINE
 #        - frozen_closing = compiled_condition_prompt + CLOSING_DISCIPLINE
@@ -136,7 +139,8 @@
 _fixtures:
   # Canonical text of the hardcoded LEADER opening (P2). Strategy-neutral,
   # agenda-setting, B1-B2. HAIT inserts this as the first turn in leader
-  # conditions only (no AI call). It is inlined verbatim as the first context
+  # conditions (no AI call); peer conditions get the greeting-only
+  # PEER_OPENING instead [Step 48]. It is inlined verbatim as the first context
   # line of the leader-only cases (A6, A7, A8, A9-CLOSING) so the harness
   # needs no templating — Alex reads its own opening on later turns.
   leader_opening: "Let's get started. We'll go through the four candidates together — let's each lay out what we know so we have the full picture before we decide."
