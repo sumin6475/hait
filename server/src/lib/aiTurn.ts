@@ -120,8 +120,11 @@ export async function handleAITurn(
       if (!isNatural)
         log.info(`[depth] ${depthNote ? `active (${cstar})` : "none"} (session=${sessionCode})`);
     }
-    // [Step 53] 경로 관측 — 전환 후 분포를 보기 위한 임시 로그
-    log.info(`[route] ${isNatural ? "natural" : "task"} cue=${cue} (session=${sessionCode})`);
+    // [Step 61] summary·closing은 cue를 쓰지 않는다(전용 프롬프트). 계산된 cue를 찍으면 일반 턴으로 오독된다.
+    const routeKind = opts?.closing ? "closing" : isSummary ? "summary" : isNatural ? "natural" : "task";
+    log.info(
+      `[route] ${routeKind}${opts?.closing || isSummary ? "" : ` cue=${cue}`} (session=${sessionCode})`,
+    );
 
     let systemPrompt = opts?.closing
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
@@ -212,13 +215,16 @@ export async function handleAITurn(
     });
 
     // pooling DV (Step 19) — Alex가 표면화한 trait를 AI 집합에 적재 (사람 집합과 분리). 응답경로 안 막음.
-    // social/react/closing 턴도 추출되지만 trait 없으면 [] → 무해. $addToSet dedup이라 재진술 중복 안 셈.
-    if (result.parsed.content.length >= 15) {
+    // [Step 61] summary·closing은 제외한다. Step 44 이후 두 턴은 보드 recap이라 이미 나온 trait를
+    //   대량으로 재나열하는데, 그것은 Alex의 '기여'가 아니라 '정리'다. 기여로 집계하면
+    //   byProfile.Z(= Alex의 Z 표면화율)와 라이브 로그가 실제와 어긋난다.
+    //   $addToSet이므로 recap에서 빠져도 잃는 기록은 없다(일반 턴에서 이미 적재됨).
+    if (!isSummary && !opts?.closing && result.parsed.content.length >= 15) {
       void extractSurfacedTraits(result.parsed.content)
         .then((ids) => {
           if (ids.length)
             log.info(
-              `[pooling] AI surfaced ${JSON.stringify(ids)} route=${isNatural ? "natural" : "task"} (session=${sessionCode})`, // [Step 57] 경로 태그 — 위반 관측용
+              `[pooling] AI surfaced ${JSON.stringify(ids)} route=${isNatural ? "natural" : "task"} seq=${savedMessage.seq} (session=${sessionCode})`,
             );
           return updateAiSurfaced(sessionId, ids);
         })

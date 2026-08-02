@@ -349,7 +349,7 @@ async function maybeAITurn(
   if (!ctx.lastMessageIsAI) {
     if (ADDRESS_RE.test(ctx.lastMessageText)) {
       exempt = true;
-      log.info(`[gate] exempt: address (session=${sessionCode})`);
+      log.info(`[gate] exempt: address src=${source} (session=${sessionCode})`);
     } else if (
       TRIGGER_CONFIG.EXP_FOLLOWUP_GATE &&
       ctx.messagesSinceLastAI === 1 &&
@@ -359,7 +359,7 @@ async function maybeAITurn(
       const yes = await isFollowupToAlex(win.labeled.slice(-FOLLOWUP_WINDOW));
       if (yes === true) {
         exempt = true;
-        log.info(`[gate] exempt: followup (session=${sessionCode})`);
+        log.info(`[gate] exempt: followup src=${source} (session=${sessionCode})`);
       } else if (yes === false) {
         // 판정기가 "아니오" — 정상 다수 경로라 debug (LOG_LEVEL=debug에서만 보임)
         log.debug(`[gate] followup: no (session=${sessionCode})`);
@@ -819,7 +819,11 @@ export function registerSocketHandlers(io: IO) {
         if (conditionCode !== "CTRL" && trimmed.length >= 15) {
           void extractSurfacedTraits(trimmed)
             .then((ids) => {
-              if (ids.length) log.info(`[pooling] surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
+              // [Step 61] 누가 어느 메시지에서 올렸는지 — AI 쪽 로그와 대조 가능하게
+              if (ids.length)
+                log.info(
+                  `[pooling] surfaced ${JSON.stringify(ids)} by=${role} seq=${nextSeq} (session=${sessionCode})`,
+                );
               return updateRevealStats(sessionId, ids);
             })
             .catch((e) => log.error("[pooling] extract error:", e));
