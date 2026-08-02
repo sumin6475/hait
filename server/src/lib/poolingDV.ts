@@ -6,14 +6,40 @@
 import { Session } from "../models/Session.js";
 import { TRAIT_DB, TRAIT_BY_ID, OPTIMAL_CANDIDATE, type Cand } from "./traitData.js";
 
-// AI(Alex) 표면화 집합 갱신 — 원자 $addToSet (동시 async 추출 안전, dedup)
-export async function updateAiSurfaced(sessionId: string, ids: string[]): Promise<void> {
+// [Step 62] first-surfacer 기록 — id별로 '더 작은 seq'가 이긴다.
+// ⚠️ '먼저 쓴 쪽이 이김'이면 안 된다: AI 추출은 fire-and-forget이라 seq 7의 기록이
+//    seq 6의 기록보다 먼저 도착할 수 있다. 조건에 seq 비교를 넣어 도착 순서와 무관하게 만든다.
+export async function recordFirstSurfacer(
+  sessionId: string,
+  ids: string[],
+  by: "human" | "ai",
+  seq: number,
+): Promise<number> {
   const valid = ids.filter((id) => TRAIT_BY_ID.has(id));
-  if (!valid.length) return;
+  let recorded = 0;
+  for (const id of valid) {
+    const path = `revealStats.firstBy.${id}`;
+    const res = await Session.updateOne(
+      {
+        _id: sessionId,
+        $or: [{ [path]: { $exists: false } }, { [`${path}.seq`]: { $gt: seq } }],
+      },
+      { $set: { [path]: { by, seq } } },
+    );
+    if (res.modifiedCount) recorded++;
+  }
+  return recorded; // 이 턴에서 '처음'으로 기록된 수
+}
+
+// AI(Alex) 표면화 집합 갱신 — 원자 $addToSet (동시 async 추출 안전, dedup)
+export async function updateAiSurfaced(sessionId: string, ids: string[], seq: number): Promise<number> {
+  const valid = ids.filter((id) => TRAIT_BY_ID.has(id));
+  if (!valid.length) return 0;
   await Session.updateOne(
     { _id: sessionId },
     { $addToSet: { "revealStats.aiSurfacedIds": { $each: valid } } },
   );
+  return recordFirstSurfacer(sessionId, valid, "ai", seq); // [Step 62] 이 턴의 '처음' 수를 반환
 }
 
 // 프로필별 분류 (모듈 로드 시 1회 계산)
@@ -77,4 +103,19 @@ export function computePoolingDV(revealStats: any): PoolingDV {
   }
   const ai = new Set<string>(revealStats?.aiSurfacedIds ?? []);
   return { X: dvFor("X", human), Y: dvFor("Y", human), Z: dvFor("Z", ai) };
+}
+
+// [Step 62] Alex 기여 분해 — 파생 지표. 저장하지 않고 필요할 때 계산한다.
+export function splitAiContribution(rs: any): { firstCount: number; restatedCount: number } {
+  const ai: string[] = rs?.aiSurfacedIds ?? [];
+  const fb = rs?.firstBy instanceof Map ? Object.fromEntries(rs.firstBy) : (rs?.firstBy ?? {});
+  let firstCount = 0;
+  let restatedCount = 0;
+  for (const id of ai) {
+    const e = fb[id];
+    if (!e) continue; // 과거 세션 = 기록 없음
+    if (e.by === "ai") firstCount++;
+    else restatedCount++;
+  }
+  return { firstCount, restatedCount };
 }

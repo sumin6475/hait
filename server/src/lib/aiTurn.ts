@@ -221,12 +221,12 @@ export async function handleAITurn(
     //   $addToSet이므로 recap에서 빠져도 잃는 기록은 없다(일반 턴에서 이미 적재됨).
     if (!isSummary && !opts?.closing && result.parsed.content.length >= 15) {
       void extractSurfacedTraits(result.parsed.content)
-        .then((ids) => {
+        .then(async (ids) => {
+          const n = await updateAiSurfaced(sessionId, ids, savedMessage.seq); // [Step 62] seq
           if (ids.length)
             log.info(
-              `[pooling] AI surfaced ${JSON.stringify(ids)} route=${isNatural ? "natural" : "task"} seq=${savedMessage.seq} (session=${sessionCode})`,
+              `[pooling] AI surfaced ${JSON.stringify(ids)} route=${isNatural ? "natural" : "task"} seq=${savedMessage.seq} new=${n} (session=${sessionCode})`,
             );
-          return updateAiSurfaced(sessionId, ids);
         })
         .catch((e) => log.error("[pooling] AI extract error:", e));
     }

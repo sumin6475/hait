@@ -818,13 +818,12 @@ export function registerSocketHandlers(io: IO) {
         // pooling 추출 (Step 14a) — 사람 메시지만, fire-and-forget (응답경로 안 막음). 짧은 잡담은 skip.
         if (conditionCode !== "CTRL" && trimmed.length >= 15) {
           void extractSurfacedTraits(trimmed)
-            .then((ids) => {
-              // [Step 61] 누가 어느 메시지에서 올렸는지 — AI 쪽 로그와 대조 가능하게
+            .then(async (ids) => {
+              const n = await updateRevealStats(sessionId, ids, nextSeq); // [Step 62] seq
               if (ids.length)
                 log.info(
-                  `[pooling] surfaced ${JSON.stringify(ids)} by=${role} seq=${nextSeq} (session=${sessionCode})`,
+                  `[pooling] surfaced ${JSON.stringify(ids)} by=${role} seq=${nextSeq} new=${n} (session=${sessionCode})`,
                 );
-              return updateRevealStats(sessionId, ids);
             })
             .catch((e) => log.error("[pooling] extract error:", e));
         }

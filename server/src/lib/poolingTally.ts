@@ -3,12 +3,13 @@
 import { Session } from "../models/Session.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js"; // [Step 39] DEPTH_LOOKBACK_MSGS
+import { recordFirstSurfacer } from "./poolingDV.js";
 
 // (a) 갱신: 원자적 $addToSet — 동시 async 추출에 안전, dedup 자동.
 // 카운트는 저장하지 않고 읽을 때 revealedIds에서 파생한다 (read-modify-write 레이스 회피).
 // [Step 36] 새로 추가된 distinct id 수 반환 (no-yield 추적용). best-effort: 동시 추출이 같은 id를
 // 둘 다 'new'로 셀 수 있으나 over-count = yield 과다 = 소진 under-trigger = 안전한 방향.
-export async function updateRevealStats(sessionId: string, ids: string[]): Promise<number> {
+export async function updateRevealStats(sessionId: string, ids: string[], seq: number): Promise<number> {
   const valid = ids.filter((id) => TRAIT_BY_ID.has(id));
   if (!valid.length) return 0;
   const sess = await Session.findById(sessionId).select("revealStats").lean();
@@ -23,6 +24,7 @@ export async function updateRevealStats(sessionId: string, ids: string[]): Promi
     (add[path] ??= { $each: [] }).$each.push(id);
   }
   await Session.updateOne({ _id: sessionId }, { $addToSet: add });
+  await recordFirstSurfacer(sessionId, valid, "human", seq); // [Step 62]
   return newIds.size;
 }
 

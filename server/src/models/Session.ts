@@ -28,6 +28,16 @@ const candidateStatsSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// [Step 62] 각 trait를 누가 '처음' 테이블에 올렸는가. 재진술과 기여를 사후에 가르기 위한 기록.
+// key = traitId, value = { by, seq }. 기존 집합 필드(byCandidate.revealedIds · aiSurfacedIds)는 불변.
+const firstBySchema = new mongoose.Schema(
+  {
+    by: { type: String, enum: ["human", "ai"], required: true },
+    seq: { type: Number, required: true },
+  },
+  { _id: false },
+);
+
 const revealStatsSchema = new mongoose.Schema(
   {
     byProfile: {
@@ -42,6 +52,7 @@ const revealStatsSchema = new mongoose.Schema(
       D: candidateStatsSchema,
     },
     aiSurfacedIds: { type: [String], default: [] }, // Alex가 표면화한 trait id (Z DV용, $addToSet dedup) — Step 19
+    firstBy: { type: Map, of: firstBySchema, default: undefined }, // [Step 62]
   },
   { _id: false },
 );
