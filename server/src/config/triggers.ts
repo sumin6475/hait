@@ -31,6 +31,7 @@ export const TRIGGER_CONFIG = {
   EXHAUST_K: 3,
 
   EXP_NATURAL_DIRECTED: true, // [EXP] 자연발화 프로빙.
+  EXP_FOLLOWUP_GATE: true, // [Step 54] 이름 없는 팔로업 쿨다운 면제. 과발화 보이면 false.
 
   // [opening] 자연발화 "인사 recipe"를 쓸 토론 극초반 상한(누적 메시지). 이 미만 ∧ 테이블에 후보 0이면 오프닝으로 보고 인사로 받음. (튜너블 — 너무 일찍 의견 내면 ↑)
   NATURAL_OPENING_MAX_MSGS: 6,

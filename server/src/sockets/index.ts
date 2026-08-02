@@ -26,6 +26,7 @@ import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { Trigger } from "../triggers/types.js";
 import type { ConditionCode, ParticipantRole } from "../types.js";
 import { log } from "../lib/log.js";
+import { FOLLOWUP_WINDOW, isFollowupToAlex } from "../lib/followupJudge.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -54,7 +55,6 @@ const sessionStartedAt = new Map<string, number>(); // sessionCode → startedAt
 const closingDone = new Set<string>(); // sessionCode (closing 1회 가드)
 const openingDone = new Set<string>(); // sessionCode (오프닝 1회 가드)
 const CLOSING_TRIGGER: Trigger = { name: "closing", shouldFire: () => false };
-const ADDRESS_TRIGGER: Trigger = { name: "address", shouldFire: () => false };
 const JUDGE_TRIGGER: Trigger = { name: "judge", shouldFire: () => false };
 const SILENCE_TRIGGER: Trigger = { name: "long-silence", shouldFire: () => false };
 // ── [Step 37] Summary 게이트 — 단순 트리거(전이/armed/쿨다운 제거). 세션 1회. ──
@@ -166,8 +166,8 @@ async function loadWindow(sessionId: string) {
   };
 }
 
-// 최근(Alex 발화 이후) 미답 호명 스캔 (Step 22/A-4, thin) — 호명이 마지막 메시지면 address fast-path가
-// 먼저 잡으므로, 이 스캔은 "호명 뒤에 다른 사람 메시지가 와서 호명이 마지막이 아닌" 엣지 보강.
+// 최근(Alex 발화 이후) 미답 호명 스캔 (Step 22/A-4, thin) — Step 54부터 호명은 쿨다운만 면제되고
+// judge까지 내려가므로, summary가 그 전에 가로채지 않게 최근 창 전체를 확인한다.
 async function hasUnansweredAddress(sessionId: string): Promise<boolean> {
   const win = await loadWindow(sessionId);
   const msgs = win.cue;
@@ -207,8 +207,8 @@ async function maybeLeaderSummary(
   lastSummaryAtSeq.set(sessionCode, ctx.lastMessageSeq);
   if (leader) lastSummaryLeader.set(sessionCode, leader); // wobble: leader≠null일 때만 (동률 뒤엔 강제할 1등 없음)
 
-  // [Step 43] 직전 메시지가 (호명 아닌) 질문이면 summary가 가로채지 않게 답 → summary 2연속.
-  // (호명 last-message는 ① fast-path가 이미 처리하므로 여기 도달 시 ADDRESS_RE는 사실상 비활성 — 방어적 OR.)
+  // [Step 43] 직전 메시지가 질문이면 summary가 가로채지 않게 답 → summary 2연속.
+  // 호명은 위 hasUnansweredAddress 가드가 먼저 보류하므로 ADDRESS_RE는 방어적으로 유지.
   const pendingQ =
     !ctx.lastMessageIsAI &&
     (/\?\s*$/.test(ctx.lastMessageText) || ADDRESS_RE.test(ctx.lastMessageText));
@@ -343,23 +343,34 @@ async function maybeAITurn(
 
   const ctx = await buildSessionContext(sessionId, sessionCode);
 
-  // ① 호명 fast-path (push·pull 공통, judge보다 우선·결정적)
-  if (!ctx.lastMessageIsAI && ADDRESS_RE.test(ctx.lastMessageText)) {
-    log.info(`[gate] address (session=${sessionCode})`);
-    await handleAITurn(io, sessionCode, sessionId, ADDRESS_TRIGGER, ctx, conditionCode, {
-      reason: "directed_followup",
-      recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
-    });
-    return;
+  // ① 말할 기회 판정 — 쿨다운 면제만 결정한다. reason은 judge(④)가 정한다.
+  //    ①-a 이름 호명(정규식) · ①-b 이름 없는 팔로업(mini-judge, Alex 직후 1턴에만)
+  let exempt = false;
+  if (!ctx.lastMessageIsAI) {
+    if (ADDRESS_RE.test(ctx.lastMessageText)) {
+      exempt = true;
+      log.info(`[gate] exempt: address (session=${sessionCode})`);
+    } else if (
+      TRIGGER_CONFIG.EXP_FOLLOWUP_GATE &&
+      ctx.messagesSinceLastAI === 1 &&
+      source === "push"
+    ) {
+      const win = await loadWindow(sessionId);
+      const yes = await isFollowupToAlex(win.labeled.slice(-FOLLOWUP_WINDOW));
+      if (yes === true) {
+        exempt = true;
+        log.info(`[gate] exempt: followup (session=${sessionCode})`);
+      }
+    }
   }
 
-  // ② [Step 37] cooldown — 단일 빈도 가드. AI 직후 새 사람 메시지 없으면 침묵 (호명은 위에서 면제).
-  if (ctx.messagesSinceLastAI < TRIGGER_CONFIG.COOLDOWN_MIN_MSGS) {
+  // ② cooldown — 면제되지 않았을 때만 적용
+  if (!exempt && ctx.messagesSinceLastAI < TRIGGER_CONFIG.COOLDOWN_MIN_MSGS) {
     return;
   }
 
   // ②.3 [Step 45] 수렴 마무리 — 소진(새 trait K턴 0) ∧ 양면 floor면 정리→마무리로 조기 closing (leader 전용).
-  // ① 직접 호명 fast-path는 위에 있어 질문 중엔 안 끊김. 발동 시 closingDone 래치 → 이후 전 사이클 차단(mediation 억제·물러남 자동).
+  // 발동 시 closingDone 래치 → 이후 전 사이클 차단(mediation 억제·물러남 자동).
   if (isLeader && !closingDone.has(sessionCode)) {
     const sess = await Session.findById(sessionId).select("revealStats").lean();
     const rs = (sess as any)?.revealStats;

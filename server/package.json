@@ -9,6 +9,7 @@
     "eval": "tsx src/scripts/eval-scenarios.ts",
     "golden": "tsx src/eval/run-golden.ts",
     "judge:cases": "tsx src/eval/run-judge.ts",
+    "eval:followup": "tsx src/eval/run-followup.ts",
     "test:seq": "tsx src/scripts/test-seq-atomic.ts"
   },
   "dependencies": {

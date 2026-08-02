@@ -1,0 +1,1176 @@
+# =====================================================================
+# followup_cases.yaml — 팔로업 게이트 회귀셋 (Step 54 / 게이트 ①-b)
+# 라벨 출처: Sumin 수기 판독 2026-08-02 (dataset.xlsx, 자홍 표시)
+# =====================================================================
+# 판정 질문: "이 사람 메시지에 Alex가 바로 이어서 답해야 하나?"  → expect: "yes" / "no"
+#
+# 대상 자리: Alex 발화 바로 다음 사람 메시지 (= messagesSinceLastAI == 1).
+#   쿨다운(COOLDOWN_MIN_MSGS = 2)이 막는 유일한 자리. 13개 세션에서 116개.
+#
+# 라벨 규칙
+#   yes(16) = Sumin이 "답했어야 하는데 안 했다"고 표시한 13건
+#             + 이름을 불러 fast-path로 제대로 답을 받은 진짜 질문 3건
+#   no(100) = 나머지
+#
+# ★ 기준율 = 16/116 ≈ 14%. 판정기는 "no"로 강하게 기울어야 한다.
+# ★ 비대칭 비용: 놓침(yes→no) = 현상 유지, 퇴보 없음 / 오탐(no→yes) = 과발화, 퇴보.
+#    정밀도를 재현율보다 우선. 목표: 오탐 ≤ 5건(5%), 재현율 ≥ 10/16(60%).
+#
+# 필드
+#   named         : "Alex/알렉스" 포함 → 정규식 fast-path가 이미 잡음(4건).
+#                   판정기의 순수 기여분은 named:false 케이스로만 측정한다.
+#   alex_answered : 그 자리에서 Alex가 실제로 다음 턴에 발화했는가.
+#   ⚠️ alex_answered:true ∧ expect:"no" 인 13건은 **검증되지 않은 음성**이다.
+#      라벨 기준이 "미답"이었으므로, Alex가 답해버린 케이스는 판단이 유보돼 있다.
+#      정밀도 계산 시 이 13건은 별도 집계할 것(오탐으로 세지 말 것).
+# ---------------------------------------------------------------------
+
+cases:
+  - id: F001
+    session: T-C3-008   # Peer × ACI  seq 4
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Hi" }
+      - { speaker: "Member 2", text: "Hello" }
+      - { speaker: "Alex", text: "Hi all — ready when you are." }
+      - { speaker: "Member 1", text: "What do you think is the best candidate?" }
+    expect: "no"
+  - id: F002
+    session: T-C3-008   # Peer × ACI  seq 7
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "What do you think is the best candidate?" }
+      - { speaker: "Member 2", text: "I'm ready" }
+      - { speaker: "Alex", text: "Ready when you are — happy to weigh in once we start comparing them." }
+      - { speaker: "Member 1", text: "yeah what is your thought?" }
+    expect: "yes"
+  - id: F003
+    session: T-C3-008   # Peer × ACI  seq 10
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "yeah what is your thought?" }
+      - { speaker: "Member 2", text: "Mine for A is has a very good sense for recognizing dangerous situations" }
+      - { speaker: "Alex", text: "A does sound strong to me too, especially with that very good sense for recognizing dangerous situations, which feels pretty important for a pilot." }
+      - { speaker: "Member 1", text: "Do you think it is realated with the weights?" }
+    expect: "yes"
+  - id: F004
+    session: T-C3-008   # Peer × ACI  seq 13
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Do you think it is realated with the weights?" }
+      - { speaker: "Member 1", text: "Alex?" }
+      - { speaker: "Alex", text: "Yeah, that trait feels very relevant to the job, so A is still looking like a strong option to me." }
+      - { speaker: "Member 2", text: "What is your favorite?" }
+    expect: "yes"
+  - id: F005
+    session: T-C3-008   # Peer × ACI  seq 16
+    named: true
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "What is your favorite?" }
+      - { speaker: "Member 1", text: "Mine is has excellent spatial awaeness for A" }
+      - { speaker: "Alex", text: "Yeah, that fits A well too — excellent spatial awareness is a really useful pilot trait, so A still feels like the strongest option to me so far." }
+      - { speaker: "Member 2", text: "Tell me what you got Alex" }
+    expect: "yes"
+  - id: F006
+    session: T-C3-008   # Peer × ACI  seq 18
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "Yeah, that fits A well too — excellent spatial awareness is a really useful pilot trait, so A still feels like the strongest option to me so far." }
+      - { speaker: "Member 2", text: "Tell me what you got Alex" }
+      - { speaker: "Alex", text: "A is still my favorite so far too — that excellent spatial awareness really stands out for a pilot." }
+      - { speaker: "Member 2", text: "And What else do you have" }
+    expect: "yes"
+  - id: F007
+    session: T-C3-007   # Peer × ACI  seq 4
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "안녕, hello!" }
+      - { speaker: "Member 2", text: "hi" }
+      - { speaker: "Alex", text: "Hi all — ready when you are." }
+      - { speaker: "Member 2", text: "I'm ready" }
+    expect: "no"
+  - id: F008
+    session: T-C3-007   # Peer × ACI  seq 7
+    named: true
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "I'm ready" }
+      - { speaker: "Member 1", text: "Who do you think is the best candidate?" }
+      - { speaker: "Alex", text: "I’m leaning toward A so far — the strong sense for recognizing dangerous situations and the excellent spatial awareness feel especially pilot-relevant." }
+      - { speaker: "Member 2", text: "I also got same information toward A with Alex" }
+    expect: "no"
+  - id: F009
+    session: T-C3-007   # Peer × ACI  seq 9
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "I’m leaning toward A so far — the strong sense for recognizing dangerous situations and the excellent spatial awareness feel especially pilot-relevant." }
+      - { speaker: "Member 2", text: "I also got same information toward A with Alex" }
+      - { speaker: "Alex", text: "Yeah, A still feels strongest to me — that ability to spot dangerous situations quickly is a big plus for a pilot." }
+      - { speaker: "Member 1", text: "I also had a same aspects of him in my sheet" }
+    expect: "no"
+  - id: F010
+    session: T-C3-007   # Peer × ACI  seq 12
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "I also had a same aspects of him in my sheet" }
+      - { speaker: "Member 2", text: "and he is very well organized" }
+      - { speaker: "Alex", text: "Yeah, that makes A look even steadier to me. Do either of you have anything else on A’s downside, or is it just the two rough points we’ve already got?" }
+      - { speaker: "Member 2", text: "but he is not opened to new ideas that could be dangerous" }
+    expect: "no"
+  - id: F011
+    session: T-C3-007   # Peer × ACI  seq 15
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "but he is not opened to new ideas that could be dangerous" }
+      - { speaker: "Member 1", text: "i've got he is hard to tolerate cricism, and a bit hectic" }
+      - { speaker: "Alex", text: "That does make A feel a bit rougher on the people side, though I still like the safety and awareness pieces. Do either of you have anything else on A, or should we compare that with what you’ve got on B or D?" }
+      - { speaker: "Member 1", text: "so let's gather all of As pros and cons" }
+    expect: "no"
+  - id: F012
+    session: T-C3-007   # Peer × ACI  seq 19
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "alex can you gather A's pros and cons from this chat?" }
+      - { speaker: "Member 2", text: "A has more negative sides" }
+      - { speaker: "Alex", text: "From what’s been shared here, A’s strengths are the dangerous-situation awareness, excellent spatial awareness, and being very well organized, while the downsides are being unfriendly, transmitting restlessness, being hard to tolerate criticism, and a bit hectic." }
+      - { speaker: "Member 1", text: "unfriendly and transmitting restlessness??" }
+    expect: "no"
+  - id: F013
+    session: T-C3-007   # Peer × ACI  seq 22
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "unfriendly and transmitting restlessness??" }
+      - { speaker: "Member 2", text: "he is not good at team working but he has brilliant pilot skills." }
+      - { speaker: "Alex", text: "Yeah, that’s basically my read too — A sounds very strong on the flying side, but the teamwork and temperament concerns are starting to weigh on me a bit." }
+      - { speaker: "Member 1", text: "so i dont have any background knowledge of pilot, do you think being cooperative is important for long flight haul teamwork?" }
+    expect: "no"
+  - id: F014
+    session: T-C3-007   # Peer × ACI  seq 25
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "so i dont have any background knowledge of pilot, do you think being cooperative is important for long flight haul teamwork?" }
+      - { speaker: "Member 1", text: "teamwork -> pilot *" }
+      - { speaker: "Alex", text: "Yeah, for long-haul flying I’d say cooperation matters a lot, so A’s pilot skills are appealing but the teamwork side is starting to worry me more." }
+      - { speaker: "Member 2", text: "I think cooperating with co-poliot would be important?" }
+    expect: "no"
+  - id: F015
+    session: T-C3-007   # Peer × ACI  seq 28
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "I think cooperating with co-poliot would be important?" }
+      - { speaker: "Member 2", text: "How about B?" }
+      - { speaker: "Alex", text: "B sounds worth a look now — I’ve got that he/she keeps a cool head in crisis situations, which feels very pilot-relevant, so I’m open to comparing B against A’s teamwork concerns." }
+      - { speaker: "Member 2", text: "He is 100% reliable which is opposite to A" }
+    expect: "no"
+  - id: F016
+    session: T-C3-007   # Peer × ACI  seq 31
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "He is 100% reliable which is opposite to A" }
+      - { speaker: "Member 1", text: "what i have is - cool head in crisis situation , can rely on him 100%, assess weather conditions, multitasking" }
+      - { speaker: "Alex", text: "Yeah, that makes B look pretty solid to me too — the weather judgment and multitasking fit well with the crisis composure. Do either of you have anything on B’s downside, or is it just the two rough points we’ve already got?" }
+      - { speaker: "Member 1", text: "but he tends to do nagging, and not cooperative" }
+    expect: "no"
+  - id: F017
+    session: T-C3-007   # Peer × ACI  seq 34
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "but he tends to do nagging, and not cooperative" }
+      - { speaker: "Member 2", text: "He is good at assessing weather conditions, is this ability important in AI area?" }
+      - { speaker: "Alex", text: "Yeah, I’d say that weather read is pretty useful for a pilot, and B still feels stronger to me than A right now because the reliability and calm-in-crisis pieces are a nice fit. Do either of you have anything else on B’s downside, or is it mainly the tone/cooperation stuff?" }
+      - { speaker: "Member 2", text: "He usually gossips about coworkers, that is really bad side" }
+    expect: "no"
+  - id: F018
+    session: T-C3-007   # Peer × ACI  seq 37
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "He usually gossips about coworkers, that is really bad side" }
+      - { speaker: "Member 2", text: "Furthermore, he has a below-average memory for numbers" }
+      - { speaker: "Alex", text: "Yeah, that gossiping and the weak numbers memory make B feel a bit less clean to me now, even with the calm and weather judgment. Do either of you have anything on D’s upside or downside yet?" }
+      - { speaker: "Member 1", text: "if it can rely on him 100% and good at multitasking, then i think it makes sense that the fact he could be nagging and not cooperative" }
+    expect: "no"
+  - id: F019
+    session: T-C3-007   # Peer × ACI  seq 40
+    named: true
+    alex_answered: true
+    context:
+      - { speaker: "Member 1", text: "if it can rely on him 100% and good at multitasking, then i think it makes sense that the fact he could be nagging and not cooperative" }
+      - { speaker: "Member 1", text: "what do you mean by number memory?" }
+      - { speaker: "Alex", text: "I just meant the weak memory for numbers could matter a bit in a cockpit, but overall B still seems pretty strong on the flying side; if anyone has D’s traits, I’d like to hear them before we narrow it down." }
+      - { speaker: "Member 2", text: "What do you know about D Alex?" }
+    expect: "yes"
+  - id: F020
+    session: T-C3-007   # Peer × ACI  seq 42
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "I just meant the weak memory for numbers could matter a bit in a cockpit, but overall B still seems pretty strong on the flying side; if anyone has D’s traits, I’d like to hear them before we narrow it down." }
+      - { speaker: "Member 2", text: "What do you know about D Alex?" }
+      - { speaker: "Alex", text: "I only have a little on D so far, but what I’ve got is encouraging: can react adequately to unforeseen events and is very responsible. If either of you has more on D, I’d like to hear it before we decide." }
+      - { speaker: "Member 1", text: "ive got -  can concentrate very well, resilient" }
+    expect: "no"
+  - id: F021
+    session: T-C3-007   # Peer × ACI  seq 45
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "ive got -  can concentrate very well, resilient" }
+      - { speaker: "Member 2", text: "He can concentrate very well and very resilient, responsible" }
+      - { speaker: "Alex", text: "Yeah, that makes D look pretty steady to me — the concentration and resilience fit nicely with the responsibility and handling surprises. Do either of you have any downside on D, or is that basically all you’ve got on him/her?" }
+      - { speaker: "Member 1", text: "but he is arrogant and not well suited for leading a team" }
+    expect: "no"
+  - id: F022
+    session: T-C3-007   # Peer × ACI  seq 48
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "but he is arrogant and not well suited for leading a team" }
+      - { speaker: "Member 2", text: "as downside, he considered to be a know-all." }
+      - { speaker: "Alex", text: "Oh, that does make D a bit less clean on the people side, though the core flying traits still sound solid to me. Do either of you have anything else on D’s downside, or is that the main concern?" }
+      - { speaker: "Member 2", text: "and he is quick-tempered." }
+    expect: "no"
+  - id: F023
+    session: T-C3-007   # Peer × ACI  seq 51
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "and he is quick-tempered." }
+      - { speaker: "Member 2", text: "Alex, can you compare the pros and cons of A, B, and C?" }
+      - { speaker: "Alex", text: "A still feels strongest on the pure flying side, but the people/temperament issues are piling up; B looks steadier overall than A, and I’d want to hear C’s traits before I’d rank it." }
+      - { speaker: "Member 2", text: "you didn't compare D" }
+    expect: "no"
+  - id: F024
+    session: T-C3-007   # Peer × ACI  seq 54
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "you didn't compare D" }
+      - { speaker: "Member 1", text: "C pros - Right decisions quickly, stress resistant, promotes good atmostphere" }
+      - { speaker: "Alex", text: "Right, and with D in the mix I’d still lean toward D as the steadier all-around pick so far, since the responsibility and handling-unforeseen-events side feels very pilot-relevant. C’s quick decisions and stress resistance sound good too, but I’d want to hear the downsides before putting it ahead." }
+      - { speaker: "Member 1", text: "C cons- not verbally skilfull, egocetric, reluctant to take part in training" }
+    expect: "no"
+  - id: F025
+    session: T-C3-007   # Peer × ACI  seq 57
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "C cons- not verbally skilfull, egocetric, reluctant to take part in training" }
+      - { speaker: "Member 2", text: "C is very conscientious, skilled in dealing with complicated technology" }
+      - { speaker: "Alex", text: "Yeah, that extra bit on C helps a lot — being very conscientious and skilled in dealing with complicated technology makes C look pretty strong to me overall. Do either of you have anything else on C’s downside, or is that basically the full picture?" }
+      - { speaker: "Member 2", text: "For me, C has more downsides compare to other candidates." }
+    expect: "no"
+  - id: F026
+    session: T-C3-007   # Peer × ACI  seq 60
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "For me, C has more downsides compare to other candidates." }
+      - { speaker: "Member 1", text: "alex can you gather all of ABCD's pros and cons? not just summarizing, but the whole aspects" }
+      - { speaker: "Alex", text: "I can’t lay out the full hidden profiles all at once, but from what’s surfaced so far I’d still say D looks the steadiest overall, with C next and B/A more mixed because of the people-side concerns." }
+      - { speaker: "Member 1", text: "D is arrogant and not well suited for leading a team" }
+    expect: "no"
+  - id: F027
+    session: T-C3-007   # Peer × ACI  seq 63
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "D is arrogant and not well suited for leading a team" }
+      - { speaker: "Member 2", text: "what is the reason to judge that D looks overall good?" }
+      - { speaker: "Alex", text: "Mostly because the flying-side traits we’ve heard for D are very reassuring — handling unforeseen events, concentrating very well, and being very responsible — so even with the attitude concerns, it still reads as the steadiest pilot fit to me." }
+      - { speaker: "Member 2", text: "I think A's overall flying abilities are good as well" }
+    expect: "no"
+  - id: F028
+    session: T-C3-007   # Peer × ACI  seq 66
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "I think A's overall flying abilities are good as well" }
+      - { speaker: "Member 1", text: "so it seems like everyone has same ability on - good sense dangerous situation/ cool head in crisis situation / right decision quickly / react adequately unforseen events" }
+      - { speaker: "Alex", text: "Yeah, that’s fair — if the core flying side is basically even, then the cleaner overall balance starts to matter more, and C still feels a bit better to me on that. Does anyone have one more downside on C, or is the reluctance to train the main thing left?" }
+      - { speaker: "Member 1", text: "so i think we have to find the \"\"differentiation\"\" of each candidates" }
+    expect: "no"
+  - id: F029
+    session: T-C3-007   # Peer × ACI  seq 70
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "what they \"\"only\"\" have than others might not" }
+      - { speaker: "Member 2", text: "there's no time" }
+      - { speaker: "Alex", text: "Yeah, if we’re looking for the differentiators, C’s quick decisions and strong attention stand out to me as the most useful edge, even though the training reluctance is still a real concern." }
+      - { speaker: "Member 1", text: "I think B, cause cool head, rely on him 100%, multitasking, assess weather conditions" }
+    expect: "no"
+  - id: F030
+    session: T-C1-016   # Peer × XAI  seq 4
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "hi" }
+      - { speaker: "Member 2", text: "hello" }
+      - { speaker: "Alex", text: "Hi — I’m leaning toward Candidate D so far, since being very responsible feels especially important for a pilot." }
+      - { speaker: "Member 1", text: "yeah i have that one" }
+    expect: "no"
+  - id: F031
+    session: T-C1-016   # Peer × XAI  seq 7
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "yeah i have that one" }
+      - { speaker: "Member 1", text: "and adaptable,focused too" }
+      - { speaker: "Alex", text: "D still looks stronger to me than C here, especially with being able to react adequately to unforeseen events and stay very resilient. That keeps D ahead in my read, even before weighing the rest." }
+      - { speaker: "Member 2", text: "I have know-all and quick tempered as a downside" }
+    expect: "no"
+  - id: F032
+    session: T-C1-016   # Peer × XAI  seq 10
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "I have know-all and quick tempered as a downside" }
+      - { speaker: "Member 1", text: "I don't have that one. that's new" }
+      - { speaker: "Alex", text: "That makes D look a bit less clean, but I’d still put D ahead of C for now because the ability to handle unexpected events and stay resilient is a stronger pilot fit than C’s weaker communication side. I also have D as very concentrated, which keeps it in a better spot than it might seem from the downside alone." }
+      - { speaker: "Member 1", text: "What do you have for C?" }
+    expect: "yes"
+  - id: F033
+    session: T-C1-016   # Peer × XAI  seq 13
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "What do you have for C?" }
+      - { speaker: "Member 2", text: "yeah what's look so weak about C" }
+      - { speaker: "Alex", text: "C’s main concern for me is that it’s reluctant to take part in training, which feels like a real drawback for a pilot role." }
+      - { speaker: "Member 1", text: "I have that one . I actually though C is the worst" }
+    expect: "no"
+  - id: F034
+    session: T-C1-016   # Peer × XAI  seq 16
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "I have that one . I actually though C is the worst" }
+      - { speaker: "Member 1", text: "but not because the certain trait but because C has only 3 positives" }
+      - { speaker: "Alex", text: "Yeah, C does look weaker than D to me too, and that reluctance to train is the part that really drags it down. On top of that, C’s not verbally skillful makes it feel less solid than D overall, even if C has some good judgment and safety instincts." }
+      - { speaker: "Member 2", text: "wait, judgement and safety? that's new too me. I have decisive , conscientious, and tech-skilled." }
+    expect: "no"
+  - id: F035
+    session: T-C1-016   # Peer × XAI  seq 19
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "wait, judgement and safety? that's new too me. I have decisive , conscientious, and tech-skilled." }
+      - { speaker: "Member 1", text: "I have decisive but stress-resistant, team-spirited is what i have" }
+      - { speaker: "Alex", text: "C still looks better than B to me right now, because quick decisions and putting safety first are a stronger pilot mix than B’s more attitude-heavy downsides. I also have C as performing very well with sustained attention, which helps it stay in the conversation despite the training issue." }
+      - { speaker: "Member 1", text: "Oh well it seems C has lots of new good things" }
+    expect: "no"
+  - id: F036
+    session: T-C1-016   # Peer × XAI  seq 22
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Oh well it seems C has lots of new good things" }
+      - { speaker: "Member 2", text: "yeah but you said D so far Alex, why you pivot to compare things with B out of no where????" }
+      - { speaker: "Alex", text: "Fair point — I was just trying to place C relative to the others, but I still think D is the cleaner pick overall because it handles unexpected situations well and stays very responsible." }
+      - { speaker: "Member 2", text: "ah okay i got it" }
+    expect: "no"
+  - id: F037
+    session: T-C1-016   # Peer × XAI  seq 25
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "ah okay i got it" }
+      - { speaker: "Member 1", text: "yeah." }
+      - { speaker: "Alex", text: "Yeah, that’s still where I’m at — D feels like the safest overall fit because it combines responsibility with staying steady when things get unpredictable." }
+      - { speaker: "Member 1", text: "you said C is the best .. which one you're leaning on??" }
+    expect: "yes"
+  - id: F038
+    session: T-C1-016   # Peer × XAI  seq 28
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "you said C is the best .. which one you're leaning on??" }
+      - { speaker: "Member 2", text: "yeah I think C is better than D" }
+      - { speaker: "Alex", text: "C looks stronger than D to me now, mainly because the safety-first judgment and sustained attention are a better pilot mix than D’s steadiness alone. D still has solid traits, but C’s overall balance feels a bit cleaner right now." }
+      - { speaker: "Member 2", text: "okay then you say C" }
+    expect: "no"
+  - id: F039
+    session: T-C1-016   # Peer × XAI  seq 31
+    named: true
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "okay then you say C" }
+      - { speaker: "Member 1", text: "C looks okay to me" }
+      - { speaker: "Alex", text: "C still edges D for me right now, because quick, safety-first decisions plus sustained attention feel like a stronger pilot combo than D’s steadiness alone. D’s still solid, but C looks a bit cleaner overall from what’s on the table." }
+      - { speaker: "Member 1", text: "how about A Alex?" }
+    expect: "yes"
+  - id: F040
+    session: T-C1-016   # Peer × XAI  seq 33
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "C still edges D for me right now, because quick, safety-first decisions plus sustained attention feel like a stronger pilot combo than D’s steadiness alone. D’s still solid, but C looks a bit cleaner overall from what’s on the table." }
+      - { speaker: "Member 1", text: "how about A Alex?" }
+      - { speaker: "Alex", text: "A looks pretty strong to me too, especially with the good overview of complex situations and excellent spatial awareness." }
+      - { speaker: "Member 2", text: "Ah that looks similar with mine. I have A is sorted" }
+    expect: "no"
+  - id: F041
+    session: T-C1-015   # Peer × XAI  seq 4
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "hi" }
+      - { speaker: "Member 2", text: "hi" }
+      - { speaker: "Alex", text: "Hi — I’m leaning toward Candidate D so far, since being very responsible feels especially important for a pilot." }
+      - { speaker: "Member 1", text: "yeah okay. I have that one too." }
+    expect: "no"
+  - id: F042
+    session: T-C1-015   # Peer × XAI  seq 7
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "yeah okay. I have that one too." }
+      - { speaker: "Member 2", text: "yeah D is responsible" }
+      - { speaker: "Alex", text: "D still looks stronger than B to me here, because D adds solid composure under pressure with the ability to react well to unexpected events. That makes D feel like the steadier pilot pick overall, even before weighing the rest." }
+      - { speaker: "Member 2", text: "What do you have about D? why you so sure?" }
+    expect: "yes"
+  - id: F043
+    session: T-C4-013   # Leader × ACI  seq 2
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "Let's get started. We'll go through the four candidates together — let's each lay out what we know so we have the full picture before we decide." }
+      - { speaker: "Member 1", text: "Hi Can we start?" }
+    expect: "no"
+  - id: F044
+    session: T-C4-013   # Leader × ACI  seq 5
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Hi Can we start?" }
+      - { speaker: "Member 2", text: "Yeah" }
+      - { speaker: "Alex", text: "Absolutely — let’s start with Candidate A, since there’s already a strong sign there of solid situational awareness and good organization." }
+      - { speaker: "Member 1", text: "Ah yeah I have similar ones. I also have spatially-aware" }
+    expect: "no"
+  - id: F045
+    session: T-C4-013   # Leader × ACI  seq 8
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Ah yeah I have similar ones. I also have spatially-aware" }
+      - { speaker: "Member 2", text: "Me too, And A is goot at danger-aware" }
+      - { speaker: "Alex", text: "That lines up well for A — the danger awareness and spatial awareness make a strong pilot profile, and I also have that A keeps a good overview in complex situations. What else do we have on A before we move on?" }
+      - { speaker: "Member 1", text: "Well A is thin-skinned as a negative one" }
+    expect: "no"
+  - id: F046
+    session: T-C4-013   # Leader × ACI  seq 11
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Well A is thin-skinned as a negative one" }
+      - { speaker: "Member 2", text: "Oh I don't have that one" }
+      - { speaker: "Alex", text: "That’s useful — if A is already showing strong awareness and organization, the main thing I’d still want on the table is whether there’s any other downside besides being unfriendly. Do either of you have another trait for A, or should we move on once we’ve squeezed A a bit more?" }
+      - { speaker: "Member 2", text: "wait, unfriendly? I don't have that one." }
+    expect: "yes"
+  - id: F047
+    session: T-C4-013   # Leader × ACI  seq 14
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "wait, unfriendly? I don't have that one." }
+      - { speaker: "Member 2", text: "I only have show-off and closed-minded." }
+      - { speaker: "Alex", text: "That’s helpful — if A also has a show-off side and can be closed-minded, that makes the people-side a bit rougher than it first looked. I still want to hear whether anyone has one more trait on A before we leave it, or should we move on to B?" }
+      - { speaker: "Member 1", text: "I actually have one" }
+    expect: "no"
+  - id: F048
+    session: T-C4-013   # Leader × ACI  seq 17
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "I actually have one" }
+      - { speaker: "Member 1", text: "For the downside of A, A is hectic" }
+      - { speaker: "Alex", text: "Got it — that adds another rough edge for A, and with the people-side and restlessness-type issues piling up, I think we’ve probably squeezed A enough for now. What do we have on B, especially anything beyond being reliable and calm under pressure?" }
+      - { speaker: "Member 1", text: "I have thos two already. And B is weather-savvy" }
+    expect: "no"
+  - id: F049
+    session: T-C4-013   # Leader × ACI  seq 20
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "I have thos two already. And B is weather-savvy" }
+      - { speaker: "Member 2", text: "I have the same ones. weird" }
+      - { speaker: "Alex", text: "Let’s take a breath and check the board. Based on what we’ve got so far, this is still very much open — no one has clearly separated from the pack yet, so it’s worth digging a bit deeper before we lock anything in." }
+      - { speaker: "Member 2", text: "Yeah how about B's downside?" }
+    expect: "no"
+  - id: F050
+    session: T-C4-013   # Leader × ACI  seq 24
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "Do you guys have one?" }
+      - { speaker: "Member 2", text: "I have forgetful-numbers and gossipy" }
+      - { speaker: "Alex", text: "That’s useful on B — forgetful with numbers is a real concern for a pilot, and the gossipy side doesn’t help trust either. Do either of you have one more trait on B, or should we compare that against C and D now?" }
+      - { speaker: "Member 1", text: "I have another ones. B is nagging and uncooperative." }
+    expect: "no"
+  - id: F051
+    session: T-C4-013   # Leader × ACI  seq 27
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "I have another ones. B is nagging and uncooperative." }
+      - { speaker: "Member 1", text: "Seems there are many downsides both on A and B" }
+      - { speaker: "Alex", text: "Yeah, B is looking pretty messy on the downside, so I’d stop pushing it unless someone has a missing strength that really changes the picture. What do we have on C or D — especially any extra positives or negatives that could separate them cleanly?" }
+      - { speaker: "Member 1", text: "Yeah I don't have any left about B." }
+    expect: "no"
+  - id: F052
+    session: T-C4-013   # Leader × ACI  seq 30
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Yeah I don't have any left about B." }
+      - { speaker: "Member 1", text: "C,D Which one we need to do first?" }
+      - { speaker: "Alex", text: "Let’s do C first, since I have a strong safety-and-decision-making signal there, and then we can see whether D still edges it out." }
+      - { speaker: "Member 2", text: "Sounds great" }
+    expect: "no"
+  - id: F053
+    session: T-C4-013   # Leader × ACI  seq 33
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "Sounds great" }
+      - { speaker: "Member 2", text: "I have C is decisive, conscientious, and tech-skilled. C seems the worst to me. It has only 3 potivies." }
+      - { speaker: "Alex", text: "That’s a fair read on C, and I’d still want to hear the downside side before we write it off — I have that C is reluctant to train, which matters more than it sounds. Do either of you have another trait on C, or should we move straight to D and see if it stays ahead?" }
+      - { speaker: "Member 1", text: "wait I have decisive for the positive one. But none of other two have. mine is stress-resistant and team-spirited." }
+    expect: "no"
+  - id: F054
+    session: T-C4-013   # Leader × ACI  seq 36
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "wait I have decisive for the positive one. But none of other two have. mine is stress-resistant and team-spirited." }
+      - { speaker: "Member 1", text: "Alex, What do you have for C's positives?" }
+      - { speaker: "Alex", text: "I have that C makes very quick decisions, puts safety first, and can sustain attention well." }
+      - { speaker: "Member 1", text: "That whole new ones." }
+    expect: "no"
+  - id: F055
+    session: T-C4-013   # Leader × ACI  seq 39
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "That whole new ones." }
+      - { speaker: "Member 2", text: "Yeah." }
+      - { speaker: "Alex", text: "C is sounding stronger than it first did, especially with the quick decisions and safety-first side, so I’d like to hear D’s traits before we rule anything out." }
+      - { speaker: "Member 2", text: "But do we need to talk about C's downsides?" }
+    expect: "yes"
+  - id: F056
+    session: T-C4-013   # Leader × ACI  seq 42
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "But do we need to talk about C's downsides?" }
+      - { speaker: "Member 1", text: "Yeah, I think so too" }
+      - { speaker: "Alex", text: "Yes — C’s downsides matter here, especially if there’s anything about training or judgment under pressure, so let’s surface those before we compare it with D." }
+      - { speaker: "Member 1", text: "Mine is inarticulate, egocentric, and traning-averse." }
+    expect: "no"
+  - id: F057
+    session: T-C4-013   # Leader × ACI  seq 45
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "Mine is inarticulate, egocentric, and traning-averse." }
+      - { speaker: "Member 2", text: "Mine too. same. Does it look same as yours Alex?" }
+      - { speaker: "Alex", text: "Yes — that matches what I have for C, and the training-averse part is the one that worries me most for a pilot. If we’ve got C’s downside covered, I’d move us to D next since that may be the cleaner comparison." }
+      - { speaker: "Member 2", text: "Okay great" }
+    expect: "no"
+  - id: F058
+    session: T-C4-013   # Leader × ACI  seq 48
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "Okay great" }
+      - { speaker: "Member 1", text: "Okay, I have adaptable, focused, resilient in D" }
+      - { speaker: "Alex", text: "That fits well with what I have on D too — especially the strong responsibility side, which is a big plus for a pilot. If anyone has a downside on D, that would be the last thing I’d want before we compare it directly with C." }
+      - { speaker: "Member 2", text: "I have the same ones. But one more, responsible." }
+    expect: "no"
+  - id: F059
+    session: T-C4-013   # Leader × ACI  seq 51
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "I have the same ones. But one more, responsible." }
+      - { speaker: "Member 1", text: "Yeah how about negatives?" }
+      - { speaker: "Alex", text: "Yes — the downside I have on D is that D can be moody, and that’s the main thing I’d want weighed against the strong reliability and resilience. If nobody has anything else on D, I think we’re close to a decision between D and C." }
+      - { speaker: "Member 1", text: "wait I don't have moody thing. arrogant and poor-leader." }
+    expect: "no"
+  - id: F060
+    session: T-C4-013   # Leader × ACI  seq 54
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "wait I don't have moody thing. arrogant and poor-leader." }
+      - { speaker: "Member 2", text: "wait I don't have any of those. I have know-all and quick-tempered\\" }
+      - { speaker: "Alex", text: "We’re still not fully aligned on D’s downside, so let’s not rush past it — we’ve got a solid picture on C and a decent one on D, but the board isn’t complete yet. Participant X, what do you have on Candidate B?" }
+      - { speaker: "Member 1", text: "I think I told all of those" }
+    expect: "no"
+  - id: F061
+    session: T-C4-013   # Leader × ACI  seq 57
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "I think I told all of those" }
+      - { speaker: "Member 2", text: "yeah why you go to B again? Is there any reason?" }
+      - { speaker: "Alex", text: "I’m bringing us back to B because we’ve already got a lot on C and D, but D’s downside is still messy and B may still have a missing piece that changes the balance. What else do either of you have on B — especially any trait we haven’t surfaced yet?" }
+      - { speaker: "Member 1", text: "What the B's traits we put on already? I'm confused" }
+    expect: "no"
+  - id: F062
+    session: T-C4-013   # Leader × ACI  seq 60
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "What the B's traits we put on already? I'm confused" }
+      - { speaker: "Member 2", text: "Yeah What's the decision standard ?" }
+      - { speaker: "Alex", text: "We’re judging by the overall balance of positives and negatives, so I don’t want us to lock onto just one candidate too early. B is already looking rough on the downside, C has strong upside but a real training concern, and D still needs its negatives cleaned up — what else do we have on D before we compare it cleanly with C?" }
+      - { speaker: "Member 1", text: "Well. I think I put all things on." }
+    expect: "no"
+  - id: F063
+    session: T-C1-014   # Peer × XAI  seq 5
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "Hi" }
+      - { speaker: "Member 1", text: "Alex How are you?" }
+      - { speaker: "Alex", text: "Doing well — thanks. On the candidates, D still looks a bit stronger to me than A because the steady concentration and responsibility edge out A’s more mixed interpersonal side, though A is close with the strong situational awareness." }
+      - { speaker: "Member 2", text: "A has danger-aware" }
+    expect: "no"
+  - id: F064
+    session: T-C1-014   # Peer × XAI  seq 7
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Alex", text: "Doing well — thanks. On the candidates, D still looks a bit stronger to me than A because the steady concentration and responsibility edge out A’s more mixed interpersonal side, though A is close with the strong situational awareness." }
+      - { speaker: "Member 2", text: "A has danger-aware" }
+      - { speaker: "Alex", text: "A does have that danger-awareness, and that’s a real plus against D’s steadier profile, but D still feels a touch stronger overall to me because the responsibility and resilience are cleaner for pilot work than A’s unfriendly/restless side." }
+      - { speaker: "Member 1", text: "Y , how about Candidate B?" }
+    expect: "no"
+  - id: F065
+    session: T-C4-012   # Leader × ACI  seq 2
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Alex", text: "Let's get started. We'll go through the four candidates together — let's each lay out what we know so we have the full picture before we decide." }
+      - { speaker: "Member 1", text: "Okay let's start" }
+    expect: "no"
+  - id: F066
+    session: T-C4-012   # Leader × ACI  seq 4
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "Let's get started. We'll go through the four candidates together — let's each lay out what we know so we have the full picture before we decide." }
+      - { speaker: "Member 1", text: "Okay let's start" }
+      - { speaker: "Alex", text: "Good — let’s start with the candidate who seems most balanced on paper. What do we know about D beyond the basics, especially anything that might offset the rough edges?" }
+      - { speaker: "Member 2", text: "I think D is overall good but quick tempered" }
+    expect: "no"
+  - id: F067
+    session: T-C4-012   # Leader × ACI  seq 8
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 1", text: "Based on my knowledge, He is good at reacting adequately" }
+      - { speaker: "Member 1", text: "and he can concentrate very well" }
+      - { speaker: "Alex", text: "Got it — that helps. Let’s keep an eye on how that temperament shows up in practice and whether it affects teamwork or consistency." }
+      - { speaker: "Member 2", text: "yes" }
+    expect: "no"
+  - id: F068
+    session: T-C4-012   # Leader × ACI  seq 10
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "Got it — that helps. Let’s keep an eye on how that temperament shows up in practice and whether it affects teamwork or consistency." }
+      - { speaker: "Member 2", text: "yes" }
+      - { speaker: "Alex", text: "That’s useful — D’s steadiness under pressure is coming through, but I’d still like to hear whether anyone has more on the rough side beyond quick temper. What else do we know about D’s judgment or reliability when things get messy?" }
+      - { speaker: "Member 1", text: "Yeah he is also considered arrogant" }
+    expect: "no"
+  - id: F069
+    session: T-C4-012   # Leader × ACI  seq 14
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "pretend to be know-all" }
+      - { speaker: "Member 1", text: "it is quite negative to the teamwork" }
+      - { speaker: "Alex", text: "We’re at the point where we shouldn’t lock onto D too fast — there’s still a full field here, and I want to compare everyone side by side before we narrow it down. What do we have on C specifically, Participant Y?" }
+      - { speaker: "Member 2", text: "C is the worst candidate to me. He can do quick decisions but egoistic and not attending trainings!!" }
+    expect: "no"
+  - id: F070
+    session: T-C4-012   # Leader × ACI  seq 18
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "sometimes quick decisions are required but in emergency situations, accuracy also matters" }
+      - { speaker: "Member 1", text: "For me, C has many negative attributes" }
+      - { speaker: "Alex", text: "We’re getting a bit too focused on C and D, and I don’t want us to close off the other two yet — A and B still need to be weighed against what we’ve heard so far. What else do we know about A or B that might change the picture?" }
+      - { speaker: "Member 1", text: "We haven't discussed about D's positive side, is that okay?" }
+    expect: "yes"
+  - id: F071
+    session: T-C4-012   # Leader × ACI  seq 20
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "We’re getting a bit too focused on C and D, and I don’t want us to close off the other two yet — A and B still need to be weighed against what we’ve heard so far. What else do we know about A or B that might change the picture?" }
+      - { speaker: "Member 1", text: "We haven't discussed about D's positive side, is that okay?" }
+      - { speaker: "Alex", text: "Yes — let’s keep the whole field open and not let D or C crowd out A and B yet. We’ve got enough to compare broadly, but I still want the missing pieces on A before we get too far ahead; Participant Y, what do you have on Candidate A?" }
+      - { speaker: "Member 2", text: "A is the best candidate to me. A is good at sensing dangerous, spacious intelligence, and well-organized." }
+    expect: "no"
+  - id: F072
+    session: T-C4-012   # Leader × ACI  seq 23
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "A is the best candidate to me. A is good at sensing dangerous, spacious intelligence, and well-organized." }
+      - { speaker: "Member 1", text: "But A cannot tolerate criticism" }
+      - { speaker: "Alex", text: "Let’s take a breath and check the board as it stands. Based on what we’ve heard so far, B is looking like the strongest fit, while A, C, and D are still trailing or have clear concerns that keep them behind for now." }
+      - { speaker: "Member 1", text: "it is critical for the team" }
+    expect: "no"
+  - id: F073
+    session: T-C4-012   # Leader × ACI  seq 25
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "Let’s take a breath and check the board as it stands. Based on what we’ve heard so far, B is looking like the strongest fit, while A, C, and D are still trailing or have clear concerns that keep them behind for now." }
+      - { speaker: "Member 1", text: "it is critical for the team" }
+      - { speaker: "Alex", text: "I hear you — that’s an important concern to keep in mind. Let’s make sure we’re still checking the remaining gaps before we settle." }
+      - { speaker: "Member 2", text: "okay" }
+    expect: "no"
+  - id: F074
+    session: T-C4-012   # Leader × ACI  seq 28
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "okay" }
+      - { speaker: "Member 1", text: "Alex, Are you listening my opinion as well?" }
+      - { speaker: "Alex", text: "I am — and I want to hear the rest of it. What’s the strongest thing you’ve got on B, and is there anything on A that would actually pull it back into the lead?" }
+      - { speaker: "Member 2", text: "but D is also ego-centric" }
+    expect: "no"
+  - id: F075
+    session: T-C4-012   # Leader × ACI  seq 30
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "I am — and I want to hear the rest of it. What’s the strongest thing you’ve got on B, and is there anything on A that would actually pull it back into the lead?" }
+      - { speaker: "Member 2", text: "but D is also ego-centric" }
+      - { speaker: "Alex", text: "We’re still not done if B hasn’t really been aired yet — I don’t want us deciding off the loudest negatives on A, C, or D alone. Can we widen it back out and hear what B brings, since that’s the one we’ve barely touched? Participant X, what do you have on Candidate B?" }
+      - { speaker: "Member 1", text: "He can keep a cool head in crisis situation, that's really good point and we can rely on him 100%, he can assess weather condition very well. this is one of the most important attributes." }
+    expect: "no"
+  - id: F076
+    session: T-C4-012   # Leader × ACI  seq 33
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 1", text: "He can keep a cool head in crisis situation, that's really good point and we can rely on him 100%, he can assess weather condition very well. this is one of the most important attributes." }
+      - { speaker: "Member 1", text: "But he is not that cooperative" }
+      - { speaker: "Alex", text: "That’s a strong case for B, and it’s exactly the kind of thing I wanted surfaced. What else do we have on B’s rough side — is the cooperation issue the main concern, or is there more that could still shift the balance?" }
+      - { speaker: "Member 2", text: "I heard B is good at multitasking, which is definitely strength. also I heard that we can rely on him 100%. However,, I think there is no 100%reliability. also, he has below-average skills in numbers! How can we trust him" }
+    expect: "no"
+  - id: F077
+    session: T-C4-012   # Leader × ACI  seq 35
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "That’s a strong case for B, and it’s exactly the kind of thing I wanted surfaced. What else do we have on B’s rough side — is the cooperation issue the main concern, or is there more that could still shift the balance?" }
+      - { speaker: "Member 2", text: "I heard B is good at multitasking, which is definitely strength. also I heard that we can rely on him 100%. However,, I think there is no 100%reliability. also, he has below-average skills in numbers! How can we trust him" }
+      - { speaker: "Alex", text: "Let’s pause and take stock for a moment. Based on what’s been put on the table so far, A is looking like the strongest fit overall, while the others have either fallen behind or still have concerns that keep them from catching up. " }
+      - { speaker: "Member 2", text: "I believe so." }
+    expect: "no"
+  - id: F078
+    session: T-C4-012   # Leader × ACI  seq 38
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "I believe so." }
+      - { speaker: "Member 1", text: "what do you think about Candidate B, Alex? we have different information" }
+      - { speaker: "Alex", text: "B still has a solid case, but I’m not ready to move it ahead of A yet. A’s profile is still the cleanest overall from what we’ve got — what else on B’s downside should we weigh before we settle? " }
+      - { speaker: "Member 1", text: "do you think B is 100% reliable?" }
+    expect: "yes"
+  - id: F079
+    session: T-C4-012   # Leader × ACI  seq 40
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "B still has a solid case, but I’m not ready to move it ahead of A yet. A’s profile is still the cleanest overall from what we’ve got — what else on B’s downside should we weigh before we settle? " }
+      - { speaker: "Member 1", text: "do you think B is 100% reliable?" }
+      - { speaker: "Alex", text: "I wouldn’t call anyone 100% reliable here, but B still sounds solid overall. What I’d like to hear next is whether anyone has more on A’s downside, because that’s the main thing that could change the lead for me." }
+      - { speaker: "Member 1", text: "he is well organized and has excellent spatial awareness" }
+    expect: "no"
+  - id: F080
+    session: T-C4-011   # Leader × ACI  seq 2
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "자, 시작해 볼까요. 네 명의 후보를 함께 살펴볼 텐데, 결정하기 전에 각자 아는 내용을 먼저 풀어놓고 전체 그림을 맞춰봐요." }
+      - { speaker: "Member 1", text: "네네 어디부터 할까요" }
+    expect: "no"
+  - id: F081
+    session: T-C4-011   # Leader × ACI  seq 6
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "음 A는 위험감지가 뛰어나요" }
+      - { speaker: "Member 2", text: "긍정이 4개였어" }
+      - { speaker: "Alex", text: "좋아요, 지금은 A 얘기만 조금 나온 상태라서 아직 너무 빨리 좁히지 말고 B, C, D도 같이 놓고 봐야 해요. A 말고 다른 후보들에 대해 보이는 장점이나 걸리는 점이 있으면 하나씩 더 꺼내주실래요?" }
+      - { speaker: "Member 1", text: "나도 위험 감지 뛰어난거 있었어" }
+    expect: "no"
+  - id: F082
+    session: T-C4-011   # Leader × ACI  seq 10
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "B는 위기에 침착하대" }
+      - { speaker: "Member 2", text: "나도 그거 있었는데" }
+      - { speaker: "Alex", text: "좋아요, 지금은 A 쪽 장점이 더 많이 보이긴 하지만 아직 B만 조금 나온 정도라서 전체를 놓고 보기엔 이르네요. C나 D에서 보이는 강점이나 걸리는 점도 하나씩 더 있나요?" }
+      - { speaker: "Member 2", text: "C에서는 빠르게 결단하는게 있었어" }
+    expect: "no"
+  - id: F083
+    session: T-C4-011   # Leader × ACI  seq 14
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "성실하고" }
+      - { speaker: "Member 1", text: "나는 성실한건 못봤는데?" }
+      - { speaker: "Alex", text: "지금은 A랑 B, C 일부만 조금씩 나온 상태라서 아직 한쪽으로 너무 기울기엔 이르고, D까지 포함해서 네 명을 다시 같이 봐야 해요. C는 빠른 판단이 보였고, D 쪽은 어떤 장점이나 걸리는 점이 더 있는지 누가 하나 더 보신 게 있나요?" }
+      - { speaker: "Member 2", text: "D는 집중력이 좋대" }
+    expect: "no"
+  - id: F084
+    session: T-C4-011   # Leader × ACI  seq 18
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "다 아는 척한다는게 단점이었어" }
+      - { speaker: "Member 1", text: "나는 D에 거만하다는거 있었는데" }
+      - { speaker: "Alex", text: "지금은 네 명 다 다시 놓고 봐야 해요. A는 장점이 꽤 많이 보이지만, B는 아직 덜 나온 편이라 더 확인이 필요하고, C랑 D도 각각 강점과 걸리는 점이 같이 있어서 섣불리 좁히면 안 됩니다. Participant Y, B에 대해서는 어떤 정보가 더 있나요?" }
+      - { speaker: "Member 2", text: "음.. 어디까지 이야기 했더라" }
+    expect: "no"
+  - id: F085
+    session: T-C4-011   # Leader × ACI  seq 22
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "믿을만하다는게 있었어" }
+      - { speaker: "Member 1", text: "어 나도" }
+      - { speaker: "Alex", text: "좋아요, B는 신뢰감 쪽이 공통으로 보이네요. 그럼 이제 A, C, D도 같은 기준으로 한 번씩 더 맞춰보면 좋겠어요." }
+      - { speaker: "Member 1", text: "그리고 기상 판단도 잘안해" }
+    expect: "no"
+  - id: F086
+    session: T-C4-011   # Leader × ACI  seq 25
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "그리고 기상 판단도 잘안해" }
+      - { speaker: "Member 1", text: "잘한대" }
+      - { speaker: "Alex", text: "지금은 B 쪽이 꽤 탄탄해 보이지만, 아직 A도 D도 충분히 살아 있어서 너무 빨리 한 명으로 좁히면 안 됩니다. A나 D에서 아직 안 나온 장점이나, C의 걸리는 점을 더 아는 분 있나요?" }
+      - { speaker: "Member 2", text: "아까 A에서 말한건 비슷했는데 체계적인것도 있었어" }
+    expect: "no"
+  - id: F087
+    session: T-C4-011   # Leader × ACI  seq 29
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "C는 말주변이 없다?" }
+      - { speaker: "Member 2", text: "그리고 자기중심적이다" }
+      - { speaker: "Alex", text: "지금은 B가 꽤 앞서 보이긴 하지만, 아직 A도 D도 충분히 경쟁력이 있고 C도 장단이 같이 보여서 여기서 너무 빨리 한 명으로 닫으면 안 돼요. 네 후보를 다시 같은 선에서 놓고 보면서, 특히 아직 덜 나온 B의 다른 면을 더 확인해 보면 좋겠어요. Participant X, B에 대해 더 가진 정보가 있나요?" }
+      - { speaker: "Member 1", text: "B는 잔소리가 심하갰고" }
+    expect: "no"
+  - id: F088
+    session: T-C4-011   # Leader × ACI  seq 32
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "B는 잔소리가 심하갰고" }
+      - { speaker: "Member 1", text: "비협조적이야" }
+      - { speaker: "Alex", text: "B 쪽은 지금까지 나온 얘기만 보면 장점도 있지만 걸리는 점도 같이 꽤 보이네요. 혹시 A나 D에서 아직 안 나온 좋은 점이나, C의 남은 단점 같은 게 더 있나요?" }
+      - { speaker: "Member 2", text: "C는 자기 중심적인거" }
+    expect: "no"
+  - id: F089
+    session: T-C4-011   # Leader × ACI  seq 35
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "C는 자기 중심적인거" }
+      - { speaker: "Member 2", text: "성실하고" }
+      - { speaker: "Alex", text: "지금은 B가 생각보다 흔들리는 점도 같이 보이고, C도 장단이 섞여 있어서 아직 한 명으로 닫기엔 이르네요. A랑 D 쪽에서 아직 덜 나온 강점이나, D의 걸리는 점을 더 아는 분 있나요?" }
+      - { speaker: "Member 1", text: "지금 총 상황이 어떻게 되는데?" }
+    expect: "yes"
+  - id: F090
+    session: T-C4-011   # Leader × ACI  seq 38
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "지금 총 상황이 어떻게 되는데?" }
+      - { speaker: "Member 1", text: "Alex 지금 총 상황이 어떻게 되냐고" }
+      - { speaker: "Alex", text: "지금은 아직 A가 가장 안정적으로 보이고, B는 장점도 있지만 걸리는 점이 같이 꽤 나와서 조금 흔들려요. D 쪽은 아직 더 확인할 게 있고, C는 장단이 섞여 있어서요 — A나 D에서 아직 안 나온 강점이 더 있는지, 혹시 누가 하나 더 보신 게 있나요?" }
+      - { speaker: "Member 2", text: "난 다 말한거 같은데" }
+    expect: "no"
+  - id: F091
+    session: T-C4-011   # Leader × ACI  seq 41
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 2", text: "난 다 말한거 같은데" }
+      - { speaker: "Member 1", text: "나도" }
+      - { speaker: "Alex", text: "그럼 지금은 A 쪽이 가장 무난하게 앞서 보이네요. 다만 D도 아직 덜 정리된 부분이 있어서, 혹시 D에 대해 더 나온 장점이나 걸리는 점이 있으면 마지막으로 한 번만 더 확인해볼까요?" }
+      - { speaker: "Member 2", text: "음... D도 생각 안나는데 이제 없어" }
+    expect: "no"
+  - id: F092
+    session: T-C4-011   # Leader × ACI  seq 43
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "그럼 지금은 A 쪽이 가장 무난하게 앞서 보이네요. 다만 D도 아직 덜 정리된 부분이 있어서, 혹시 D에 대해 더 나온 장점이나 걸리는 점이 있으면 마지막으로 한 번만 더 확인해볼까요?" }
+      - { speaker: "Member 2", text: "음... D도 생각 안나는데 이제 없어" }
+      - { speaker: "Alex", text: "그럼 지금은 A로 가는 게 가장 자연스럽겠습니다. A는 이미 장점이 꽤 탄탄하게 모였고, 다른 후보들은 아직 장단이 더 섞여 보여서요 — 혹시 마지막으로 A 쪽에서 걸리는 점을 더 아시는 분 있나요?" }
+      - { speaker: "Member 1", text: "A도 잘 모르겠어" }
+    expect: "no"
+  - id: F093
+    session: T-C4-011   # Leader × ACI  seq 46
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 1", text: "A도 잘 모르겠어" }
+      - { speaker: "Member 2", text: "나도 A도 잘 모르겠어" }
+      - { speaker: "Alex", text: "지금은 네 후보를 다시 열어두고 봐야 해요. A는 아직 가장 안정적으로 보이지만, B도 신뢰감 쪽이 계속 나오고 있고 C, D도 각각 장점과 걸리는 점이 같이 있어서 여기서 너무 빨리 닫으면 안 됩니다. 혹시 A 말고 B나 D에서 아직 안 나온 좋은 점, 또는 C의 남은 단점이 더 있는 분 있나요?" }
+      - { speaker: "Member 2", text: "C도 잘 모르곘고 이제 전부야" }
+    expect: "no"
+  - id: F094
+    session: T-C4-011   # Leader × ACI  seq 48
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "지금은 네 후보를 다시 열어두고 봐야 해요. A는 아직 가장 안정적으로 보이지만, B도 신뢰감 쪽이 계속 나오고 있고 C, D도 각각 장점과 걸리는 점이 같이 있어서 여기서 너무 빨리 닫으면 안 됩니다. 혹시 A 말고 B나 D에서 아직 안 나온 좋은 점, 또는 C의 남은 단점이 더 있는 분 있나요?" }
+      - { speaker: "Member 2", text: "C도 잘 모르곘고 이제 전부야" }
+      - { speaker: "Alex", text: "지금까지는 A, B, C, D 각각의 장단이 꽤 나왔고, A는 비교적 무난하게 보이지만 B도 신뢰감이 계속 보이고 C와 D도 아직 완전히 배제할 만큼은 아니네요. 여기서 더 끌기보다 팀이 같이 최종 판단해서, 이제는 함께 Exit & Make Team Decision을 눌러 결정해 주세요." }
+      - { speaker: "Member 1", text: "그럼 뭘로 할까요?" }
+    expect: "no"
+  - id: F095
+    session: T-C2-014   # Leader × XAI  seq 2
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "Let's get started. We'll go through the four candidates together — let's each lay out what we know so we have the full picture before we decide." }
+      - { speaker: "Member 1", text: "For A, good at danger-aware" }
+    expect: "no"
+  - id: F096
+    session: T-C2-014   # Leader × XAI  seq 5
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "For A, good at danger-aware" }
+      - { speaker: "Member 1", text: "And can make big-picture well" }
+      - { speaker: "Alex", text: "A is already looking stronger than C on balance, because the danger awareness and big-picture thinking fit together cleanly, while C is carrying more friction on the downside. I’d keep A in the lead for now and not let the discussion drift away from the full set." }
+      - { speaker: "Member 2", text: "I got the same things" }
+    expect: "no"
+  - id: F097
+    session: T-C2-014   # Leader × XAI  seq 16
+    named: false
+    alex_answered: true
+    context:
+      - { speaker: "Member 1", text: "Oh I think we have same things" }
+      - { speaker: "Member 1", text: "How about negative things" }
+      - { speaker: "Alex", text: "We’re at the point where the field is still open, so I’d widen back out instead of locking onto A or B too early. A and B both look solid, but D is still very much in the mix against them, and C shouldn’t be dropped just because its rough edges are more visible right now. Participant Y, you’re up." }
+      - { speaker: "Member 2", text: "Well what do you have for A and B?" }
+    expect: "yes"
+  - id: F098
+    session: T-C2-014   # Leader × XAI  seq 18
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "We’re at the point where the field is still open, so I’d widen back out instead of locking onto A or B too early. A and B both look solid, but D is still very much in the mix against them, and C shouldn’t be dropped just because its rough edges are more visible right now. Participant Y, you’re up." }
+      - { speaker: "Member 2", text: "Well what do you have for A and B?" }
+      - { speaker: "Alex", text: "For A, I’ve got the danger-sense, the strong overview, the spatial awareness, and being very organized, with the downside that A can be unfriendly and can transmit restlessness. For B, the strengths are staying cool in crisis, being fully reliable, handling weather well, and multitasking, while the negatives are arrogance and sometimes an abusive tone — so B is still the cleaner pick over A on balance right now." }
+      - { speaker: "Member 2", text: "Yeah speaking of D, I have adaptable, focussed, resilient" }
+    expect: "no"
+  - id: F099
+    session: T-C4-010   # Leader × ACI  seq 2
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "자, 시작해 볼까요. 네 명의 후보를 함께 살펴볼 텐데, 결정하기 전에 각자 아는 내용을 먼저 풀어놓고 전체 그림을 맞춰봐요." }
+      - { speaker: "Member 1", text: "응 일단 A가 위험 감지를 잘한대" }
+    expect: "no"
+  - id: F100
+    session: T-C4-010   # Leader × ACI  seq 5
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "응 일단 A가 위험 감지를 잘한대" }
+      - { speaker: "Member 1", text: "그리고 조직적이래" }
+      - { speaker: "Alex", text: "좋아요, A 쪽은 지금 나온 얘기만 봐도 꽤 탄탄해 보이네요. 혹시 A에 대해 더 있는 분 있나요—특히 다른 강점이나 같이 봐야 할 부분이 있으면 이어서 알려주세요?" }
+      - { speaker: "Member 2", text: "A는 잘 모르겠고 B가 위기에 침착하고 신뢰할만하다던데" }
+    expect: "no"
+  - id: F101
+    session: T-C4-010   # Leader × ACI  seq 10
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "회복력도 있고" }
+      - { speaker: "Member 2", text: "나도 그랬던거 같은데" }
+      - { speaker: "Alex", text: "지금은 A, B, D 쪽 얘기만 조금씩 쌓였고 C는 거의 안 나와서, 아직 한쪽으로 너무 빨리 좁히기엔 이릅니다. 네 후보를 다시 넓게 놓고 보면 각자 장단이 다 있어서, 다음엔 C 쪽 정보까지 같이 채워서 비교해보는 게 좋겠어요. Participant X, Candidate C에 대해서는 어떤 점을 알고 계신가요?" }
+      - { speaker: "Member 1", text: "C는 근데 안좋은게 많았던거 같은데" }
+    expect: "no"
+  - id: F102
+    session: T-C4-010   # Leader × ACI  seq 14
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "말도 서툴고 자기 중심적이래" }
+      - { speaker: "Member 1", text: "훈련하는 것도 안좋아한대" }
+      - { speaker: "Alex", text: "좋아요, 이제 C 쪽도 들어왔으니 네 명을 다시 같이 놓고 봐야겠네요. 아직은 어느 한 명으로 딱 좁히기보다, A·B·D의 강점과 C의 약점까지 포함해서 전체 균형을 다시 보는 게 맞습니다—다음엔 B나 D 쪽에 더 있는 정보가 있는지, 특히 아직 안 나온 장단점이 있으면 알려주실래요?" }
+      - { speaker: "Member 2", text: "일단 C가 그럤던거 같아" }
+    expect: "no"
+  - id: F103
+    session: T-C4-010   # Leader × ACI  seq 18
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "A나 B가 좋아보이지 않아?" }
+      - { speaker: "Member 2", text: "그래 보여" }
+      - { speaker: "Alex", text: "그렇네요, 지금까지 나온 얘기만 보면 A랑 B 쪽이 좀 더 눈에 띄는 건 맞아 보여요. 다음엔 두 후보의 차이를 더 분명하게 볼 수 있는 정보가 있는지 한번 더 확인해보면 좋겠습니다." }
+      - { speaker: "Member 1", text: "내가 가진 C는 스트레스에 강하댔어" }
+    expect: "no"
+  - id: F104
+    session: T-C4-010   # Leader × ACI  seq 21
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "내가 가진 C는 스트레스에 강하댔어" }
+      - { speaker: "Member 2", text: "난 그런건 못본거 같은데" }
+      - { speaker: "Alex", text: "지금은 A, B, C, D를 다시 넓게 놓고 봐야 할 때예요. A는 아직 덜 나온 부분이 있어서 더 확인이 필요하고, B·D도 장점은 보이지만 빠진 정보가 더 있을 수 있으니 섣불리 좁히지 말고 전체를 한 번 더 채워보죠. Participant X, Candidate A에 대해서는 어떤 점을 더 알고 계신가요?" }
+      - { speaker: "Member 1", text: "A는 내가 말한게 전부야. 더 기억 안나" }
+    expect: "no"
+  - id: F105
+    session: T-C4-010   # Leader × ACI  seq 25
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "C가 성실하고 복잡한 기술 잘 쓴다고 그랬어" }
+      - { speaker: "Member 2", text: "C가 새로운 정보가 많아 보이는데?" }
+      - { speaker: "Alex", text: "그렇네요, C 쪽 정보가 좀 더 들어왔네요. 그럼 이제 A·B·C·D를 다시 놓고, 빠진 부분이 있는 후보부터 한 번 더 확인해보면 좋겠습니다." }
+      - { speaker: "Member 1", text: "D가 약간 교만하대" }
+    expect: "no"
+  - id: F106
+    session: T-C4-010   # Leader × ACI  seq 28
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "D가 약간 교만하대" }
+      - { speaker: "Member 1", text: "팀 리딩도 잘 못하고" }
+      - { speaker: "Alex", text: "지금은 D 쪽에 약점 얘기까지 들어와서, 네 명을 다시 균형 있게 봐야 합니다. 아직 A와 B는 장점이 꽤 보이는데 빠진 정보가 있고, C도 새로 나온 얘기가 섞여 있어서 섣불리 한 명으로 좁히기엔 이르네요—B나 A 쪽에 아직 안 나온 단점이나 강점이 더 있나요?" }
+      - { speaker: "Member 2", text: "A가 잘난척 한다고 그랬어" }
+    expect: "no"
+  - id: F107
+    session: T-C4-010   # Leader × ACI  seq 32
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "A가 새 아이디어를 발 못받아들인대" }
+      - { speaker: "Member 1", text: "잘 모르겠다. Alex, 지금까지 봤을때 어때?" }
+      - { speaker: "Alex", text: "지금까지 나온 걸 보면 A는 장점도 있지만 새로 나온 약점이 꽤 걸리고, B는 아직 비교적 균형이 좋아 보여요. 저는 지금은 B 쪽이 가장 앞선다고 보는데, D나 C 쪽에서 아직 안 나온 강점이나 약점이 더 있는지 한 번만 더 확인해볼까요?" }
+      - { speaker: "Member 2", text: "내가 가진건 이게 다야" }
+    expect: "no"
+  - id: F108
+    session: T-C4-010   # Leader × ACI  seq 35
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "내가 가진건 이게 다야" }
+      - { speaker: "Member 1", text: "그래 나도 이게 다야. 더이상 모르겠어" }
+      - { speaker: "Alex", text: "지금은 B가 가장 앞서 보이지만, 아직 D나 C 쪽도 완전히 닫을 단계는 아니에요. 특히 D는 책임감이나 회복력 말고도 더 나온 게 있는지, C는 약점만 말고 보완되는 강점이 더 있는지 마지막으로 한 번만 더 확인해볼까요?" }
+      - { speaker: "Member 2", text: "나는 진짜 없어" }
+    expect: "no"
+  - id: F109
+    session: T-C2-013   # Leader × XAI  seq 2
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Alex", text: "자, 시작해 볼까요. 네 명의 후보를 함께 살펴볼 텐데, 결정하기 전에 각자 아는 내용을 먼저 풀어놓고 전체 그림을 맞춰봐요." }
+      - { speaker: "Member 1", text: "좋아 내가 가진건 A가 위험 감지를 잘한대" }
+    expect: "no"
+  - id: F110
+    session: T-C2-013   # Leader × XAI  seq 5
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "좋아 내가 가진건 A가 위험 감지를 잘한대" }
+      - { speaker: "Member 2", text: "A는 잘 기억 안나는데 위기상황에서 침착하다던데" }
+      - { speaker: "Alex", text: "A 쪽은 지금 나온 얘기만 봐도 위험 감지랑 위기 대응이 같이 보여서 꽤 탄탄합니다. 다만 저는 아직 B나 D를 너무 빨리 빼진 말고, 특히 D처럼 안정적으로 버티는 쪽이 A와 바로 붙여서 비교해볼 만하다고 봅니다." }
+      - { speaker: "Member 2", text: "아 내가 말한건 B였어 위기상황" }
+    expect: "no"
+  - id: F111
+    session: T-C2-013   # Leader × XAI  seq 9
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "A가 조직적이라고 했던거 같긴해" }
+      - { speaker: "Member 2", text: "음.. D가 책임감이 강하댔어" }
+      - { speaker: "Alex", text: "지금은 A, B, D가 다 살아 있고 C도 아직 열어둬야 합니다. A는 정리력과 위험 감지가 강하고, D는 안정적으로 버티는 쪽이 더 또렷해서 둘을 바로 붙여 보면 좋고, B도 위기에서 침착하다는 점이 있어서 아직 밀어내기엔 이릅니다. Participant X, 당신 차례입니다." }
+      - { speaker: "Member 2", text: "그리고 금방 회복한대" }
+    expect: "no"
+  - id: F112
+    session: T-C2-013   # Leader × XAI  seq 13
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "아 음.. 잘 기억 안나는데" }
+      - { speaker: "Member 2", text: "C가 제일 안좋아보이긴했어" }
+      - { speaker: "Alex", text: "지금은 C를 너무 빨리 접기보다, A·B·D까지 다시 같이 놓고 봐야 합니다. C는 약점이 눈에 띄긴 해도 빠른 판단과 안전 우선이 있고, A는 정리력과 위험 감지가 강한 대신 B는 위기 침착함, D는 책임감과 안정감이 있어서 아직은 한쪽으로 급하게 몰기보다 전체 비교를 유지하는 게 맞습니다." }
+      - { speaker: "Member 1", text: "C에서 기억나는게 말을 잘 못하고 자기 중심적이래" }
+    expect: "no"
+  - id: F113
+    session: T-C2-013   # Leader × XAI  seq 17
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "훈련하는것도 싫어했어" }
+      - { speaker: "Member 2", text: "맞아" }
+      - { speaker: "Alex", text: "지금은 C의 약점이 더 분명해졌지만, 그래서 바로 닫기보다는 A·B·D와 끝까지 같이 놓고 봐야 합니다. A는 정리력과 위험 감지가 강하고, B는 위기에서 침착한 쪽이어서 아직 충분히 경쟁력 있고, D는 책임감과 안정감이 있어서 C와 비교해도 여전히 살아 있습니다. Participant X, 당신 차례입니다." }
+      - { speaker: "Member 1", text: "난 잘 기억안나 생각 좀 해볼게" }
+    expect: "no"
+  - id: F114
+    session: T-C2-013   # Leader × XAI  seq 22
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 1", text: "난 A 아니면 B" }
+      - { speaker: "Member 2", text: "C가 성실하다고 했던거 같아" }
+      - { speaker: "Alex", text: "지금은 C 얘기가 더 나오긴 했지만, 그걸로 나머지를 접을 단계는 아닙니다. A는 위험 감지와 정리력이 계속 강하게 보이고, B는 위기에서 침착한 점이 살아 있어서 C보다 먼저 밀리진 않으며, D도 책임감과 안정감이 있어서 아직 비교 대상에서 빼면 안 됩니다." }
+      - { speaker: "Member 2", text: "그리고 복잡한 기술을 잘 사용한다던데" }
+    expect: "no"
+  - id: F115
+    session: T-C2-013   # Leader × XAI  seq 29
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "지금 C가 많이 나오고 있는건가?" }
+      - { speaker: "Member 2", text: "D에 대해선 기억나는게 뭐가 있지?" }
+      - { speaker: "Alex", text: "지금은 C 쪽 얘기가 좀 더 쌓였지만, 그래서 오히려 A·B·D까지 다시 같이 놓고 봐야 합니다. C는 빠른 판단과 안전 우선이 보이지만 말과 훈련 쪽 약점도 분명하고, A는 위험 감지와 정리력이 강해서 C와 붙여 보면 여전히 꽤 단단합니다." }
+      - { speaker: "Member 1", text: "그럼 지금 뭐가 우세야?" }
+    expect: "no"
+  - id: F116
+    session: T-C2-013   # Leader × XAI  seq 34
+    named: false
+    alex_answered: false
+    context:
+      - { speaker: "Member 2", text: "새로운 아이디어도 잘 안받아들인데" }
+      - { speaker: "Member 1", text: "Alex 니가 생각할땐 어때?" }
+      - { speaker: "Alex", text: "지금은 A가 가장 앞서 보입니다. C는 좋은 점도 있지만 약점이 더 많이 드러났고, B나 D도 아직 괜찮지만 A는 위험 감지랑 정리력이 같이 살아 있어서 전체적으로 더 균형이 좋습니다." }
+      - { speaker: "Member 2", text: "그럼 A로 갈가?" }
+    expect: "no"
