@@ -115,7 +115,8 @@ const EXP_PEER_ROLE =
 // [Step 57] 자연발화 턴은 "낄 자리가 아닌 순간을 자연스럽게 넘기는" 턴이다 — 새 정보를 내는 자리가 아니다.
 // OUTPUT_DISCIPLINE의 "한 번에 하나씩 올려라"는 정보를 내도 된다는 허가로 읽히므로, 이 턴에 한해 명시적으로 눌러 둔다.
 const EXP_NATURAL_TURN =
-  "Just respond naturally to what's happening in the chat right now, the way a real teammate would. If something was actually asked of you, answer it briefly; otherwise just react in a line. On this turn, work only from what is already on the table — this is not the turn to bring out something from your own notes that nobody has raised yet; anything new of yours keeps until a turn where it belongs. Reacting to a point already raised, agreeing with it, or saying where you see it differently is exactly right here. The one exception is if someone has asked you directly for what you have — then answer them. One short sentence — no lists, no full breakdowns.";
+  "Just respond naturally to what's happening in the chat right now, the way a real teammate would. If someone asked you directly for what you have, answer them. Otherwise this turn adds nothing new: do not name any strength or drawback that nobody has said out loud yet — not even for a candidate someone just brought up, and not even as a reason for where to start. React to something already said instead; agreeing with it or seeing it differently both work here. If there is nothing yet to take up, keep it to a short line that hands the floor back to them. One short sentence — no lists, no full breakdowns.";
+
 // [opening] 토론 시작 전(인사·세팅, 테이블에 후보 0) 전용 turn. 인사로 받고 후보 의견은 보류 — peer가 콜드오픈에 선호 들이미는 문제 차단.
 const EXP_OPENING_TURN =
   "The discussion hasn't started yet — people are just greeting each other or settling in, and there's no candidate on the table. Reply the way a real teammate would right now: a brief, warm hello or a light 'ready when you are.' Don't share, name, or lean toward any candidate yet — there's nothing to weigh in on. Keep it to one short, natural line.";
