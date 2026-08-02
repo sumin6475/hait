@@ -24,8 +24,13 @@ const FILE = resolve(ROOT, "config/common_framework.yaml");
 // User-approved unfreeze; ratio_rule absorbs the removed block's load-bearing rules.
 // Updated 2026-06-10: removed cue_routing → live per-cue snippets (Step 12).
 // Per-turn cue guidance now lives in server/src/lib/prompts.ts (buildCueSnippet).
+// Updated 2026-06-14 (user-approved): trimmed agent_calling_model (removed the
+// "do not recap …" and "do not exhaust … in a single turn" clauses).
+// Updated 2026-07-31 (Step 51 §3.1, user-approved): removed experimental vocabulary
+// from task_environment (scenario_label → "choosing a pilot"; task_summary no longer
+// names "Hidden Profile" / "Profile Z information set" / "the AI assistant").
 const EXPECTED_SHA256: string | null =
-  "8e63129910215e0ec600987865620b1f49d580783b9f06f9db8be1ef3b04ea1e";
+  "3941854b0dd62fb40f249db9ca41784fa563b33b55111bd3399b89dc301c27d8";
 
 function sha256(buf: Buffer): string {
   return createHash("sha256").update(buf).digest("hex");

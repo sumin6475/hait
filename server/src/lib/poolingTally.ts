@@ -162,10 +162,13 @@ export function currentTopicCandidate(
   return null;
 }
 
-// (c) 포맷: task 턴 주입 블록. 숫자는 "읽고 추론"용 — 발화 금지(OUTPUT_DISCIPLINE와 양립).
-export function formatTally(t: Tally): string {
+// (c) 포맷: 주입 블록. 숫자는 "읽고 추론"용 — 발화 금지(OUTPUT_DISCIPLINE와 양립).
+// [Step 51 §3.7] withLeader 옵션. task 턴은 리더 문장 포함(기본값 true = 기존 호출 불변).
+// natural(peer 자기 read) 경로는 withLeader:false — 승자를 건네면 read가 verdict가 됨. 숫자만 준다.
+export function formatTally(t: Tally, opts?: { withLeader?: boolean }): string {
   const r = t.rows;
   const line = `A ${r.A.pos} strong / ${r.A.neg} rough · B ${r.B.pos} / ${r.B.neg} · C ${r.C.pos} / ${r.C.neg} · D ${r.D.pos} / ${r.D.neg}`;
-  const lead = t.leader ? ` ${t.leader} has the best balance right now.` : "";
+  const withLeader = opts?.withLeader ?? true;
+  const lead = withLeader && t.leader ? ` ${t.leader} has the best balance right now.` : "";
   return `[Where things stand from what's on the table — your own notes plus what the team has shared: ${line}.${lead} Reason from this standing; do not recite these numbers.]`;
 }

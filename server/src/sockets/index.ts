@@ -426,10 +426,12 @@ async function maybeAITurn(
     return;
   }
   // [EXP] judge가 침묵을 택하면 status-only 자연발화(directed_followup)로 리라우팅 — 로그 *전*에 적용해 speak 값과 한 줄로 일치.
+  let natural = false; // [Step 53] 자연발화로 대체된 턴인가
   let rerouted = false;
   if (!decision.speak && TRIGGER_CONFIG.EXP_NATURAL_DIRECTED) {
     decision = { speak: true, reason: "directed_followup" };
     rerouted = true;
+    natural = true; // [Step 53] 판정기가 침묵을 택함 → 자연발화로 때우는 턴
   }
   log.info(
     `[judge] speak=${decision.speak} reason=${decision.reason}${rerouted ? " (EXP reroute ← judge silent)" : ""} (session=${sessionCode})`,
@@ -446,6 +448,7 @@ async function maybeAITurn(
   if (decision.reason === "mediation" && (conditionCode === "C1" || conditionCode === "C3")) {
     log.info(`[judge] peer-mediation → directed_followup reroute (session=${sessionCode})`);
     decision = { speak: true, reason: "directed_followup" };
+    natural = true; // [Step 53] peer는 중재 안 함 → 자기 발화로 대체
   }
 
   // 발화 확정 — leader면 callout 오버레이(형식만, 발화 여부엔 0 관여)
@@ -459,6 +462,7 @@ async function maybeAITurn(
   await handleAITurn(io, sessionCode, sessionId, JUDGE_TRIGGER, ctx, conditionCode, {
     reason: decision.reason,
     recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
+    ...(natural && { natural: true }), // [Step 53]
     ...(callout && { callout }),
   });
 }

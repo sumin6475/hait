@@ -73,9 +73,13 @@ function renderTaskEnvironment(cf: CommonFramework): string {
 
 function renderGroundTruth(cf: CommonFramework): string {
   const gt = cf.ground_truth_dataset;
+  // Step 51 (§3.1): heading/intro carry no experimental vocabulary. The fact
+  // that notes differ is kept deliberately — information asymmetry is an
+  // in-fiction fact the frozen guardrail relies on. profile_label still drives
+  // the trait block below; it just no longer surfaces "Profile Z" in the prose.
   const lines: string[] = [
-    `# Your Information Set (Profile ${gt.profile_label})`,
-    `You hold only Profile ${gt.profile_label}. Other team members hold complementary information.`,
+    `# Your Notes`,
+    `These are your notes. Your teammates have different ones.`,
     ``,
   ];
   for (const c of ["A", "B", "C", "D"] as const) {

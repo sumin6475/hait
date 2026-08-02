@@ -5,10 +5,23 @@ import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { callAIStructured } from "./openai.js";
 import type { Trigger, SessionContext } from "../triggers/types.js";
-import { buildSystemPromptForTask, buildUserPromptFromMessages, buildClosingPrompt, buildSummaryPrompt, buildLeaderDepth, buildPeerDepth, buildNaturalPrompt } from "./prompts.js"; // [Step 39] depth 빌더 / [EXP] buildNaturalPrompt
+import {
+  buildSystemPromptForTask,
+  buildUserPromptFromMessages,
+  buildClosingPrompt,
+  buildSummaryPrompt,
+  buildLeaderDepth,
+  buildPeerDepth,
+  buildNaturalPrompt,
+} from "./prompts.js"; // [Step 39] depth 빌더 / [EXP] buildNaturalPrompt
 import { computeCue, type SpeakingReason } from "./computeCue.js";
 import { Session } from "../models/Session.js";
-import { computeTally, formatTally, surfacedByCandidate, currentTopicCandidate } from "./poolingTally.js"; // [Step 39]
+import {
+  computeTally,
+  formatTally,
+  surfacedByCandidate,
+  currentTopicCandidate,
+} from "./poolingTally.js"; // [Step 39]
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { allocSeq } from "./seq.js";
@@ -42,6 +55,7 @@ export async function handleAITurn(
     recentSummaryLeader?: string; // Step 22/C-2: 직전 summary가 선언한 1등 (task 턴 wobble 가드)
     callout?: { target: string; targetRole: ParticipantRole; cand?: Cand }; // [Step 30] 지목 호명 overlay
     bypassDoublePost?: boolean; // [Step 43] anti-double-post 면제 — 답→summary 쌍의 summary 한정
+    natural?: boolean; // [Step 53] 자연발화 경로 강제 — reroute 지점에서만 켠다(cue 이름으로 추론하지 않음)
   },
 ) {
   //락 체크
@@ -75,23 +89,29 @@ export async function handleAITurn(
     const cue: SpeakingReason = opts?.closing
       ? "closing"
       : (opts?.reason ?? computeCue({ messages: msgs, phase: "main" }));
-    // [EXP] directed_followup이면 status-only 자연발화 경로 — tally/depth 미주입.
-    const isNatural = TRIGGER_CONFIG.EXP_NATURAL_DIRECTED && cue === "directed_followup";
 
     // tally + depth 주입 (Step 14a/37) — task 턴만 (closing/summary는 의견·질문 턴이 아님). Alex-시점 on-table 집계.
     let tallyText: string | undefined;
+    let naturalTallyText: string | undefined; // [Step 51 §3.7] natural 경로용 — 리더 문장 제외(승자 미제공)
     let depthNote: string | undefined;
     let isOpening = false; // [opening] 자연발화 ∧ 테이블에 후보 0 ∧ 극초반 → 인사 recipe
+    let isNatural = false; // [Step 53] 아래에서 확정
     if (!opts?.closing && !isSummary) {
       const session = await Session.findById(sessionId).select("revealStats").lean();
       const rs = (session as any)?.revealStats;
-      tallyText = formatTally(computeTally(rs));
+      const t = computeTally(rs);
+      tallyText = formatTally(t); // task 경로 (리더 문장 포함, 기존 불변)
+      naturalTallyText = formatTally(t, { withLeader: false }); // [Step 51 §3.7] natural 경로 (숫자만)
       // [Step 39] depth v2 — 고정 리스트 대신 '지금 사람들이 다루는 후보 C*'를 추적.
       // C*가 얕으면(<임계) 조건별 노트 주입. C* null(언급 없음/비교 중) 또는 충분히 표면화 → 미주입(자동 릴리스).
       const cstar = currentTopicCandidate(msgs);
-      // [opening] 인사/세팅 단계: 자연발화인데 아직 다룰 후보가 없고 토론 극초반이면 인사로 받기.
-      isOpening =
-        isNatural && cstar == null && ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS;
+      // [Step 53] 오프닝 문맥 — 테이블에 후보 0 ∧ 토론 극초반. 게이트와 무관하게 판정한다.
+      const isOpeningCtx =
+        cstar == null && ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS;
+      // [Step 53] 경로 결정: 호출부가 켠 natural 플래그 ∨ 오프닝 문맥. cue 이름은 더 이상 보지 않는다.
+      isNatural =
+        TRIGGER_CONFIG.EXP_NATURAL_DIRECTED && (opts?.natural === true || isOpeningCtx);
+      isOpening = isNatural && isOpeningCtx;
       const thin =
         cstar != null && (surfacedByCandidate(rs)[cstar] ?? 0) < TRIGGER_CONFIG.DEPTH_MIN_PER_CAND;
       const isLeader = conditionCode === "C2" || conditionCode === "C4";
@@ -100,13 +120,15 @@ export async function handleAITurn(
       if (!isNatural)
         log.info(`[depth] ${depthNote ? `active (${cstar})` : "none"} (session=${sessionCode})`);
     }
+    // [Step 53] 경로 관측 — 전환 후 분포를 보기 위한 임시 로그
+    log.info(`[route] ${isNatural ? "natural" : "task"} cue=${cue} (session=${sessionCode})`);
 
     let systemPrompt = opts?.closing
       ? buildClosingPrompt(conditionCode) // closing: 전용 프롬프트 (Step 4/B)
       : isSummary
         ? buildSummaryPrompt(conditionCode, opts?.summaryLeader ?? null) // summary: leader 중간정리 (Step 22/37) — 선언형 or 박빙
         : isNatural
-          ? buildNaturalPrompt(conditionCode, isOpening) // [EXP] status-only 자연발화 (opening이면 인사 recipe)
+          ? buildNaturalPrompt(conditionCode, isOpening, naturalTallyText) // [EXP] status-only 자연발화 + [Step 51 §3.7] tally(리더 문장 없이)+standing rule
           : buildSystemPromptForTask(conditionCode, cue, tallyText, depthNote); // Step 12 조립 + tally + depth
     // Step 22/C-2: 직전 summary로 선언한 1등과의 일관성 한 줄 (task 턴만, wobble 보강 — 주 가드는 tally)
     if (!opts?.closing && !isSummary && opts?.recentSummaryLeader) {
@@ -194,7 +216,8 @@ export async function handleAITurn(
     if (result.parsed.content.length >= 15) {
       void extractSurfacedTraits(result.parsed.content)
         .then((ids) => {
-          if (ids.length) log.info(`[pooling] AI surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
+          if (ids.length)
+            log.info(`[pooling] AI surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
           return updateAiSurfaced(sessionId, ids);
         })
         .catch((e) => log.error("[pooling] AI extract error:", e));

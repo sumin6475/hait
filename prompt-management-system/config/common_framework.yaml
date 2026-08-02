@@ -40,13 +40,15 @@ meta:
 # system prompt. Establishes who Alex is and what the team is doing.
 # ─────────────────────────────────────────────────────────────────
 task_environment:
-  scenario_label: "Pilot selection — Hidden Profile group decision task"
+  # Step 51 (§3.1): experimental vocabulary removed from rendered scenario text.
+  # scenario_label / task_summary are the ONLY task_environment fields that
+  # render into the prompt (see src/lib/compile_prompt.ts renderTaskEnvironment).
+  scenario_label: "choosing a pilot"
   agent_persona_name: "Alex"
   task_summary: >
     A small team is selecting the best of four candidates (A, B, C, D)
-    for a pilot position. Information about each candidate is distributed
-    unevenly across team members; the AI assistant holds only the
-    Profile Z information set.
+    for a pilot position. Each teammate keeps their own notes, and
+    nobody's notes are complete — including yours.
 
 # ─────────────────────────────────────────────────────────────────
 # ground_truth_dataset — Profile Z, the AI's information set.
@@ -155,10 +157,8 @@ agent_calling_model:
   text: |
     You are called by an external scheduler; each invocation is a
     continuation of an ongoing conversation, not a new arrival. Do not
-    greet each turn as if you have just joined the room, and do not recap
-    material you have already contributed. Pace your contributions across
-    multiple intervention opportunities — do not exhaust all of your
-    Z-profile knowledge in a single turn.
+    greet each turn as if you have just joined the room. Pace your
+    contributions across multiple intervention opportunities.
 
 # ─────────────────────────────────────────────────────────────────
 # injection_dock — structural marker, NOT prompt content.
