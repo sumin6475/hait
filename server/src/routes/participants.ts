@@ -81,6 +81,7 @@ router.patch("/:code/pre-choice", async (req, res) => {
 });
 
 //PATCH /api/participants/:code/recall
+//[Step 58] 미사용 — Pre-Discussion 회상 검사 페이지 제거로 호출자가 없다. 과거 데이터 보존 위해 라우트·필드는 유지.
 //body: { recall: { A, B, C, D } } — 4개 모두 비어있지 않은 문자열 (recall test 필수) (Step 34)
 router.patch("/:code/recall", async (req, res) => {
   try {

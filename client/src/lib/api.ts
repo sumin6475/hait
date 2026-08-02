@@ -295,18 +295,6 @@ export async function setPreChoice(participantCode: string, choice: Candidate): 
   return data.preDiscussionChoice;
 }
 
-//recall test 저장 (4칸 필수) (Step 34)
-export async function setRecallTest(
-  participantCode: string,
-  recall: RecallTest,
-): Promise<RecallTest> {
-  const data = await publicFetch<{ ok: true; recallTest: RecallTest }>(
-    `/api/participants/${encodeURIComponent(participantCode)}/recall`,
-    { method: "PATCH", body: JSON.stringify({ recall }) },
-  );
-  return data.recallTest;
-}
-
 //게이트 도착 기록 — Hold 화면 마운트 시 호출 (Step 32, 멱등)
 export async function markGateArrival(participantCode: string, gate: GateId): Promise<void> {
   await publicFetch(`/api/participants/${encodeURIComponent(participantCode)}/gate-arrival`, {
