@@ -167,8 +167,9 @@ export function currentTopicCandidate(
 // natural(peer 자기 read) 경로는 withLeader:false — 승자를 건네면 read가 verdict가 됨. 숫자만 준다.
 export function formatTally(t: Tally, opts?: { withLeader?: boolean }): string {
   const r = t.rows;
-  const line = `A ${r.A.pos} strong / ${r.A.neg} rough · B ${r.B.pos} / ${r.B.neg} · C ${r.C.pos} / ${r.C.neg} · D ${r.D.pos} / ${r.D.neg}`;
+  const line = `A ${r.A.pos} matches / ${r.A.neg} misses · B ${r.B.pos} / ${r.B.neg} · C ${r.C.pos} / ${r.C.neg} · D ${r.D.pos} / ${r.D.neg}`;
   const withLeader = opts?.withLeader ?? true;
-  const lead = withLeader && t.leader ? ` ${t.leader} has the best balance right now.` : "";
+  const lead =
+    withLeader && t.leader ? ` ${t.leader} has the highest match-to-miss ratio right now.` : "";
   return `[Where things stand from what's on the table — your own notes plus what the team has shared: ${line}.${lead} Reason from this standing; do not recite these numbers.]`;
 }

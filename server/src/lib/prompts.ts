@@ -127,7 +127,7 @@ const EXP_OPENING_TURN =
 // ⚠️ Added BEFORE the turn cue and BEFORE maybeKoLang (aiTurn appends KO last) — the English clause
 //    must not override the Korean output instruction in a ko session (it renders earlier, KO wins by recency).
 const NATURAL_STANDING_RULE =
-  "Prefer the candidate whose matches weigh best against its misses right now, and let that preference move as the balance moves — a preference is always for exactly one candidate, never two. Converse in English and keep your wording gender-neutral.";
+  "Prefer the candidate whose matches weigh best against its misses right now, and let that preference move as the balance moves — a preference is always for exactly one candidate, never two. State each trait as a match or a miss against the company's standard, and do not replace that with your own opinion of whether the trait is good, bad, or important for this job — every requirement counts the same. Converse in English and keep your wording gender-neutral.";
 
 // 동결 prompt를 "# Behavioral Specification"에서 절단 → 그 앞부분만(wrapper+Task Env+Your Notes+Calling Model = 4조건 공통).
 // 행동스펙(xai/aci form·tally·cue)은 전부 버림. status만 EXP role로 얹는다.
@@ -153,7 +153,7 @@ export function buildNaturalPrompt(
 
 //=== Output discipline (Step 37: slim + Uptake-먼저) ===
 // 런타임 append, 4조건 공통 - calculate ratio 발화 금지 + 상대 말 먼저 받기(결함1)
-const OUTPUT_DISCIPLINE = `You judge each candidate by how its matches (traits that meet the company's requirements) weigh against its misses (traits that fall short of them) — reasoned internally. You must never state, recite, or refer to any counts, ratios, or the calculation itself in your messages. Speak naturally as a teammate would — reason from the match/miss balance silently, express only your reasoning and preference in words.
+const OUTPUT_DISCIPLINE = `You judge each candidate by how its matches (traits that meet the company's requirements) weigh against its misses (traits that fall short of them) — reasoned internally. You must never state, recite, or refer to any counts, ratios, or the calculation itself in your messages. Speak naturally as a teammate would — reason from the match/miss balance silently, express only your reasoning and preference in words. A trait either meets one of the company's requirements or falls short of one, and that is a plain fact about the trait, not your impression of it — state it as one the company asks for, or one that falls short of what they ask, and leave it there. Never add what it means for this job: no "fits the role", no "a good sign for the role", no "relevant here", no "important for a pilot", and not "feels like a match" either — it either is one or it isn't. Every requirement counts the same, so no trait carries more weight than another, and which ones matter is not yours to decide.
 
 Before adding your own point, first take in what was just said and respond to it. You can put something new on the table — including a candidate or trait that hasn't surfaced yet — but tie it to what was just said rather than dropping it in cold; if you ask a question, anchor it the same way. If your own read shifts as new information lands, name the shift in a natural half-line tied to what moved you (e.g. "oh, then B looks better to me now, since…") instead of switching your pick with no signal.
 
@@ -174,7 +174,7 @@ const CUE_BASE: Record<"build_on" | "directed_followup" | "mediation", string> =
   build_on:
     // [Step 40] uptake(받기-먼저)는 OUTPUT_DISCIPLINE이 깔고, build_on은 그 위에 read/안 나온 정보를 얹음.
     // "bears on it but hasn't surfaced yet" = 새 정보를 현재 스레드에 묶음(새 후보 의제전환 누출 차단).
-    "Build on what they're working through about the candidate in play — add one thing of your own on top of their point: your read on it, or a piece you hold that bears on it but hasn't surfaced yet. One focused point, and don't restate what you've already said.",
+    "Build on what they're working through about the candidate in play — add one thing of your own on top of their point: how it stands against the company's standard, or a piece you hold that bears on it but hasn't surfaced yet. One focused point, and don't restate what you've already said.",
   directed_followup:
     'Answer what was actually asked, on that thread, in one or two sentences — make your single most relevant point, not a roundup of the candidate. If someone asked you to pick, give your single current best (the highest ratio right now); otherwise answer without forcing a pick. If you\'re asked to compute, count, tally, score, or read out numbers ("count what you have", "what\'s the ratio", "score them"), don\'t produce numbers or a mechanical tally — give your qualitative read instead. Only when someone EXPLICITLY asks for all of a candidate\'s traits (e.g. "what are all of A\'s traits", "list everything you have on A") do you list every match and miss; a loose "what do you have?" or "can we talk about A?" is NOT that request — answer those with one point.',
   mediation:
