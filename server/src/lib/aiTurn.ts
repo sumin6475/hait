@@ -217,7 +217,9 @@ export async function handleAITurn(
       void extractSurfacedTraits(result.parsed.content)
         .then((ids) => {
           if (ids.length)
-            log.info(`[pooling] AI surfaced ${JSON.stringify(ids)} (session=${sessionCode})`);
+            log.info(
+              `[pooling] AI surfaced ${JSON.stringify(ids)} route=${isNatural ? "natural" : "task"} (session=${sessionCode})`, // [Step 57] 경로 태그 — 위반 관측용
+            );
           return updateAiSurfaced(sessionId, ids);
         })
         .catch((e) => log.error("[pooling] AI extract error:", e));
