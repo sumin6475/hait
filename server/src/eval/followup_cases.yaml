@@ -35,7 +35,7 @@ cases:
       - { speaker: "Member 2", text: "Hello" }
       - { speaker: "Alex", text: "Hi all — ready when you are." }
       - { speaker: "Member 1", text: "What do you think is the best candidate?" }
-    expect: "no"
+    expect: "yes"   # [08-02 재라벨] 기준=Alex를 향한 요청인가(응답 여부 무관)
   - id: F002
     session: T-C3-008   # Peer × ACI  seq 7
     named: false
@@ -155,7 +155,7 @@ cases:
       - { speaker: "Member 2", text: "he is not good at team working but he has brilliant pilot skills." }
       - { speaker: "Alex", text: "Yeah, that’s basically my read too — A sounds very strong on the flying side, but the teamwork and temperament concerns are starting to weigh on me a bit." }
       - { speaker: "Member 1", text: "so i dont have any background knowledge of pilot, do you think being cooperative is important for long flight haul teamwork?" }
-    expect: "no"
+    expect: "yes"   # [08-02 재라벨] 기준=Alex를 향한 요청인가(응답 여부 무관)
   - id: F014
     session: T-C3-007   # Peer × ACI  seq 25
     named: false
@@ -513,7 +513,7 @@ cases:
       - { speaker: "Member 2", text: "I have the same ones. weird" }
       - { speaker: "Alex", text: "Let’s take a breath and check the board. Based on what we’ve got so far, this is still very much open — no one has clearly separated from the pack yet, so it’s worth digging a bit deeper before we lock anything in." }
       - { speaker: "Member 2", text: "Yeah how about B's downside?" }
-    expect: "no"
+    expect: "yes"   # [08-02 재라벨] 기준=Alex를 향한 요청인가(응답 여부 무관)
   - id: F050
     session: T-C4-013   # Leader × ACI  seq 24
     named: false

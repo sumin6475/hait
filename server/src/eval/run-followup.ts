@@ -73,15 +73,15 @@ const deferredYes = deferredNegatives.filter((r) => r.predicted).length;
 const named = rows.filter((r) => r.named);
 const namedMatches = named.filter((r) => r.predicted === (r.expect === "yes")).length;
 
-const recallPass = recallHits >= 10;
-const precisionPass = falsePositives <= 5;
+const recallPass = recallHits >= 14;
+const precisionPass = falsePositives <= 4;
 
 console.log("\n[followup] summary");
 console.log(
-  `  recall: ${recallHits}/${positives.length} ${recallPass ? "PASS" : "FAIL"} (target ≥10)`,
+  `  recall: ${recallHits}/${positives.length} ${recallPass ? "PASS" : "FAIL"} (target ≥14)`,
 );
 console.log(
-  `  false positives: ${falsePositives}/${verifiedNegatives.length} ${precisionPass ? "PASS" : "FAIL"} (target ≤5)`,
+  `  false positives: ${falsePositives}/${verifiedNegatives.length} ${precisionPass ? "PASS" : "FAIL"} (target ≤4)`,
 );
 console.log(
   `  deferred no/alex_answered=true: ${deferredYes}/${deferredNegatives.length} predicted yes (not scored)`,

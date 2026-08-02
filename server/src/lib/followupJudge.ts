@@ -18,7 +18,7 @@ const SYSTEM = `Alex just spoke in a small team chat, and one person replied rig
 
 Answer true ONLY when the reply clearly does one of these:
 - asks Alex something, or asks for what Alex has or thinks
-- explicitly asks Alex to clarify, defend, or check something Alex just said
+- pushes back on, questions, or checks something Alex just said
 - hands the floor to Alex, or asks Alex whether to proceed
 
 Answer false for everything else, and false is the common case. In particular:
@@ -26,8 +26,6 @@ Answer false for everything else, and false is the common case. In particular:
 - it is a low-signal reaction with no request in it ("ok", "yeah", "same here", "right")
 - the people are carrying on with each other and simply did not take up what Alex said
 - it adds their own information without asking Alex anything
-- Alex asked the room for information and the reply supplies that information; answering Alex, including with a drawback or disagreement, does not by itself ask Alex to speak again
-- it merely starts with "but", echoes Alex's words with question marks, or expresses surprise without making a request
 
 When it is unclear, answer false.
 

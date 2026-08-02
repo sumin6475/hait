@@ -360,12 +360,21 @@ async function maybeAITurn(
       if (yes === true) {
         exempt = true;
         log.info(`[gate] exempt: followup (session=${sessionCode})`);
+      } else if (yes === false) {
+        // 판정기가 "아니오" — 정상 다수 경로라 debug (LOG_LEVEL=debug에서만 보임)
+        log.debug(`[gate] followup: no (session=${sessionCode})`);
+      } else {
+        // null = API 실패/타임아웃. 면제 안 하고 쿨다운으로 넘어간다 — 조용히 지나가면 안 됨
+        log.warn(`[gate] followup: null — mini-judge 실패, 면제 안 함 (session=${sessionCode})`);
       }
     }
   }
 
   // ② cooldown — 면제되지 않았을 때만 적용
   if (!exempt && ctx.messagesSinceLastAI < TRIGGER_CONFIG.COOLDOWN_MIN_MSGS) {
+    log.debug(
+      `[gate] cooldown hold (msgsSinceAI=${ctx.messagesSinceLastAI}, session=${sessionCode})`,
+    ); // [Step 55]
     return;
   }
 
@@ -428,7 +437,12 @@ async function maybeAITurn(
   const win = await loadWindow(sessionId);
   let decision = await judgeIntervention(win.labeled, ctx.messagesSinceLastAI);
   if (decision === null) {
+    // [Step 55] judge 호출 실패(타임아웃/파싱)는 지금까지 무음이었다 — 매 턴 도는 판정기의 조용한 죽음을 드러낸다.
+    log.warn(
+      `[judge] null — API 실패 또는 타임아웃, 레거시 트리거로 폴백 (msgsSinceAI=${ctx.messagesSinceLastAI}, session=${sessionCode})`,
+    );
     const fired = await evaluateTriggers(ctx);
+    log.info(`[judge] fallback ${fired ? `fired=${fired.name}` : "침묵"} (session=${sessionCode})`);
     if (fired) {
       await handleAITurn(io, sessionCode, sessionId, fired, ctx, conditionCode, {
         recentSummaryLeader: lastSummaryLeader.get(sessionCode), // Step 22/C-2
