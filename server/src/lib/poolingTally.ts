@@ -164,6 +164,24 @@ export function currentTopicCandidate(
   return null;
 }
 
+// [Step 65] 사람 메시지에 후보가 '하나라도' 언급됐는가.
+// currentTopicCandidate는 '정확히 1개'일 때만 값을 내므로 2개 이상(비교)을 못 잡는다.
+// 오프닝 창을 닫을지만 판단하는 용도 — 정규식은 위와 동일한 것을 재사용한다.
+export function anyCandidateMentioned(
+  msgs: { sender: string; content: string }[],
+  aiLabel = "Alex",
+  lookback = TRIGGER_CONFIG.DEPTH_LOOKBACK_MSGS,
+): boolean {
+  const recent = msgs.filter((m) => m.sender !== aiLabel).slice(-lookback);
+  for (const m of recent) {
+    CAND_EXPLICIT.lastIndex = 0;
+    if (CAND_EXPLICIT.test(m.content)) return true;
+    CAND_TOKEN.lastIndex = 0;
+    if (CAND_TOKEN.test(m.content)) return true;
+  }
+  return false;
+}
+
 // (c) 포맷: 주입 블록. 숫자는 "읽고 추론"용 — 발화 금지(OUTPUT_DISCIPLINE와 양립).
 // [Step 51 §3.7] withLeader 옵션. task 턴은 리더 문장 포함(기본값 true = 기존 호출 불변).
 // natural(peer 자기 read) 경로는 withLeader:false — 승자를 건네면 read가 verdict가 됨. 숫자만 준다.

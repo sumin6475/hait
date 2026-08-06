@@ -14,13 +14,14 @@ import {
   buildPeerDepth,
   buildNaturalPrompt,
 } from "./prompts.js"; // [Step 39] depth 빌더 / [EXP] buildNaturalPrompt
-import { computeCue, type SpeakingReason } from "./computeCue.js";
+import { computeCue, ADDRESS_RE, type SpeakingReason } from "./computeCue.js"; // [Step 65] ADDRESS_RE
 import { Session } from "../models/Session.js";
 import {
   computeTally,
   formatTally,
   surfacedByCandidate,
   currentTopicCandidate,
+  anyCandidateMentioned, // [Step 65]
 } from "./poolingTally.js"; // [Step 39]
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
@@ -106,8 +107,17 @@ export async function handleAITurn(
       // C*가 얕으면(<임계) 조건별 노트 주입. C* null(언급 없음/비교 중) 또는 충분히 표면화 → 미주입(자동 릴리스).
       const cstar = currentTopicCandidate(msgs);
       // [Step 53] 오프닝 문맥 — 테이블에 후보 0 ∧ 토론 극초반. 게이트와 무관하게 판정한다.
+      // [Step 65] 오프닝 창 = '아직 아무것도 시작 안 됨'. 아래 둘 중 하나라도 있으면 판은 이미 열렸다.
+      //   (a) 참가자가 방금 Alex를 불렀다 → 인사로 때우면 '질문에 답 안 하는 AI'가 된다
+      //   (b) 후보가 하나라도 테이블에 올라왔다 → cstar는 2개 이상이면 null이라 이걸 못 잡는다
+      //   진짜 콜드오픈("Hi"/"Hello"만)은 그대로 인사 recipe로 남는다 (Step 48 목적 유지).
+      const addressedNow = !ctx.lastMessageIsAI && ADDRESS_RE.test(ctx.lastMessageText);
+      const candOnTable = anyCandidateMentioned(msgs);
       const isOpeningCtx =
-        cstar == null && ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS;
+        cstar == null &&
+        ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS &&
+        !addressedNow &&
+        !candOnTable;
       // [Step 53] 경로 결정: 호출부가 켠 natural 플래그 ∨ 오프닝 문맥. cue 이름은 더 이상 보지 않는다.
       isNatural =
         TRIGGER_CONFIG.EXP_NATURAL_DIRECTED && (opts?.natural === true || isOpeningCtx);
@@ -119,6 +129,13 @@ export async function handleAITurn(
       // [depth obs · 임시] 주입 여부만 — 실제 발화에 먹혔는지는 메시지로 확인. natural 턴은 depth 미사용이라 제외.
       if (!isNatural)
         log.info(`[depth] ${depthNote ? `active (${cstar})` : "none"} (session=${sessionCode})`);
+      // [Step 65] 조기 구간인데 인사 창이 닫힌 이유 — 관측용. 창이 열렸으면 안 찍는다.
+      // (addressedNow·candOnTable·cstar가 이 블록 스코프라 여기서 찍는다 — 실행 순서는 [route] 직전.)
+      if (!isOpeningCtx && ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS) {
+        log.info(
+          `[opening] window closed (addressed=${addressedNow} cand=${candOnTable} cstar=${cstar ?? "-"} total=${ctx.totalMessageCount}, session=${sessionCode})`,
+        );
+      }
     }
     // [Step 61] summary·closing은 cue를 쓰지 않는다(전용 프롬프트). 계산된 cue를 찍으면 일반 턴으로 오독된다.
     const routeKind = opts?.closing ? "closing" : isSummary ? "summary" : isNatural ? "natural" : "task";
