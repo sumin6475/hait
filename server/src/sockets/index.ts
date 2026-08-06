@@ -370,6 +370,21 @@ async function maybeAITurn(
     }
   }
 
+  // [Step 63] 긴 침묵 면제 — 안전망(③)이 쿨다운(②)에 막히는 사각지대를 연다.
+  //   조건: 타이머 경로 ∧ 45초 침묵 ∧ Alex 이후 사람 메시지가 1개 이상.
+  //   ⚠️ messagesSinceLastAI === 0(= 마지막 발화가 Alex)이면 면제하지 않는다 — 연속 발화 방지는 그대로.
+  //   발화하면 그 값이 0이 되어 자동으로 다시 잠기므로 별도 상한이 필요 없다.
+  if (
+    !exempt &&
+    source === "pull" &&
+    ctx.messagesSinceLastAI >= 1 &&
+    ctx.secondsSinceLastMessage !== null &&
+    ctx.secondsSinceLastMessage >= TRIGGER_CONFIG.LONG_SILENCE_SECONDS
+  ) {
+    exempt = true;
+    log.info(`[gate] exempt: long-silence src=${source} (session=${sessionCode})`);
+  }
+
   // ② cooldown — 면제되지 않았을 때만 적용
   if (!exempt && ctx.messagesSinceLastAI < TRIGGER_CONFIG.COOLDOWN_MIN_MSGS) {
     log.debug(
