@@ -129,11 +129,12 @@ export async function handleAITurn(
       // [depth obs · 임시] 주입 여부만 — 실제 발화에 먹혔는지는 메시지로 확인. natural 턴은 depth 미사용이라 제외.
       if (!isNatural)
         log.info(`[depth] ${depthNote ? `active (${cstar})` : "none"} (session=${sessionCode})`);
-      // [Step 65] 조기 구간인데 인사 창이 닫힌 이유 — 관측용. 창이 열렸으면 안 찍는다.
+      // [Step 65-2] 조기 구간이면 창 상태를 항상 찍는다 — open도 남겨야 인사 recipe가 돈 턴을
+      //   로그에서 식별할 수 있다. [route]는 opening/natural을 구분하지 못한다(Step 61).
       // (addressedNow·candOnTable·cstar가 이 블록 스코프라 여기서 찍는다 — 실행 순서는 [route] 직전.)
-      if (!isOpeningCtx && ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS) {
+      if (ctx.totalMessageCount < TRIGGER_CONFIG.NATURAL_OPENING_MAX_MSGS) {
         log.info(
-          `[opening] window closed (addressed=${addressedNow} cand=${candOnTable} cstar=${cstar ?? "-"} total=${ctx.totalMessageCount}, session=${sessionCode})`,
+          `[opening] window=${isOpeningCtx ? "open" : "closed"} (addressed=${addressedNow} cand=${candOnTable} cstar=${cstar ?? "-"} total=${ctx.totalMessageCount}, session=${sessionCode})`,
         );
       }
     }
