@@ -1,6 +1,5 @@
 import type { ChatMessage } from "@/types";
 import { cn } from "@/lib/utils";
-import { Bot } from "lucide-react";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -16,11 +15,7 @@ export const MessageBubble = ({ message, senderName }: MessageBubbleProps) => {
       className={cn("flex flex-col gap-1 max-w-[75%]", isYou ? "items-end ml-auto" : "items-start")}
     >
       <div className="flex items-center gap-2 px-1">
-        {isAI && (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-chat-ai-badge">
-            <Bot className="w-3 h-3" /> AI
-          </span>
-        )}
+        {/* [Step 64] "🤖 AI" 배지 제거 — 표시명(Alex — Chair / Alex — Member)만 남긴다 */}
         <span className="text-xs font-medium text-muted-foreground">{senderName}</span>
         <span className="text-xs text-muted-foreground/60">
           {message.timestamp.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}

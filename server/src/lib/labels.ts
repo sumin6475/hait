@@ -9,9 +9,10 @@ export const PARTICIPANT_LABEL: Record<string, string> = {
 };
 
 // 조건별 AI 표시명 — "Moderator"는 peer 조건에 리더성을 누출하므로 조건별로 분리.
+// [Step 64] Leader/Peer → Chair/Member (2026-06-24 확정 라벨 반영).
 export function aiDisplayName(c: ConditionCode): string | undefined {
-  if (c === "C2" || c === "C4") return "Alex — Team Lead";
-  if (c === "C1" || c === "C3") return "Alex — Teammate";
+  if (c === "C2" || c === "C4") return "Alex — Chair";
+  if (c === "C1" || c === "C3") return "Alex — Member";
   return undefined; // CTRL — AI 없음
 }
 
