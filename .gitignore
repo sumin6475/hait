@@ -22,6 +22,8 @@ server/.env
 .env
 .env.local
 *.local
+.env.bak*
+.env.*.bak
 
 # Vite
 client/.vite
@@ -47,6 +49,7 @@ eval-results/
 ARCHITECTURE.md
 prompt-management-system/ARCHITECTURE.md
 INTERVENTION_LOGIC.md
+MEMORY.md
 
 # Analysis reports (local notes, not tracked)
 docs/
