@@ -1,12 +1,8 @@
 <div align="center">
 
-<sub>Human-AI Team · HCDE master's thesis</sub>
+# 🧪 HAIT — Human-AI Team
 
-# How does an AI teammate change a group's decision?
-
-HAIT is a full-stack platform for a Hidden Profile group study. Human participants discuss
-four candidates with an AI teammate named **Alex**, whose every turn is governed by frozen
-prompts and explicit rules — so the AI stays a *controlled variable* across sessions.
+**A research platform for studying how an AI teammate changes group decisions — built so the AI is a controlled variable, not a free agent.**
 
 ### 👉 [**See the full walkthrough at hait-pitch.vercel.app**](https://hait-pitch.vercel.app/)
 
@@ -14,7 +10,7 @@ prompts and explicit rules — so the AI stays a *controlled variable* across se
 
 <br/>
 
-<img src="./assets/hero-discussion.png" alt="The HAIT team discussion: Alex moderating as team lead while participants share their hidden candidate information, beside each member's own candidate cards" width="900" />
+<img src="./assets/readme-hero.webp" alt="HAIT — How does an AI teammate change a group's decision? The team discussion screen, with Alex moderating as team lead while participants share their hidden candidate information." width="900" />
 
 <br/><br/>
 
