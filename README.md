@@ -1,18 +1,29 @@
 <div align="center">
 
-# 🧪 HAIT — Human-AI Team
+<sub>Human-AI Team · HCDE master's thesis</sub>
 
-**A research platform for studying how an AI teammate changes group decisions — built so the AI is a controlled variable, not a free agent.**
+# How does an AI teammate change a group's decision?
 
-[📖 About](#about) · [✨ Features](#features) · [🛠 Tech Stack](#tech-stack) · [🏗️ Architecture](#️-architecture) · [🧠 AI System Design](#-ai-system-design)
+HAIT is a full-stack platform for a Hidden Profile group study. Human participants discuss
+four candidates with an AI teammate named **Alex**, whose every turn is governed by frozen
+prompts and explicit rules — so the AI stays a *controlled variable* across sessions.
+
+### 👉 [**See the full walkthrough at hait-pitch.vercel.app**](https://hait-pitch.vercel.app/)
+
+<sub>The project page is the friendly version: screenshots, the problem it solves,<br/>and the design decisions in plain language. This README is the engineering detail.</sub>
+
+<br/>
+
+<img src="./assets/hero-discussion.png" alt="The HAIT team discussion: Alex moderating as team lead while participants share their hidden candidate information, beside each member's own candidate cards" width="900" />
+
+<br/><br/>
 
 ![Status](https://img.shields.io/badge/status-active%20%7C%20pilot--prep-brightgreen)
 ![Stack](https://img.shields.io/badge/stack-TypeScript%20%7C%20React%20%7C%20Express%20%7C%20MongoDB-blue)
 ![Study](https://img.shields.io/badge/design-2%C3%972%20between--subjects-orange)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-<!-- 📸 Add a screenshot here: participant chat or researcher dashboard -->
-<!-- <img src="./docs/screenshot.png" alt="HAIT participant chat" width="800" /> -->
+[📖 About](#about) · [✨ Features](#-features) · [🛠 Tech Stack](#-tech-stack) · [🏗️ Architecture](#️-architecture) · [🧠 AI System Design](#-ai-system-design)
 
 </div>
 
@@ -128,10 +139,11 @@ HAIT/
 
 > HAIT is a **laboratory research harness**, not a hosted product — it carries study-specific configuration and is not intended to be run by others as-is.
 
-<!-- 📸 Screenshots to add later -->
-<!-- - docs/screenshot-chat.png    — participant discussion view -->
-<!-- - docs/screenshot-dashboard.png — researcher dashboard -->
-<!-- - docs/demo.gif               — 10–15s of a live session -->
+<div align="center">
+  <img src="./assets/dashboard.png" alt="The HAIT researcher dashboard: session overview with condition assignment, participant codes, and live status" width="900" />
+  <br/>
+  <sub>The researcher dashboard — session and code issuance, approval gates, and live status.</sub>
+</div>
 
 ---
 
@@ -155,7 +167,10 @@ Scout → Grounder → [Architect → Critic → deterministic Supervisor]
 
 The four experimental conditions converge independently so one condition cannot silently affect another. The approved YAML files are then validated and compiled in a separate export step into `server/src/lib/compiled-prompts.json`, the frozen artifact consumed by the live server.
 
-### Enforcing schemas and structured outputs
+<details>
+<summary><b>Enforcing schemas and structured outputs</b> — how every model boundary is validated</summary>
+
+<br/>
 
 HAIT validates model boundaries instead of relying on best-effort JSON parsing:
 
@@ -166,7 +181,12 @@ HAIT validates model boundaries instead of relying on best-effort JSON parsing:
 
 Schema tests cover the condition files and model configuration; separate checks enforce citation resolution, status/strategy orthogonality, forbidden trigger vocabulary, and a checksum on the frozen common framework.
 
-### Model routing and evaluation
+</details>
+
+<details>
+<summary><b>Model routing and evaluation</b> — which model does which job, and how each route is tested</summary>
+
+<br/>
 
 Model selection follows the job each call performs:
 
@@ -189,6 +209,8 @@ Evaluation is split by failure mode:
 - **Golden generation baseline:** 11 scenarios across four conditions produce 36 outputs for comparison and human review. This harness records behavior but does not claim an automated quality score.
 - **Static prompt checks:** schema, citations, orthogonality, vocabulary, language, and frozen-framework tests validate the committed prompt artifacts.
 
+</details>
+
 ---
 
 ## 📝 What I Learned
@@ -210,6 +232,7 @@ Building HAIT pushed me well past CRUD app territory:
 
 **Sumin** — HCDE master's researcher building human-AI interaction studies end to end, from experimental design to full-stack implementation.
 
+- 🔗 [HAIT project page](https://hait-pitch.vercel.app/)
 - ✉️ kimsumin@umich.edu
 - 💻 [GitHub @sumin6475](https://github.com/sumin6475)
 - ▶️ [YouTube @hiSuminKim](https://www.youtube.com/@hiSuminKim)
@@ -222,4 +245,4 @@ MIT
 
 ---
 
-_Last updated: 2026-07-17_
+_Last updated: 2026-08-14_
