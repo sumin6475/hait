@@ -6,6 +6,25 @@ export type ParticipantRole = "humanX" | "humanY" | "humanZ";
 export type SessionStatus = "waiting" | "in_progress" | "completed" | "data_ready";
 export type Candidate = "A" | "B" | "C" | "D";
 export type SenderRole = ParticipantRole | "ai";
+export type InterventionDecisionStage =
+  | "priority"
+  | "cooldown"
+  | "main_judge"
+  | "route_gate"
+  | "long_silence_timer"
+  | "summary"
+  | "lifecycle"
+  | "system";
+export type RouteKind =
+  | "address"
+  | "followup"
+  | "long_silence"
+  | "build_on"
+  | "mediation"
+  | "backchannel"
+  | "greeting"
+  | "summary"
+  | "closing";
 
 export interface Condition {
   id: string;

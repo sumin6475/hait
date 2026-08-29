@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Play, Settings2, X, Send, Loader2 } from "lucide-react";
+import { Play, Settings2, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { ConditionCode } from "@/types";
+import type { ConditionCode, RouteKind } from "@/types";
 import { useConditions } from "@/hooks/useConditions";
 import { conditionLabel } from "@/lib/conditions";
 import { postTestChat } from "@/lib/api";
@@ -16,14 +16,32 @@ const matrix: [ConditionCode, ConditionCode][] = [
 //X/Y는 고정 텍스트, AI는 trigger 라벨만 (text는 런타임 호출)
 type ScriptTurn =
   | { speaker: "X" | "Y"; text: string }
-  | { speaker: "AI"; trigger: "message-count" | "time-interval" | "long-silence" };
+  | { speaker: "AI" };
 
 //실제 trigger 임계값 (config/triggers.ts와 동기) — 라벨 표시용
 const TRIGGER_LABEL: Record<string, string> = {
-  "message-count": "5 messages since AI",
-  "time-interval": "90s since AI spoke",
-  "long-silence": "30s silence",
+  address: "direct address · 2s floor",
+  followup: "single reply after Alex · 2s floor",
+  long_silence: "15s silence · no extra floor",
+  build_on: "main judge contribution · 3s floor",
+  mediation: "leader coverage intervention · 3s floor",
+  backchannel: "main judge acknowledgment · 3s floor",
+  greeting: "session start",
+  summary: "one-time leader checkpoint · 3s floor",
+  closing: "30-minute deadline or manual stop",
 };
+
+const ROUTE_ORDER: RouteKind[] = [
+  "greeting",
+  "address",
+  "followup",
+  "long_silence",
+  "build_on",
+  "mediation",
+  "backchannel",
+  "summary",
+  "closing",
+];
 
 //hidden_profile_integration 대본 (sender는 humanX/humanY — eval과 동일)
 const SCRIPT: ScriptTurn[] = [
@@ -41,11 +59,11 @@ const SCRIPT: ScriptTurn[] = [
   },
   { speaker: "Y", text: "Hmm, and Candidate B has a below-average memory for numbers too." },
   { speaker: "X", text: "Right. So what does everyone think so far?" },
-  { speaker: "AI", trigger: "message-count" },
+  { speaker: "AI" },
   { speaker: "Y", text: "I'm leaning toward C based on what we've shared." },
   { speaker: "X", text: "Same, C seems strong on the safety side." },
   { speaker: "X", text: "..." },
-  { speaker: "AI", trigger: "long-silence" },
+  { speaker: "AI" },
 ];
 
 //화면 표시용 메시지 (재생 중 누적)
@@ -72,6 +90,7 @@ interface AuditShape {
 const Conditions = () => {
   const { data, isLoading, isError, error } = useConditions();
   const [selected, setSelected] = useState<ConditionCode>("C1");
+  const [selectedRoute, setSelectedRoute] = useState<RouteKind>("build_on");
   const [testOpen, setTestOpen] = useState(false);
   //Test Chat 시뮬레이션 상태
   const [step, setStep] = useState(0); //대본 진행 인덱스
@@ -81,6 +100,15 @@ const Conditions = () => {
   const [testError, setTestError] = useState<string | null>(null);
 
   const atEnd = step >= SCRIPT.length;
+
+  const selectedEntry = data?.conditions?.[selected];
+  const availableRoutes = ROUTE_ORDER.filter((route) => selectedEntry?.routes?.[route]);
+  useEffect(() => {
+    if (selected === "CTRL") return;
+    if (!selectedEntry?.routes?.[selectedRoute] && availableRoutes.length) {
+      setSelectedRoute(availableRoutes[0]);
+    }
+  }, [availableRoutes, selected, selectedEntry, selectedRoute]);
 
   //모달 열 때 초기화
   const openTest = () => {
@@ -116,11 +144,12 @@ const Conditions = () => {
     try {
       const res = await postTestChat({
         conditionCode: selected,
+        routeKind: selectedRoute,
         transcript: buildTranscript(played),
       });
       setPlayed((p) => [
         ...p,
-        { speaker: "AI", text: res.content, trigger: turn.trigger, latencyMs: res.latencyMs },
+        { speaker: "AI", text: res.content, trigger: selectedRoute, latencyMs: res.latencyMs },
       ]);
       setStep((s) => s + 1);
     } catch (e) {
@@ -140,6 +169,7 @@ const Conditions = () => {
       const beforeLastAI = played.slice(0, played.length - 1);
       const res = await postTestChat({
         conditionCode: selected,
+        routeKind: selectedRoute,
         transcript: buildTranscript(beforeLastAI),
       });
       setVariants((v) => [...v, { speaker: "AI", text: res.content, latencyMs: res.latencyMs }]);
@@ -152,9 +182,9 @@ const Conditions = () => {
 
   //선택된 조건의 동결 데이터 (CTRL은 JSON에 없음 → undefined)
   const entry = data?.conditions?.[selected];
+  const routeEntry = entry?.routes?.[selectedRoute];
   const audit = entry?.audit as AuditShape | undefined;
   const scores = audit?.final_scores;
-  const isLeader = selected === "C2" || selected === "C4";
 
   return (
     <div className="p-8 space-y-8">
@@ -165,7 +195,7 @@ const Conditions = () => {
         </div>
         {/* 읽기 전용 안내 — IRB 무결성 */}
         <span className="text-xs text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full">
-          Read-only · frozen from prompt-management-system
+          Read-only · immutable route snapshot
         </span>
       </div>
 
@@ -262,21 +292,38 @@ const Conditions = () => {
 
           {/* System Prompt — 읽기 전용 스크롤 박스 */}
           <div className="rounded-xl border bg-card p-6 shadow-card space-y-3">
+            <div className="flex flex-wrap gap-2 pb-2">
+              {availableRoutes.map((route) => (
+                <Button
+                  key={route}
+                  variant={selectedRoute === route ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setSelectedRoute(route)}
+                >
+                  {route}
+                </Button>
+              ))}
+            </div>
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="font-medium">System Prompt — {selected}</h2>
+                <h2 className="font-medium">System Prompt — {selected}.{selectedRoute}</h2>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {conditionLabel[selected]} · v{entry?.version ?? "—"} ·{" "}
-                  {entry?.sourceCondition ?? ""}
-                  {entry ? ` · ${entry.prompt.length.toLocaleString()} chars` : ""}
+                  {conditionLabel[selected]} · v{routeEntry?.version ?? "—"} ·{" "}
+                  {routeEntry?.promptKey ?? ""}
+                  {routeEntry ? ` · ${routeEntry.prompt.length.toLocaleString()} chars` : ""}
                 </p>
+                {routeEntry && (
+                  <p className="text-[10px] font-mono text-muted-foreground mt-1 break-all">
+                    sha256 {routeEntry.hash}
+                  </p>
+                )}
               </div>
-              <Button variant="outline" size="sm" onClick={openTest} disabled={!entry}>
+              <Button variant="outline" size="sm" onClick={openTest} disabled={!routeEntry}>
                 <Play className="w-3.5 h-3.5 mr-1.5" /> Test Chat
               </Button>
             </div>
             <pre className="w-full max-h-[36rem] overflow-auto rounded-lg border border-input bg-muted/30 px-4 py-3 text-sm font-mono leading-relaxed whitespace-pre-wrap break-words">
-              {entry?.prompt ?? ""}
+              {routeEntry?.prompt ?? ""}
             </pre>
           </div>
         </>
@@ -291,10 +338,10 @@ const Conditions = () => {
             <div className="flex items-center justify-between px-5 py-4 border-b">
               <div>
                 <h3 className="font-semibold text-sm">
-                  Test Chat — {selected}: {conditionLabel[selected]}
+                  Test Chat — {selected}.{selectedRoute}: {conditionLabel[selected]}
                 </h3>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Scripted simulation · live AI · gpt-5.4-mini-2026-03-17 · temp 0 · not saved
+                  Scripted simulation · live runtime model · not saved
                 </p>
               </div>
               <Button variant="ghost" size="icon" onClick={() => setTestOpen(false)}>

@@ -21,7 +21,7 @@ import {
   getParticipantSlots,
 } from "../lib/codeGen.js";
 import { computePoolingDV, computeDecisionAccuracy } from "../lib/poolingDV.js";
-import { stopPullEvalution, forceMuteAI } from "../sockets/index.js"; // [Step 31-⑦] 라우트→sockets 단방향 (순환 없음)
+import { closeInterventionSession, stopInterventionSession } from "../lib/interventionEngine.js";
 import { GATE_ORDER, type ConditionCode, type Candidate, type GateId } from "../types.js";
 import { STATUS_CODES } from "http";
 
@@ -34,7 +34,11 @@ const VALID_CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
 //isTest 기본값 true (안전한 기본값 — 실수로 실험 번호 발급 방지)
 sessionsRouter.post("/", requireAdmin, async (req, res) => {
   try {
-    const { conditionCode, isTest = true, language = "en" } = req.body as {
+    const {
+      conditionCode,
+      isTest = true,
+      language = "en",
+    } = req.body as {
       conditionCode?: string;
       isTest?: boolean;
       language?: "en" | "ko"; // [KO-PILOT]
@@ -154,6 +158,7 @@ sessionsRouter.get("/:code", requireAdmin, async (req, res) => {
         startedAt: session.startedAt,
         endedAt: session.endedAt,
         createdAt: session.createdAt,
+        aiState: (session as any).aiState ?? null,
       },
       participants: participants.map((p) => ({
         participantCode: p.participantCode,
@@ -204,6 +209,7 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         startedAt: session.startedAt,
         endedAt: session.endedAt,
         createdAt: session.createdAt,
+        aiState: (session as any).aiState ?? null,
       },
       participants: participants.map((p) => ({
         participantCode: p.participantCode,
@@ -223,6 +229,41 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         triggerReason: i.triggerReason,
         cue: i.cue,
         why: i.why,
+        routeKind: i.routeKind,
+        source: i.source,
+        reservationId: i.reservationId,
+        anchorSeq: i.anchorSeq,
+        priorityRoute: i.priorityRoute,
+        priorityEvidence: i.priorityEvidence,
+        mainJudgeDecision: i.mainJudgeDecision,
+        judgeEvidence: i.judgeEvidence,
+        decisionStage: i.decisionStage,
+        routeReason: i.routeReason,
+        outcome: i.outcome,
+        silenceReason: i.silenceReason,
+        promptKey: i.promptKey,
+        promptVersion: i.promptVersion,
+        promptHash: i.promptHash,
+        contextFromSeq: i.contextFromSeq,
+        contextToSeq: i.contextToSeq,
+        floorMs: i.floorMs,
+        generationSucceeded: i.generationSucceeded,
+        interventionSaved: i.interventionSaved,
+        broadcastSucceeded: i.broadcastSucceeded,
+        mediationLatched: i.mediationLatched,
+        mediationEvidence: i.mediationEvidence,
+        buildOnsSinceMediation: i.buildOnsSinceMediation,
+        focusCandidate: i.focusCandidate,
+        focusBasis: i.focusBasis,
+        focusHumanConfirmedCount: i.focusHumanConfirmedCount,
+        focusDepthThreshold: i.focusDepthThreshold,
+        focusDirective: i.focusDirective,
+        focusGuarded: i.focusGuarded,
+        internalMetadataRepaired: i.internalMetadataRepaired,
+        internalMetadataViolation: i.internalMetadataViolation,
+        outputScopeCandidate: i.outputScopeCandidate,
+        outputScopeRepaired: i.outputScopeRepaired,
+        outputScopeViolation: i.outputScopeViolation,
         calloutTarget: i.calloutTarget,
         calloutCand: i.calloutCand,
         model: i.model,
@@ -317,7 +358,7 @@ sessionsRouter.post("/:code/stop-ai", requireAdmin, async (req, res) => {
     if (!session) {
       return res.status(404).json({ ok: false, error: "Session not found" });
     }
-    forceMuteAI(session.sessionCode); // [Step 31-⑦] 패턴: 모델의 sessionCode(string) 전달
+    await closeInterventionSession(session.sessionCode);
     console.log(`[stop-ai] AI muted by researcher for ${session.sessionCode}`);
     res.json({ ok: true, sessionCode: session.sessionCode, muted: true });
   } catch (error) {
@@ -394,7 +435,7 @@ sessionsRouter.patch("/:code/team-decision", async (req, res) => {
       console.log(
         `[sessions] ${code} status: in_progress -> completed (all ${expected} submitted)`,
       );
-      stopPullEvalution(session.sessionCode); // [Step 31-⑦] 5초 틱 정지 — 빈 방 long-silence 유령 발화 차단
+      await stopInterventionSession(session.sessionCode);
     }
 
     res.json({

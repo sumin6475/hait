@@ -41,6 +41,13 @@ function toMarkdown(data: SessionExport): string {
     `status: ${data.session.status} · language: ${data.session.language} · ` +
       `started: ${data.session.startedAt ?? "—"} · ended: ${data.session.endedAt ?? "—"}`,
   );
+  if (data.session.aiState) {
+    lines.push(
+      `AI: ${data.session.aiState.lifecycle ?? "—"} · summary: ` +
+        `${data.session.aiState.summaryStatus ?? "—"} · mediation latched: ` +
+        `${data.session.aiState.mediationLatched ?? false}`,
+    );
+  }
   lines.push("");
   lines.push("## Transcript");
   for (const m of data.messages) {
@@ -48,11 +55,20 @@ function toMarkdown(data: SessionExport): string {
   }
   lines.push("");
   lines.push("## AI interventions");
-  lines.push("| turn | decision | trigger | why |");
-  lines.push("| --- | --- | --- | --- |");
+  lines.push(
+    "| turn | stage | decision | route | source | judge | outcome | route reason | silence reason | floor | evidence |",
+  );
+  lines.push("| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |");
   for (const i of data.interventions) {
-    const why = (i.why ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
-    lines.push(`| ${i.turnIndex} | ${i.decision} | ${i.triggerReason} | ${why} |`);
+    const evidence = (i.judgeEvidence ?? i.priorityEvidence ?? i.silenceReason ?? i.why ?? "")
+      .replace(/\|/g, "\\|")
+      .replace(/\n/g, " ");
+    lines.push(
+      `| ${i.turnIndex} | ${i.decisionStage ?? "—"} | ${i.decision} | ` +
+        `${i.routeKind ?? "—"} | ${i.source ?? "—"} | ${i.mainJudgeDecision ?? "—"} | ` +
+        `${i.outcome ?? "—"} | ${i.routeReason ?? "—"} | ${i.silenceReason ?? "—"} | ` +
+        `${i.floorMs ?? 0}ms | ${evidence} |`,
+    );
   }
   return lines.join("\n");
 }

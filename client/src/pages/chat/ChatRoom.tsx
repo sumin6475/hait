@@ -18,6 +18,7 @@ const ChatRoom = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   //[Step 26-A] 서버 startedAt 기준 (session-history로 수신) — 새로고침해도 타이머 리셋 안 됨
   const [startTime, setStartTime] = useState<Date | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [myRole, setMyRole] = useState<SenderRole | null>(null);
   const [profile, setProfile] = useState<ProfileSlot | null>(null);
   //[Step 30] 조건별 AI 표시명 (session-history로 수신) — 메시지 객체에 박지 않고 렌더 시 state로 읽음
@@ -28,12 +29,13 @@ const ChatRoom = () => {
   const [timeUp, setTimeUp] = useState(false);
   //현재 입력 중(작성중)인 상대 역할들 — peer-typing으로 갱신, 메시지 도착/퇴장 시 해제
   const [typingRoles, setTypingRoles] = useState<ParticipantRole[]>([]);
+  const [aiTyping, setAiTyping] = useState(false); // [Tier 1, Step 1.3] AI 작성 중 표시
   const bottomRef = useRef<HTMLDivElement>(null);
 
   //auto scroll to bottom (작성중 표시 등장 시에도 따라 내려감)
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typingRoles]);
+  }, [messages, typingRoles, aiTyping]);
 
   //[Step 36] 서버 startedAt 기준 최소 토론 시간 경과 시 Exit 버튼 노출 (1초 틱)
   useEffect(() => {
@@ -92,7 +94,7 @@ const ChatRoom = () => {
     setMyRole(roleHint);
 
     socket.connect();
-    (window as any).socket = socket;
+    (window as Window & { socket?: typeof socket }).socket = socket;
 
     socket.on("connect", () => {
       console.log("[chatroom] connected", socket.id);
@@ -103,8 +105,10 @@ const ChatRoom = () => {
       console.log("[chatroom] disconnected", reason);
     });
 
-    socket.on("session-ready", ({ sessionCode, participantCount }) => {
+    socket.on("session-ready", ({ sessionCode, participantCount, startedAt }) => {
       console.log(`[chatroom] session ready: ${sessionCode} (${participantCount} participants)`);
+      setStartTime(new Date(startedAt));
+      setSessionReady(true);
     });
 
     socket.on("join-error", ({ reason }) => {
@@ -116,6 +120,7 @@ const ChatRoom = () => {
       console.log(`[chatroom] session-history: ${messages.length} messages`);
       //[Step 26-A] 서버 시작 시각으로 타이머 동기화 (없으면 클라 시각 fallback)
       setStartTime(startedAt ? new Date(startedAt) : new Date());
+      if (startedAt) setSessionReady(true);
       if (aiName) setAiName(aiName); // [Step 30] 조건별 AI 라벨
       const mapped: ChatMessage[] = messages.map((m) => ({
         id: `msg-${m.seq}`,
@@ -137,6 +142,11 @@ const ChatRoom = () => {
         if (!isTyping && has) return prev.filter((r) => r !== role);
         return prev;
       });
+    });
+
+    // [Tier 1, Step 1.3] AI 작성 중 표시 — floor 대기/LLM 생성 중 true, 발화/침묵 완료 시 false
+    socket.on("ai-typing", ({ isTyping }) => {
+      setAiTyping(isTyping);
     });
 
     //new message
@@ -178,7 +188,7 @@ const ChatRoom = () => {
       socket.removeAllListeners();
       socket.disconnect();
     };
-  }, []);
+  }, [navigate]);
 
   const handleSend = (content: string) => {
     socket.emit("send-message", { content });
@@ -224,6 +234,7 @@ const ChatRoom = () => {
             {typingRoles.map((role) => (
               <TypingIndicator key={role} name={ROLE_LABEL[role] ?? role} />
             ))}
+            {aiTyping && <TypingIndicator key="ai" name={aiName} />}
             <div ref={bottomRef} />
           </div>
 
@@ -247,6 +258,7 @@ const ChatRoom = () => {
           <MessageInput
             onSend={handleSend}
             onTyping={(isTyping) => socket.emit("typing", { isTyping })}
+            disabled={!sessionReady}
           />
         </div>
 

@@ -10,7 +10,11 @@ export type ClientToServerEvents = {
 };
 
 export type ServerToClientEvents = {
-  "session-ready": (payload: { sessionCode: string; participantCount: number }) => void;
+  "session-ready": (payload: {
+    sessionCode: string;
+    participantCount: number;
+    startedAt: string;
+  }) => void;
   "join-error": (payload: { reason: string }) => void;
   "new-message": (payload: {
     seq: number;
@@ -23,6 +27,7 @@ export type ServerToClientEvents = {
   "peer-disconnected": (payload: { role: ParticipantRole }) => void;
   "peer-reconnected": (payload: { role: ParticipantRole }) => void;
   "peer-typing": (payload: { role: ParticipantRole; isTyping: boolean }) => void; // 상대 입력 중 (작성중)
+  "ai-typing": (payload: { isTyping: boolean }) => void; // [Tier 1] AI 작성 중 표시
   "session-history": (payload: {
     messages: Array<{
       seq: number;

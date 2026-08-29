@@ -172,6 +172,41 @@ export interface InterventionLog {
   triggerReason: string;
   cue?: string | null;
   why?: string | null;
+  routeKind?: import("@/types").RouteKind | null;
+  source?: string | null;
+  reservationId?: string | null;
+  anchorSeq?: number | null;
+  priorityRoute?: "address" | "followup" | "long_silence" | null;
+  priorityEvidence?: string | null;
+  mainJudgeDecision?: "contribute" | "acknowledge" | "silent" | null;
+  judgeEvidence?: string | null;
+  decisionStage?: import("@/types").InterventionDecisionStage | null;
+  routeReason?: string | null;
+  outcome?: string | null;
+  silenceReason?: string | null;
+  promptKey?: string | null;
+  promptVersion?: string | null;
+  promptHash?: string | null;
+  contextFromSeq?: number | null;
+  contextToSeq?: number | null;
+  floorMs?: number | null;
+  generationSucceeded?: boolean | null;
+  interventionSaved?: boolean | null;
+  broadcastSucceeded?: boolean | null;
+  mediationLatched?: boolean | null;
+  mediationEvidence?: string[] | null;
+  buildOnsSinceMediation?: number | null;
+  focusCandidate?: "A" | "B" | "C" | "D" | null;
+  focusBasis?: string | null;
+  focusHumanConfirmedCount?: number | null;
+  focusDepthThreshold?: number | null;
+  focusDirective?: "stay" | "free" | null;
+  focusGuarded?: boolean | null;
+  internalMetadataRepaired?: boolean | null;
+  internalMetadataViolation?: string | null;
+  outputScopeCandidate?: "A" | "B" | "C" | "D" | null;
+  outputScopeRepaired?: boolean | null;
+  outputScopeViolation?: string | null;
   calloutTarget?: string | null;
   calloutCand?: string | null;
   model?: string | null;
@@ -182,7 +217,21 @@ export interface InterventionLog {
   createdAt: string;
 }
 export interface SessionExport {
-  session: SessionDetail["session"] & { language: string };
+  session: SessionDetail["session"] & {
+    language: string;
+    aiState?: {
+      lifecycle?: "active" | "closing" | "muted";
+      closingReason?: string;
+      closingAt?: string;
+      summaryStatus?: "not_eligible" | "pending" | "generating" | "done";
+      summaryEligibleAt?: string;
+      summaryMessageId?: string;
+      mediationLatched?: boolean;
+      mediationEvidence?: string[];
+      buildOnsSinceMediation?: number;
+      lastBackchannelAt?: string;
+    } | null;
+  };
   participants: Array<{
     participantCode: string;
     role: ParticipantRole;
@@ -228,18 +277,23 @@ export async function deleteSession(sessionCode: string): Promise<void> {
   });
 }
 
-//=== Conditions (동결 프롬프트 읽기 전용) ===
-//출처: sever lib/compiled-prompts.json
+//=== Conditions (immutable route prompt snapshot, read-only) ===
 //GET /api/conditions
 export interface CompiledCondition {
-  prompt: string; //완성된 system prompt
-  version: string; //ex: "1.1.0"
-  sourceCondition: string; //ex: "peer_xai"
+  version: string;
+  sourceCondition: string;
   audit: unknown;
+  routes: Partial<
+    Record<
+      import("@/types").RouteKind,
+      { promptKey: string; prompt: string; version: string; hash: string }
+    >
+  >;
 }
 
 export interface CompiledPromptsResponse {
-  generatedAt: string;
+  schemaVersion: number;
+  sourceVersion: string;
   conditions: Record<string, CompiledCondition>;
 }
 
@@ -258,6 +312,7 @@ export interface TestChatResult {
 
 export async function postTestChat(input: {
   conditionCode: ConditionCode;
+  routeKind: import("@/types").RouteKind;
   transcript: { sender: string; content: string }[];
 }): Promise<TestChatResult> {
   return adminFetch<TestChatResult>("/api/conditions/test-chat", {
