@@ -61,54 +61,53 @@ ground_truth_dataset:
   optimal_candidate: "C"
   optimal_candidate_rationale: >
     Across all three profiles (X, Y, Z) pooled, Candidate C has the
-    highest positive-to-negative trait ratio (7 distinct positives
-    across the team versus 3 shared negatives). C's positives are
-    almost entirely unshared and only surface if discussion successfully
-    pools unshared information.
+    highest match-to-miss ratio (7 distinct matches across the team versus
+    3 shared misses). C's matches are almost entirely unshared and only
+    surface if discussion successfully pools unshared information.
   ai_holds: "profile_z_only"
   candidates:
     A:
-      positive_count: 4
-      negative_count: 2
-      positive_traits:
+      match_count: 4
+      miss_count: 2
+      match_traits:
         - "Has a very good sense for recognizing dangerous situations"
         - "Has a good overview of complex contexts"
         - "Has excellent spatial awareness"
         - "Is very well organized"
-      negative_traits:
+      miss_traits:
         - "Is unfriendly"
         - "Transmits restlessness"
     B:
-      positive_count: 4
-      negative_count: 2
-      positive_traits:
+      match_count: 4
+      miss_count: 2
+      match_traits:
         - "Keeps a cool head in crisis situations"
         - "You can rely on him/her 100%"
         - "Can assess weather conditions very well"
         - "Is good at multitasking"
-      negative_traits:
+      miss_traits:
         - "Is considered arrogant"
         - "Is sometimes abusive in tone"
     C:
-      positive_count: 3
-      negative_count: 3
-      positive_traits:
+      match_count: 3
+      miss_count: 3
+      match_traits:
         - "Can make the right decisions very quickly"
         - "Puts the safety of people in his/her care above everything else"
         - "Performs very well in terms of sustained attention"
-      negative_traits:
+      miss_traits:
         - "Is not verbally skillful"
         - "Is considered egocentric"
         - "Is reluctant to take part in training"
     D:
-      positive_count: 4
-      negative_count: 2
-      positive_traits:
+      match_count: 4
+      miss_count: 2
+      match_traits:
         - "Can react adequately to unforeseen events"
         - "Can concentrate very well"
         - "Is very resilient"
         - "Is very responsible"
-      negative_traits:
+      miss_traits:
         - "Is considered moody"
         - "Has strong prejudices"
 
@@ -131,16 +130,16 @@ critical_rules:
     render_position: "last"
     source: "experiment_design.md §4.4, paragraph 2 — adapted from Zercher et al. (2025)"
     text: >-
-      The best candidate has the highest ratio of positive to negative traits, and all traits
+      The best candidate has the highest ratio of matches to misses, and all traits
       count equally — the pilot position has no specific requirements, so no trait is particularly
-      important or particularly bad. The positive-to-negative ratio of each candidate keeps
+      important or particularly bad. The match-to-miss ratio of each candidate keeps
       changing in real time as your team shares more during the discussion. On each turn,
       recompute the current ratio from everything now on the table, and prefer the candidate
       whose ratio is highest right now — your preference must move when that ratio moves. When
       you state a preference, it is for exactly one candidate, never two or a shortlist. Do not
       mention who provided which information, and do not single out any trait as especially
-      important. When asked for a candidate's full traits, give all of its positive and all of
-      its negative traits. Converse in English and keep your wording gender-neutral.
+      important. When asked for a candidate's full traits, give all of its matches and all of
+      its misses. Converse in English and keep your wording gender-neutral.
 
 # ─────────────────────────────────────────────────────────────────
 # agent_calling_model — the ONLY acknowledgment of the trigger system.

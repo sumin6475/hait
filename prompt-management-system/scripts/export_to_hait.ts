@@ -1,4 +1,6 @@
 // scripts/export_to_hait.ts
+// LEGACY ONLY: live intervention V2 reads route-prompts.snapshot.v1.json instead.
+// Use `pnpm run export:hait`; this file remains for reproducing earlier pilot artifacts.
 // ─────────────────────────────────────────────────────────────────
 // FREEZE + EXPORT — PMS 산출물(core_prompts/*.yaml 4개)을 컴파일해서
 // HAIT 런타임이 읽을 동결 프롬프트 JSON 1개로 내보낸다.

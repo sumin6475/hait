@@ -31,10 +31,10 @@ interface CommonFramework {
     candidates: Record<
       string,
       {
-        positive_count: number;
-        negative_count: number;
-        positive_traits: string[];
-        negative_traits: string[];
+        match_count: number;
+        miss_count: number;
+        match_traits: string[];
+        miss_traits: string[];
       }
     >;
   };
@@ -86,10 +86,10 @@ function renderGroundTruth(cf: CommonFramework): string {
     const cand = gt.candidates[c];
     if (!cand) continue;
     lines.push(`Candidate ${c}:`);
-    lines.push(`  ${cand.positive_count} of the positive traits of Candidate ${c} are:`);
-    for (const t of cand.positive_traits) lines.push(`    + ${t}`);
-    lines.push(`  ${cand.negative_count} of the negative traits of Candidate ${c} are:`);
-    for (const t of cand.negative_traits) lines.push(`    - ${t}`);
+    lines.push(`  ${cand.match_count} traits that match the company standard are:`);
+    for (const t of cand.match_traits) lines.push(`    + ${t}`);
+    lines.push(`  ${cand.miss_count} traits that miss the company standard are:`);
+    for (const t of cand.miss_traits) lines.push(`    - ${t}`);
     lines.push(``);
   }
   return lines.join("\n");

@@ -16,7 +16,8 @@
     "lint": "vitest run --dir tests --reporter=verbose",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "export:hait": "tsx scripts/export_to_hait.ts",
+    "export:hait": "node ../server/scripts/compile-route-prompts.mjs",
+    "export:legacy": "tsx scripts/export_to_hait.ts",
     "critic": "tsx scripts/critic_spec.ts"
   },
   "dependencies": {
