@@ -71,9 +71,10 @@ interface Row {
 }
 
 const rows: Row[] = [];
+let modelUsed = "gpt-5-mini"; // 실제 실행된 모델로 루프에서 덮어씀 (기록 정합성)
 const plan = doc.cases.flatMap((c) => conditionsFor(c).map((cond) => ({ c, cond })));
 console.log(
-  `\n[golden] ${doc.cases.length} cases → ${plan.length} run pairs. model=gpt-5.4-mini (temp 0, no chaining)\n`,
+  `\n[golden] ${doc.cases.length} cases → ${plan.length} run pairs. model=${modelUsed} (temp 0, no chaining)\n`,
 );
 
 let i = 0;
@@ -95,6 +96,7 @@ for (const { c, cond } of plan) {
   }
 
   const res = await callAIStructured({ systemPrompt, userPrompt }); // temp 0 내장, previousResponseId 미전달(= 케이스 독립)
+  modelUsed = res.model; // 실제 호출에 쓰인 모델명 (리포트 기록용)
   const ok = res.ok;
   const output = res.ok ? res.parsed.content : `[FAIL: ${res.reason}] ${res.error}`;
   const latencyMs = res.ok ? res.latencyMs : 0;
@@ -114,7 +116,7 @@ const byId = new Map<string, Row[]>();
 for (const r of rows) (byId.get(r.caseId) ?? byId.set(r.caseId, []).get(r.caseId)!).push(r);
 
 let md = `# Golden Baseline — ${ts}\n\n`;
-md += `model: gpt-5.4-mini-2026-03-17 (temperature 0, no chaining) · cases: ${doc.cases.length} · run pairs: ${rows.length}\n\n`;
+md += `model: ${modelUsed} (temperature 0, no chaining) · cases: ${doc.cases.length} · run pairs: ${rows.length}\n\n`;
 md += `> "actual" = current prompt's output. "hint" = fixture illustrative (DRAFT, not a target).\n\n`;
 for (const c of doc.cases) {
   const rs = byId.get(c.id) ?? [];
@@ -136,7 +138,7 @@ const jsonPath = resolve(outDir, `baseline_${ts}.json`);
 writeFileSync(mdPath, md, "utf8");
 writeFileSync(
   jsonPath,
-  JSON.stringify({ ts, model: "gpt-5.4-mini-2026-03-17", rows }, null, 2),
+  JSON.stringify({ ts, model: modelUsed, rows }, null, 2),
   "utf8",
 );
 

@@ -44,7 +44,13 @@ for (const c of doc.cases) {
 
   const results: ({ speak: boolean; reason: string } | null)[] = [];
   for (let r = 0; r < RUNS; r++) {
-    results.push(await judgeIntervention(transcript, c.msgs_since_alex));
+    const decision = await judgeIntervention(transcript, c.msgs_since_alex);
+    // Keep the historical report shape while the runtime uses the V2 three-way decision.
+    results.push(
+      decision
+        ? { speak: decision.decision !== "silent", reason: decision.evidence }
+        : null,
+    );
   }
 
   // 한 호출 match: null(파싱실패/타임아웃)은 non-match. speak 항상 대조, reason은 expect에 있을 때만.
