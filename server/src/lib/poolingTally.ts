@@ -9,7 +9,11 @@ import { recordFirstSurfacer } from "./poolingDV.js";
 // 카운트는 저장하지 않고 읽을 때 revealedIds에서 파생한다 (read-modify-write 레이스 회피).
 // [Step 36] 새로 추가된 distinct id 수 반환 (no-yield 추적용). best-effort: 동시 추출이 같은 id를
 // 둘 다 'new'로 셀 수 있으나 over-count = yield 과다 = 소진 under-trigger = 안전한 방향.
-export async function updateRevealStats(sessionId: string, ids: string[], seq: number): Promise<number> {
+export async function updateRevealStats(
+  sessionId: string,
+  ids: string[],
+  seq: number,
+): Promise<number> {
   const valid = ids.filter((id) => TRAIT_BY_ID.has(id));
   if (!valid.length) return 0;
   const sess = await Session.findById(sessionId).select("revealStats").lean();
@@ -23,7 +27,26 @@ export async function updateRevealStats(sessionId: string, ids: string[], seq: n
     const path = `revealStats.byCandidate.${c}.revealedIds`;
     (add[path] ??= { $each: [] }).$each.push(id);
   }
+  // Seed the separate human-confirmed layer from legacy human surface data on first write.
+  add["revealStats.humanConfirmedIds"] = { $each: [...new Set([...already, ...valid])] };
   await Session.updateOne({ _id: sessionId }, { $addToSet: add });
+  const candidates = new Set(valid.map((id) => TRAIT_BY_ID.get(id)!.candidate));
+  if (candidates.size === 1) {
+    await Session.updateOne(
+      {
+        _id: sessionId,
+        $or: [
+          { "revealStats.lastHumanDiscussion.seq": { $exists: false } },
+          { "revealStats.lastHumanDiscussion.seq": { $lt: seq } },
+        ],
+      },
+      {
+        $set: {
+          "revealStats.lastHumanDiscussion": { candidate: [...candidates][0], seq },
+        },
+      },
+    );
+  }
   await recordFirstSurfacer(sessionId, valid, "human", seq); // [Step 62]
   return newIds.size;
 }
@@ -150,7 +173,10 @@ export function currentTopicCandidate(
   aiLabel = "Alex",
   lookback = TRIGGER_CONFIG.DEPTH_LOOKBACK_MSGS,
 ): Cand | null {
-  const recent = msgs.filter((m) => m.sender !== aiLabel).slice(-lookback).reverse(); // 사람만, 최신부터
+  const recent = msgs
+    .filter((m) => m.sender !== aiLabel)
+    .slice(-lookback)
+    .reverse(); // 사람만, 최신부터
   for (const m of recent) {
     const found = new Set<Cand>();
     let mm: RegExpExecArray | null;

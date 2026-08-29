@@ -6,6 +6,8 @@ import { longSilenceTrigger } from "./LongSilenceTrigger.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import { ADDRESS_RE } from "../lib/computeCue.js";
 
+// Legacy trigger evaluator: no live socket path imports this after Intervention V2.
+
 // 명시 호명("Alex") 합성 트리거 — evaluateTriggers에서 직접 판정 (Step 5/F)
 const addressTrigger: Trigger = { name: "address", shouldFire: () => true };
 

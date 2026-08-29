@@ -3,7 +3,7 @@ import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
 
-const client = new OpenAI({ apiKey: config.openaiApiKey });
+const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 const JUDGE_MODEL = "gpt-4o-mini";
 const JUDGE_MAX_TOKENS = 40; // [Step 37] why 제거로 출력 ~40토큰 — 원복
 const JUDGE_TIMEOUT_MS = 8_000;
@@ -11,32 +11,39 @@ const JUDGE_WINDOW = 16;
 
 // [Step 37] 거리(dist) 게이트는 cooldown으로 외재화, anti-repeat/consistency/why 제거 — judge는 순수 분류기.
 const JudgeSchema = z.object({
-  speak: z.boolean(),
-  reason: z.enum(["directed_followup", "build_on", "mediation"]),
+  decision: z.enum(["contribute", "acknowledge", "silent"]),
+  evidence: z.enum([
+    "relevant_unsurfaced_information",
+    "factual_correction",
+    "social_uptake",
+    "none",
+  ]),
 });
-export type JudgeReason = "directed_followup" | "build_on" | "mediation";
-export type JudgeDecision = { speak: boolean; reason: JudgeReason };
+export type JudgeDecision = z.infer<typeof JudgeSchema>;
 
-const JUDGE_SYSTEM = `You are the floor manager for a small, live team chat: two people plus an AI teammate named "Alex", working through a group decision. Decide right now whether Alex should SPEAK or STAY SILENT, and if speaking, the single best reason. You never write Alex's message; you only gate it.
+const JUDGE_SYSTEM = `You are the intervention judge for a small live team chat with two people and an AI teammate named Alex. The team is comparing candidates in a group decision.
 
-STRONGLY default to silence. Most of the time Alex just listens. A good teammate does not weigh in on every line — Alex contributes only when it clearly belongs.
+Direct address, follow-up replies to Alex, long silence, summary, and closing have already been handled elsewhere. Classify only the current ordinary human-human exchange.
 
-Check these in order; the FIRST one that clearly holds decides the output:
-1. Alex is directly addressed or asked a question → speak=true, reason=directed_followup. Answer that. (But a question that names the OTHER teammate — e.g. starts with their name — is for them; let them answer, and do not treat it as directed at Alex.)
-2. In the last message or two, the people are discussing or weighing a candidate — stating a preference, giving a reason, or putting a trait on the table → speak=true, reason=build_on: Alex adds its read or its own information to that exchange.
-3. The team is stuck, going in circles, or rushing to narrow too early → speak=true, reason=mediation: Alex refocuses them. This is a facilitation move, NOT an opinion.
-4. Otherwise → speak=false. This is the COMMON case: the two people are mid-exchange and Alex would interrupt, or the moment simply doesn't call for Alex.
+Choose exactly one decision:
 
-Cases 1 and 2 are the only situations where Alex may volunteer a verdict or preference (which candidate it favors). Sharing a concrete piece of information Alex holds that hasn't come up — a specific trait about a candidate — is NOT a verdict and is welcome whenever it's relevant, even outside cases 1 and 2.
+CONTRIBUTE — Alex has one specific, relevant, non-redundant factual contribution or correction that would materially advance the candidate discussion right now.
+
+ACKNOWLEDGE — Alex has no substantive information to add, but one brief acknowledgment of the immediately preceding message would be socially useful and would not interrupt the people's exchange. This must not require a question, candidate comparison, new trait, preference, or procedural nudge.
+
+SILENT — Alex should not speak. This is the default and common result.
+
+A candidate being mentioned, praised, criticized, compared, or preferred is not by itself a reason to contribute. Choose contribute only when the supplied availability signal identifies a concrete information gain or factual correction. Choose acknowledge sparingly. When uncertain, choose silent. Do not choose mediation or a candidate, and do not write Alex's message.
 
 Output JSON only.`;
 
 export async function judgeIntervention(
   transcript: { speaker: string; content: string }[],
   msgsSinceAlex: number,
+  relevantUnsurfacedSignal = "none",
 ): Promise<JudgeDecision | null> {
   const lines = transcript.map((t) => `${t.speaker}: ${t.content}`).join("\n");
-  const user = `Messages since Alex last spoke: ${msgsSinceAlex}\n\nRecent chat:\n${lines}\n\nDecide now. Output JSON only.`;
+  const user = `Messages since Alex last spoke: ${msgsSinceAlex}\nAvailable unsurfaced information relevant to the current topic: ${relevantUnsurfacedSignal}\n\nRecent chat:\n${lines}\n\nClassify the intervention level now. Output JSON only.`;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), JUDGE_TIMEOUT_MS);
   try {
@@ -55,10 +62,20 @@ export async function judgeIntervention(
     );
     clearTimeout(to);
     const p = resp.output_parsed;
-    if (!p) return null;
-    return { speak: p.speak, reason: p.reason };
-  } catch {
+    if (!p) {
+      // [진단] 게이트웨이 이전 후 null 원인 가시화 — 안정화되면 이 로그는 제거 가능
+      console.error(`[judge] output_parsed null (status=${resp.status})`);
+      return null;
+    }
+    return p;
+  } catch (err: any) {
     clearTimeout(to);
+    // [진단] timeout / 429(rate limit) / 기타 구분 — null이 왜 나는지 한 번 확인용
+    const kind =
+      err?.name === "AbortError" || err?.message?.includes("aborted")
+        ? `timeout(${JUDGE_TIMEOUT_MS}ms)`
+        : `status=${err?.status ?? "?"} ${err?.message ?? String(err)}`;
+    console.error(`[judge] call failed → null: ${kind}`);
     return null;
   }
 }

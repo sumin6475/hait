@@ -8,7 +8,8 @@ export type SpeakingReason =
   | "build_on"
   | "directed_followup"
   | "mediation"
-  | "closing";
+  | "closing"
+  | "backchannel";
 
 export interface ComputeCueInput {
   messages: { sender: string; content: string }[]; // 최근 턴(윈도우된 transcript 또는 골든 context)

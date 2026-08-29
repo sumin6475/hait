@@ -1,0 +1,321 @@
+import type { Server } from "socket.io";
+import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "../sockets/events.js";
+import type {
+  ConditionCode,
+  InterventionDecisionStage,
+  MainJudgeDecision,
+  PriorityRoute,
+  RouteKind,
+} from "../types.js";
+import { AIIntervention } from "../models/AIIntervention.js";
+import { Message } from "../models/Message.js";
+import { Session } from "../models/Session.js";
+import { allocSeq } from "./seq.js";
+import { getRoutePrompt } from "./routePromptRegistry.js";
+import { buildRouteUserContext, type TranscriptMessage } from "./routeContext.js";
+import { transcriptLabel } from "./labels.js";
+import { extractSurfacedTraits } from "./poolingExtractor.js";
+import { updateAiSurfaced } from "./poolingDV.js";
+import { log } from "./log.js";
+import { generateScopedRouteMessage } from "./routeScopedGeneration.js";
+
+type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
+
+export interface RouteTurnInput {
+  io: IO;
+  sessionCode: string;
+  sessionId: string;
+  conditionCode: ConditionCode;
+  routeKind: RouteKind;
+  source: string;
+  reservationId?: string;
+  anchorSeq: number;
+  floorMs: number;
+  priorityRoute?: PriorityRoute;
+  priorityEvidence?: string;
+  mainJudgeDecision?: MainJudgeDecision | null;
+  judgeEvidence?: string | null;
+  decisionStage?: InterventionDecisionStage;
+  routeReason?: string;
+  mediationLatched?: boolean;
+  mediationEvidence?: string[];
+  buildOnsSinceMediation?: number;
+  commitGuard?: () => boolean;
+}
+
+export interface RouteTurnResult {
+  ok: boolean;
+  messageId?: string;
+  messageSeq?: number;
+  response?: string;
+  error?: string;
+}
+
+export function routeGenerationLimits(routeKind: RouteKind) {
+  if (routeKind === "summary") {
+    return { maxOutputTokens: null, maxContentChars: null, timeoutMs: 60_000 };
+  }
+  if (routeKind === "closing") {
+    return { maxOutputTokens: null, maxContentChars: null, timeoutMs: 60_000 };
+  }
+  return { maxOutputTokens: 240, maxContentChars: 800, timeoutMs: 30_000 };
+}
+
+export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurnResult> {
+  const [session, docs] = await Promise.all([
+    Session.findById(input.sessionId).select("language revealStats aiState").lean(),
+    Message.find({ sessionId: input.sessionId }).sort({ seq: 1 }).lean(),
+  ]);
+  if (!session) return { ok: false, error: "session_not_found" };
+  const lifecycle = (session as any).aiState?.lifecycle ?? "active";
+  if (lifecycle !== "active" && input.routeKind !== "closing") {
+    return { ok: false, error: "ai_not_active" };
+  }
+
+  const last = docs.at(-1);
+  if (
+    last?.senderRole === "ai" &&
+    input.routeKind !== "closing" &&
+    input.routeKind !== "greeting"
+  ) {
+    return { ok: false, error: "anti_double_post" };
+  }
+
+  const messages: TranscriptMessage[] = docs.map((message: any) => ({
+    seq: message.seq,
+    senderRole: message.senderRole,
+    speaker: transcriptLabel(message.senderRole),
+    content: message.content,
+  }));
+  const prompt = getRoutePrompt(input.conditionCode, input.routeKind);
+  const context = buildRouteUserContext({
+    routeKind: input.routeKind,
+    messages,
+    revealStats: (session as any).revealStats,
+    language: ((session as any).language ?? "en") as "en" | "ko",
+    anchorSeq: input.anchorSeq,
+  });
+  const focusDepthAudit = {
+    focusCandidate: context.focusDepthState.candidate ?? undefined,
+    focusBasis: context.focusDepthState.basis,
+    focusHumanConfirmedCount: context.focusDepthState.humanConfirmedCount,
+    focusDepthThreshold: context.focusDepthState.threshold,
+    focusDirective: context.focusDepthState.directive,
+    focusGuarded: context.outputScopeGuard?.reason === "focus_depth",
+  };
+
+  const recordGenerationFailure = async (error: string, model?: string) => {
+    await AIIntervention.create({
+      sessionId: input.sessionId,
+      turnIndex: input.anchorSeq,
+      triggerReason: input.source,
+      decision: "stay_silent",
+      routeKind: input.routeKind,
+      source: input.source,
+      reservationId: input.reservationId,
+      anchorSeq: input.anchorSeq,
+      priorityRoute: input.priorityRoute ?? undefined,
+      priorityEvidence: input.priorityEvidence,
+      mainJudgeDecision: input.mainJudgeDecision ?? undefined,
+      judgeEvidence: input.judgeEvidence ?? undefined,
+      decisionStage: input.decisionStage ?? "system",
+      routeReason: input.routeReason,
+      outcome: "generation_failed",
+      promptKey: prompt.promptKey,
+      promptVersion: prompt.promptVersion,
+      promptHash: prompt.promptHash,
+      contextFromSeq: context.contextFromSeq ?? undefined,
+      contextToSeq: context.contextToSeq ?? undefined,
+      floorMs: input.floorMs,
+      ...focusDepthAudit,
+      generationSucceeded: false,
+      broadcastSucceeded: false,
+      model,
+      error,
+    });
+  };
+
+  const generated = await generateScopedRouteMessage({
+    systemPrompt: prompt.systemPrompt,
+    userPrompt: context.userPrompt,
+    limits: routeGenerationLimits(input.routeKind),
+    guard: context.outputScopeGuard,
+    logContext:
+      `stage=${input.decisionStage ?? "system"} route=${input.routeKind} ` +
+      `reason=${input.routeReason ?? "none"} anchor=${input.anchorSeq} session=${input.sessionCode}`,
+  });
+  const result = generated.result;
+  if (!result.ok) {
+    await recordGenerationFailure(result.error, result.model);
+    return { ok: false, error: result.error };
+  }
+  const extractedAiIds = generated.extractedIds;
+
+  if (input.commitGuard && !input.commitGuard()) {
+    await AIIntervention.create({
+      sessionId: input.sessionId,
+      turnIndex: input.anchorSeq,
+      triggerReason: input.source,
+      decision: "stay_silent",
+      routeKind: input.routeKind,
+      source: input.source,
+      reservationId: input.reservationId,
+      anchorSeq: input.anchorSeq,
+      decisionStage: input.decisionStage ?? "system",
+      routeReason: input.routeReason,
+      outcome: "cancelled",
+      silenceReason: "superseded_during_generation",
+      promptKey: prompt.promptKey,
+      promptVersion: prompt.promptVersion,
+      promptHash: prompt.promptHash,
+      contextFromSeq: context.contextFromSeq ?? undefined,
+      contextToSeq: context.contextToSeq ?? undefined,
+      floorMs: input.floorMs,
+      ...focusDepthAudit,
+      generationSucceeded: true,
+      broadcastSucceeded: false,
+      model: result.model,
+    });
+    return { ok: false, error: "superseded_during_generation" };
+  }
+
+  // A deadline/manual close may happen while the model call is in flight.
+  // Re-check immediately before saving so a stale ordinary turn cannot appear after closing.
+  if (input.routeKind !== "closing") {
+    const fresh = await Session.findById(input.sessionId).select("aiState.lifecycle").lean();
+    if ((fresh as any)?.aiState?.lifecycle !== "active") {
+      await AIIntervention.create({
+        sessionId: input.sessionId,
+        turnIndex: input.anchorSeq,
+        triggerReason: input.source,
+        decision: "stay_silent",
+        routeKind: input.routeKind,
+        source: input.source,
+        reservationId: input.reservationId,
+        anchorSeq: input.anchorSeq,
+        decisionStage: input.decisionStage ?? "system",
+        routeReason: input.routeReason,
+        outcome: "cancelled",
+        silenceReason: "lifecycle_changed_during_generation",
+        promptKey: prompt.promptKey,
+        promptVersion: prompt.promptVersion,
+        promptHash: prompt.promptHash,
+        contextFromSeq: context.contextFromSeq ?? undefined,
+        contextToSeq: context.contextToSeq ?? undefined,
+        floorMs: input.floorMs,
+        ...focusDepthAudit,
+        generationSucceeded: true,
+        broadcastSucceeded: false,
+        model: result.model,
+      });
+      return { ok: false, error: "lifecycle_changed_during_generation" };
+    }
+  }
+
+  const nextSeq = await allocSeq(input.sessionId);
+  const savedMessage = await Message.create({
+    sessionId: input.sessionId,
+    sender: "ai",
+    senderRole: "ai",
+    content: result.parsed.content,
+    seq: nextSeq,
+    sharedInfoIds: [],
+  });
+
+  let interventionSaved = false;
+  try {
+    await AIIntervention.create({
+      sessionId: input.sessionId,
+      turnIndex: input.anchorSeq,
+      triggerReason: input.source,
+      cue: input.routeKind,
+      decision: "speak",
+      generateMessageId: savedMessage._id,
+      responseId: result.requestId,
+      response: result.parsed.content,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      latencyMs: result.latencyMs,
+      systemFingerprint: result.systemFingerprint,
+      model: result.model,
+      routeKind: input.routeKind,
+      source: input.source,
+      reservationId: input.reservationId,
+      anchorSeq: input.anchorSeq,
+      priorityRoute: input.priorityRoute ?? undefined,
+      priorityEvidence: input.priorityEvidence,
+      mainJudgeDecision: input.mainJudgeDecision ?? undefined,
+      judgeEvidence: input.judgeEvidence ?? undefined,
+      decisionStage: input.decisionStage ?? "system",
+      routeReason: input.routeReason,
+      outcome: "broadcast",
+      promptKey: prompt.promptKey,
+      promptVersion: prompt.promptVersion,
+      promptHash: prompt.promptHash,
+      contextFromSeq: context.contextFromSeq ?? undefined,
+      contextToSeq: context.contextToSeq ?? undefined,
+      floorMs: input.floorMs,
+      generationSucceeded: true,
+      interventionSaved: true,
+      broadcastSucceeded: true,
+      mediationLatched: input.mediationLatched,
+      mediationEvidence: input.mediationEvidence,
+      buildOnsSinceMediation: input.buildOnsSinceMediation,
+      outputScopeCandidate: context.outputScopeGuard?.candidate,
+      outputScopeRepaired: Boolean(generated.scopeRepair),
+      outputScopeViolation: generated.scopeRepair?.violation,
+      internalMetadataRepaired: Boolean(generated.internalMetadataRepair),
+      internalMetadataViolation: generated.internalMetadataRepair?.violation,
+      ...focusDepthAudit,
+    });
+    interventionSaved = true;
+  } catch (error) {
+    log.error("[route-turn] intervention log failed after message save:", error);
+  }
+
+  input.io.to(input.sessionCode).emit("new-message", {
+    seq: savedMessage.seq,
+    sender: savedMessage.sender,
+    senderRole: savedMessage.senderRole,
+    content: savedMessage.content,
+    createdAt: (savedMessage as any).createdAt.toISOString(),
+  });
+
+  if (!["summary", "closing", "greeting", "backchannel"].includes(input.routeKind)) {
+    if (extractedAiIds) {
+      void Promise.all([
+        updateAiSurfaced(input.sessionId, extractedAiIds, savedMessage.seq),
+        extractedAiIds.length
+          ? Message.updateOne(
+              { _id: savedMessage._id },
+              { $addToSet: { sharedInfoIds: { $each: extractedAiIds } } },
+            )
+          : Promise.resolve(),
+      ]).catch((error) => log.error("[pooling] AI update error:", error));
+    } else {
+      void extractSurfacedTraits(result.parsed.content)
+        .then((ids) =>
+          Promise.all([
+            updateAiSurfaced(input.sessionId, ids, savedMessage.seq),
+            ids.length
+              ? Message.updateOne(
+                  { _id: savedMessage._id },
+                  { $addToSet: { sharedInfoIds: { $each: ids } } },
+                )
+              : Promise.resolve(),
+          ]),
+        )
+        .catch((error) => log.error("[pooling] AI extract error:", error));
+    }
+  }
+
+  if (!interventionSaved) {
+    log.warn(`[route-turn] message broadcast without intervention row (${input.sessionCode})`);
+  }
+  return {
+    ok: true,
+    messageId: savedMessage._id.toString(),
+    messageSeq: savedMessage.seq,
+    response: result.parsed.content,
+  };
+}

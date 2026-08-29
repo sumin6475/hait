@@ -21,8 +21,9 @@ const profileStatsSchema = new mongoose.Schema(
 //후보별 공유 통계
 const candidateStatsSchema = new mongoose.Schema(
   {
-    positiveRevealed: { type: Number, default: 0 }, // positive 정보 중 공유된 수 (미사용 — revealedIds에서 read 시 파생)
-    negativeRevealed: { type: Number, default: 0 }, // negative 정보 중 공유된 수 (미사용 — revealedIds에서 read 시 파생)
+    // Legacy cached counters are no longer written; readers derive counts from revealedIds.
+    positiveRevealed: { type: Number, default: 0 },
+    negativeRevealed: { type: Number, default: 0 },
     revealedIds: { type: [String], default: [] }, // 표면화된 trait id 집합 (Step 14a, $addToSet로 dedup)
   },
   { _id: false },
@@ -52,6 +53,13 @@ const revealStatsSchema = new mongoose.Schema(
       D: candidateStatsSchema,
     },
     aiSurfacedIds: { type: [String], default: [] }, // Alex가 표면화한 trait id (Z DV용, $addToSet dedup) — Step 19
+    // Human-grounded discussion state is separate from both human and AI surface events.
+    // Existing byCandidate.revealedIds remains the human-surfaced source for export compatibility.
+    humanConfirmedIds: { type: [String], default: [] },
+    lastHumanDiscussion: {
+      candidate: { type: String, enum: ["A", "B", "C", "D"] as Candidate[] },
+      seq: Number,
+    },
     firstBy: { type: Map, of: firstBySchema, default: undefined }, // [Step 62]
   },
   { _id: false },
@@ -59,7 +67,14 @@ const revealStatsSchema = new mongoose.Schema(
 
 //게이트별 타임스탬프 (Step 32) — Session.gateApprovals / Participant.gateArrivals 공용 모양
 const gateDatesSchema = new mongoose.Schema(
-  { consent: Date, demographics: Date, infoCards: Date, waiting: Date, teamDecision: Date, debrief: Date },
+  {
+    consent: Date,
+    demographics: Date,
+    infoCards: Date,
+    waiting: Date,
+    teamDecision: Date,
+    debrief: Date,
+  },
   { _id: false },
 );
 
@@ -70,6 +85,28 @@ const metadataSchema = new mongoose.Schema(
     humanTurns: { type: Number, default: 0 },
     aiTurns: { type: Number, default: 0 },
     durationSeconds: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
+const aiStateSchema = new mongoose.Schema(
+  {
+    lifecycle: { type: String, enum: ["active", "closing", "muted"], default: "active" },
+    closingReason: { type: String },
+    closingAt: { type: Date },
+    summaryStatus: {
+      type: String,
+      enum: ["not_eligible", "pending", "generating", "done"],
+      default: "not_eligible",
+    },
+    summaryEligibleAt: { type: Date },
+    summaryMessageId: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
+    mediationLatched: { type: Boolean, default: false },
+    mediationEvidence: { type: [String], default: [] },
+    mediationLatchedAt: { type: Date },
+    mediationLatchedHumanCount: { type: Number },
+    buildOnsSinceMediation: { type: Number, default: 0 },
+    lastBackchannelAt: { type: Date },
   },
   { _id: false },
 );
@@ -129,6 +166,9 @@ const sessionSchema = new mongoose.Schema(
 
     //메타 데이터
     metadata: metadataSchema,
+
+    // Short 2–3 second reservations stay in memory; durable lifecycle state survives restarts.
+    aiState: { type: aiStateSchema, default: () => ({}) },
   },
   { timestamps: true },
 );

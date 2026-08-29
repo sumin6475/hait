@@ -1,4 +1,5 @@
-//handle AI turn logic
+// LEGACY EVALUATION PATH ONLY.
+// Live sockets use interventionEngine.ts + routeTurn.ts; keep this for historical golden runs.
 import type { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "../sockets/events.js";
 import { Message } from "../models/Message.js";
@@ -26,7 +27,7 @@ import {
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { allocSeq } from "./seq.js";
-import type { ConditionCode, ParticipantRole } from "../types.js";
+import type { ConditionCode, ParticipantRole, RouteKind, RerouteReason, ExemptReason } from "../types.js";
 import { log } from "./log.js";
 import { transcriptLabel } from "./labels.js";
 import { buildCalloutTail } from "./prompts.js";
@@ -57,11 +58,18 @@ export async function handleAITurn(
     callout?: { target: string; targetRole: ParticipantRole; cand?: Cand }; // [Step 30] 지목 호명 overlay
     bypassDoublePost?: boolean; // [Step 43] anti-double-post 면제 — 답→summary 쌍의 summary 한정
     natural?: boolean; // [Step 53] 자연발화 경로 강제 — reroute 지점에서만 켠다(cue 이름으로 추론하지 않음)
+    // [Tier 0] 메타 — AIIntervention 영속용
+    judgeSpeak?: boolean | null;
+    judgeReason?: string | null;
+    rerouted?: boolean;
+    rerouteReason?: string;
+    exemptReason?: string;
   },
 ) {
   //락 체크
   if (aiTurnLock.has(sessionCode)) {
     log.debug(`[ai-turn] skipped: ${sessionCode} already in progress`);
+    io.to(sessionCode).emit("ai-typing", { isTyping: false }); // [Tier 1, Step 1.3] 대기 중 표시 해제
     return;
   }
   aiTurnLock.add(sessionCode);
@@ -76,6 +84,7 @@ export async function handleAITurn(
     const last = allMessages[allMessages.length - 1];
     if (!opts?.closing && !opts?.bypassDoublePost && last && last.senderRole === "ai") {
       log.debug(`[ai-turn] skipped: last message already AI (anti-double-post) ${sessionCode}`);
+      io.to(sessionCode).emit("ai-typing", { isTyping: false }); // [Tier 1, Step 1.3] 대기 중 표시 해제
       return;
     }
     // [Step 30] transcript 라벨 = 화면 라벨 ("Alex" / "Participant X") — 지목 시 부르는 이름 일치.
@@ -97,6 +106,7 @@ export async function handleAITurn(
     let depthNote: string | undefined;
     let isOpening = false; // [opening] 자연발화 ∧ 테이블에 후보 0 ∧ 극초반 → 인사 recipe
     let isNatural = false; // [Step 53] 아래에서 확정
+    let isBackchannel = false; // [Tier 0] backchannel 여부
     if (!opts?.closing && !isSummary) {
       const session = await Session.findById(sessionId).select("revealStats").lean();
       const rs = (session as any)?.revealStats;
@@ -122,6 +132,8 @@ export async function handleAITurn(
       isNatural =
         TRIGGER_CONFIG.EXP_NATURAL_DIRECTED && (opts?.natural === true || isOpeningCtx);
       isOpening = isNatural && isOpeningCtx;
+      isBackchannel = cue === "backchannel"; // [Tier 0] backchannel 감지 — computeCue는 반환 안 함, judge reroute에서만
+
       const thin =
         cstar != null && (surfacedByCandidate(rs)[cstar] ?? 0) < TRIGGER_CONFIG.DEPTH_MIN_PER_CAND;
       const isLeader = conditionCode === "C2" || conditionCode === "C4";
@@ -139,7 +151,14 @@ export async function handleAITurn(
       }
     }
     // [Step 61] summary·closing은 cue를 쓰지 않는다(전용 프롬프트). 계산된 cue를 찍으면 일반 턴으로 오독된다.
-    const routeKind = opts?.closing ? "closing" : isSummary ? "summary" : isNatural ? "natural" : "task";
+    // This generator is legacy-only after V2 routing; map its historical names to the new taxonomy.
+    const routeKind: RouteKind = opts?.closing
+      ? "closing"
+      : isSummary
+        ? "summary"
+        : isNatural
+          ? "backchannel"
+          : "build_on";
     log.info(
       `[route] ${routeKind}${opts?.closing || isSummary ? "" : ` cue=${cue}`} (session=${sessionCode})`,
     );
@@ -149,7 +168,7 @@ export async function handleAITurn(
       : isSummary
         ? buildSummaryPrompt(conditionCode, opts?.summaryLeader ?? null) // summary: leader 중간정리 (Step 22/37) — 선언형 or 박빙
         : isNatural
-          ? buildNaturalPrompt(conditionCode, isOpening, naturalTallyText) // [EXP] status-only 자연발화 + [Step 51 §3.7] tally(리더 문장 없이)+standing rule
+          ? buildNaturalPrompt(conditionCode, isOpening, naturalTallyText, isBackchannel) // [EXP] backchannel/task natural 분기
           : buildSystemPromptForTask(conditionCode, cue, tallyText, depthNote); // Step 12 조립 + tally + depth
     // Step 22/C-2: 직전 summary로 선언한 1등과의 일관성 한 줄 (task 턴만, wobble 보강 — 주 가드는 tally)
     if (!opts?.closing && !isSummary && opts?.recentSummaryLeader) {
@@ -167,28 +186,67 @@ export async function handleAITurn(
 
     //AI 호출 - structured output (stateless: previous_response_id 체이닝 제거 — Step 2/E)
     // [Step 44] summary는 board recap 포맷이라 더 길다 → 토큰 캡 상향 (다른 턴은 기본 140 유지).
+    // [Tier 0] closing도 보드 recap 포함 → summary와 동일 상향.
     const result = await callAIStructured({
       systemPrompt,
       userPrompt,
-      ...(isSummary ? { maxOutputTokens: 320 } : {}),
+      ...(isSummary || opts?.closing ? { maxOutputTokens: 320 } : {}),
     });
 
     //공통 메타 - 성공/실패 둘 다 기록
-    const commonMeta = {
+    const commonMeta: Record<string, any> = {
       sessionId,
       turnIndex: ctx.lastMessageSeq,
-      triggerReason: opts?.closing ? "closing" : trigger.name, // provenance (summary는 trigger.name="summary")
-      cue: loggedCue, // Step 6/G·R5 + Step 9/P2: provenance (social이면 "social", 그 외 task cue/closing/summary)
-      why: opts?.summaryTransition, // Step 22/D: summary 전이 기록 (예: "T2(A→C)") — S20 why 필드 재사용
+      triggerReason: opts?.closing ? "closing" : trigger.name,
+      cue: loggedCue,
+      why: opts?.summaryTransition,
       model: result.model,
       prompt: userPrompt,
-      calloutTarget: opts?.callout?.target, // [Step 30] "Participant Y" — 지목 DV (조건 간 비교: leader>0 · peer=0)
-      calloutCand: opts?.callout?.cand, // [Step 30] C4만
+      calloutTarget: opts?.callout?.target,
+      calloutCand: opts?.callout?.cand,
+      // [Tier 0] 메타
+      routeKind: routeKind as RouteKind,
+      judgeSpeak: opts?.judgeSpeak ?? null,
+      judgeReason: opts?.judgeReason ?? null,
+      rerouted: opts?.rerouted ?? false,
+      rerouteReason: (opts?.rerouteReason ?? "none") as RerouteReason,
+      exemptReason: (opts?.exemptReason ?? "none") as ExemptReason,
     };
 
     // 분기1 - 호출 실패
     if (!result.ok) {
       log.error(`[ai-turn] failed: (${result.reason}): ${result.error}`);
+
+      // [Tier 0] closing 턴 LLM 실패 시 fallback 발화 (Pilot 04 silent 문제)
+      if (opts?.closing) {
+        const nextSeq = await allocSeq(sessionId);
+        const fallback = "Let's wrap up here — I think we have enough to make a decision.";
+        const savedMessage = await Message.create({
+          sessionId,
+          sender: "ai",
+          senderRole: "ai",
+          content: fallback,
+          seq: nextSeq,
+          sharedInfoIds: [],
+        });
+        await AIIntervention.create({
+          ...commonMeta,
+          decision: "speak",
+          generateMessageId: savedMessage._id,
+          response: fallback,
+          error: `closing fallback: ${result.reason}: ${result.error}`,
+        });
+        io.to(sessionCode).emit("new-message", {
+          seq: savedMessage.seq,
+          sender: savedMessage.sender,
+          senderRole: savedMessage.senderRole,
+          content: savedMessage.content,
+          createdAt: (savedMessage as any).createdAt.toISOString(),
+        });
+        log.info(`[ai-turn] closing fallback sent for ${sessionCode} seq=${savedMessage.seq}`);
+        return;
+      }
+
       await AIIntervention.create({
         ...commonMeta,
         decision: "stay_silent",
@@ -255,5 +313,7 @@ export async function handleAITurn(
     log.error(`[ai-turn] error: ${error}`);
   } finally {
     aiTurnLock.delete(sessionCode);
+    // [Tier 1, Step 1.3] AI 작성 중 표시 해제 (발화/침묵/실패 모두)
+    io.to(sessionCode).emit("ai-typing", { isTyping: false });
   }
 }

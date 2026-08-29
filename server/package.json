@@ -10,7 +10,10 @@
     "golden": "tsx src/eval/run-golden.ts",
     "judge:cases": "tsx src/eval/run-judge.ts",
     "eval:followup": "tsx src/eval/run-followup.ts",
-    "test:seq": "tsx src/scripts/test-seq-atomic.ts"
+    "test:seq": "tsx src/scripts/test-seq-atomic.ts",
+    "prompts:import": "node scripts/import-route-prompts.mjs",
+    "prompts:compile": "node scripts/compile-route-prompts.mjs",
+    "test:intervention-v2": "npm run build --silent && node dist/scripts/test-intervention-v2.js"
   },
   "dependencies": {
     "cors": "^2.8.6",

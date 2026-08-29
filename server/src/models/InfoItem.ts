@@ -1,4 +1,5 @@
-//InfoItem 모델 - 정보 카드
+//InfoItem model - legacy/dead runtime collection.
+// Current intervention tallying uses traitData.ts because sessions do not seed this collection.
 
 import mongoose from "mongoose";
 import type { ProfileSlot, Candidate, Valence } from "../types.js";

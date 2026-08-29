@@ -14,7 +14,7 @@ import { log } from "./log.js";
 const OVEREXTRACT_MAX_IDS = 4;
 const OVEREXTRACT_MIN_LEN = 70;
 
-const client = new OpenAI({ apiKey: config.openaiApiKey });
+const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 const EXTRACT_MODEL = "gpt-4o-mini";
 const EXTRACT_MAX_TOKENS = 150;
 const EXTRACT_TIMEOUT_MS = 8_000;

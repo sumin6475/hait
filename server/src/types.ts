@@ -39,3 +39,63 @@ export type ProgressStep =
   | "postSurvey"
   | "debrief"
   | "complete";
+
+// [Tier 0] AI 발화 경로 종류 — 분석/관측용
+export type PriorityRoute = "address" | "followup" | "long_silence" | null;
+export type MainJudgeDecision = "contribute" | "acknowledge" | "silent";
+// Where a turn was decided. Keep this separate from the Main Judge result so
+// cooldown, timer, priority, and route-gate suppressions remain distinguishable.
+export type InterventionDecisionStage =
+  | "priority"
+  | "cooldown"
+  | "main_judge"
+  | "route_gate"
+  | "long_silence_timer"
+  | "summary"
+  | "lifecycle"
+  | "system";
+export type RouteKind =
+  | "address"
+  | "followup"
+  | "long_silence"
+  | "build_on"
+  | "mediation"
+  | "backchannel"
+  | "greeting"
+  | "summary"
+  | "closing";
+
+export type TurnOutcome =
+  | "reserved"
+  | "cancelled"
+  | "stay_silent"
+  | "generation_failed"
+  | "saved"
+  | "broadcast";
+
+// [Tier 0] 리라우트 사유 (judge 침묵 때 natural reroute 등)
+// Legacy analysis fields remain readable while V2 writes explicit route outcomes.
+export type RerouteReason = "judge_silent" | "peer_mediation" | "opening" | "none";
+
+// [Tier 0] 쿨다운 면제 사유
+export type ExemptReason = "address" | "followup" | "long_silence" | "none";
+
+// [Tier 0] AI 턴 메타 — AIIntervention에 영속
+export interface TurnMeta {
+  routeKind: RouteKind;
+  judgeSpeak: boolean | null;    // null if judge not called
+  judgeReason: string | null;    // null if judge not called
+  rerouted: boolean;
+  rerouteReason: RerouteReason;
+  exemptReason: ExemptReason;
+}
+
+export interface TurnReservation {
+  id: string;
+  anchorSeq: number;
+  routeKind: Exclude<RouteKind, "greeting" | "closing">;
+  priorityRoute: PriorityRoute;
+  judgeDecision: MainJudgeDecision | null;
+  dueAt: number;
+  source: "push" | "long_silence" | "summary";
+}
