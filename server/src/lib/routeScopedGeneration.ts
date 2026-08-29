@@ -23,6 +23,10 @@ function explicitCandidateLabels(content: string): Set<string> {
 const INTERNAL_METADATA_PATTERNS = [
   /\binternal (?:conversation )?control\b/i,
   /\bserver[- ]derived\b/i,
+  /\bserver[- ]calculated\b/i,
+  /\binternal preference cue\b/i,
+  /\bpreference decision state\b/i,
+  /\b(?:NO_CURRENT_PREFERENCE|CURRENT_CO_PREFERENCE|CURRENT_PREFERENCE)\b/i,
   /\bdepth threshold\b/i,
   /\bfocus (?:directive|calculation)\b/i,
   /\bhuman[- ]confirmed (?:trait )?count\b/i,

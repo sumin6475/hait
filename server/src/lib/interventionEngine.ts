@@ -20,7 +20,7 @@ import {
   resolveRoute,
 } from "./interventionRoutingV2.js";
 import {
-  decidePreferenceFromConfirmedCoverage,
+  decidePreferenceFromVisibleCoverage,
   formatVisibleBoardCoverage,
   relevantUnsurfacedSignal,
   type TranscriptMessage,
@@ -482,17 +482,23 @@ async function broadcastClosingFallback(runtime: RuntimeState, reason: "deadline
   ]);
   if (!session) return;
   const coverage = formatVisibleBoardCoverage((session as any).revealStats);
-  const preference = decidePreferenceFromConfirmedCoverage((session as any).revealStats);
+  const preference = decidePreferenceFromVisibleCoverage((session as any).revealStats);
+  const leaderNamesEn = preference.leaders.map((candidate) => `Candidate ${candidate}`);
+  const leaderListEn =
+    leaderNamesEn.length <= 1
+      ? (leaderNamesEn[0] ?? "")
+      : `${leaderNamesEn.slice(0, -1).join(", ")} and ${leaderNamesEn.at(-1)}`;
+  const leaderListKo = preference.leaders.map((candidate) => `Candidate ${candidate}`).join("·");
   const preferenceEn = preference.candidate
-    ? `My current read is Candidate ${preference.candidate} based on the overall confirmed match-and-miss balance.`
-    : preference.reason === "insufficient_coverage"
-      ? "I do not have a current preference because balanced coverage across all candidates is still incomplete."
-      : "I do not have a single current preference because the confirmed match-minus-miss balance is tied.";
+    ? `My current preference is Candidate ${preference.candidate}; its overall shared profile currently looks strongest on matches relative to misses.`
+    : preference.leaders.length > 1
+      ? `${leaderListEn} currently look even at the top in the overall shared match-and-miss picture, and I would like us to discuss them a little more before separating them.`
+      : "I do not have a current preference yet because not enough has been shared to compare the full field.";
   const preferenceKo = preference.candidate
-    ? `현재 확인된 MATCH와 MISS의 전체 균형으로는 Candidate ${preference.candidate}가 제 개인적인 선택입니다.`
-    : preference.reason === "insufficient_coverage"
-      ? "모든 후보에 대한 균형 잡힌 정보가 아직 충분하지 않아 현재 선호 후보는 없습니다."
-      : "확인된 MATCH와 MISS의 차이가 공동 1위여서 현재 한 후보를 선호한다고 정하기 어렵습니다.";
+    ? `현재 제 선호는 Candidate ${preference.candidate}입니다. 공유된 전체 프로필에서 MISS 대비 MATCH가 가장 좋아 보입니다.`
+    : preference.leaders.length > 1
+      ? `${leaderListKo}가 공유된 전체 MATCH/MISS 구도에서 현재 공동으로 가장 좋아 보입니다. 우열을 가리기 전에 이 후보들을 좀 더 이야기해 보고 싶습니다.`
+      : "전체 후보를 비교하기에는 아직 공유된 정보가 충분하지 않아 현재 선호 후보는 없습니다.";
   const handoffEn =
     runtime.conditionCode === "C4"
       ? "Which candidate best fits the full picture for your final decision?"

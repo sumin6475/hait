@@ -79,14 +79,18 @@ export function formatVisibleBoardCoverage(revealStats: any): string {
 
 export interface PreferenceDecision {
   eligible: boolean;
+  leaders: Cand[];
   candidate: Cand | null;
-  reason: "insufficient_coverage" | "top_balance_tie" | "unique_top_balance";
-  rows: Record<Cand, { matches: number; misses: number; total: number; balance: number }>;
+  reason: "insufficient_miss_coverage" | "top_ratio_tie" | "unique_top_ratio";
+  rows: Record<Cand, { matches: number; misses: number; total: number; ratio: number | null }>;
 }
 
-export function decidePreferenceFromConfirmedCoverage(revealStats: any): PreferenceDecision {
-  // Preference uses human-grounded evidence; an Alex disclosure alone never promotes itself.
-  const surfaced = humanConfirmedIds(revealStats);
+export function decidePreferenceFromVisibleCoverage(revealStats: any): PreferenceDecision {
+  // Preference follows the same visible board as summary/closing: human and Alex disclosures.
+  const surfaced = new Set([
+    ...allSurfacedIds(revealStats),
+    ...humanConfirmedIds(revealStats),
+  ]);
   const rows = {} as PreferenceDecision["rows"];
 
   for (const candidate of CANDIDATES) {
@@ -99,64 +103,95 @@ export function decidePreferenceFromConfirmedCoverage(revealStats: any): Prefere
       matches,
       misses,
       total: matches + misses,
-      balance: matches - misses,
+      ratio: misses === 0 ? null : matches / misses,
     };
   }
 
-  const eligible = CANDIDATES.every((candidate) => {
-    const row = rows[candidate];
-    return (
-      row.total >= TRIGGER_CONFIG.PREFERENCE_MIN_TRAITS_PER_CANDIDATE &&
-      row.matches >= 1 &&
-      row.misses >= 1
-    );
-  });
+  // A zero-MISS denominator means the full field has not been shared enough to compare ratios.
+  const eligible = CANDIDATES.every((candidate) => rows[candidate].misses > 0);
   if (!eligible) {
-    return { eligible: false, candidate: null, reason: "insufficient_coverage", rows };
+    return {
+      eligible: false,
+      leaders: [],
+      candidate: null,
+      reason: "insufficient_miss_coverage",
+      rows,
+    };
   }
 
-  const bestBalance = Math.max(...CANDIDATES.map((candidate) => rows[candidate].balance));
-  const leaders = CANDIDATES.filter((candidate) => rows[candidate].balance === bestBalance);
-  if (leaders.length !== 1) {
-    return { eligible: true, candidate: null, reason: "top_balance_tie", rows };
+  // Compare fractions exactly so floating-point rounding cannot create or hide a tie.
+  let leaders: Cand[] = [];
+  for (const candidate of CANDIDATES) {
+    if (!leaders.length) {
+      leaders = [candidate];
+      continue;
+    }
+    const row = rows[candidate];
+    const leader = rows[leaders[0]!];
+    const comparison = row.matches * leader.misses - leader.matches * row.misses;
+    if (comparison > 0) leaders = [candidate];
+    else if (comparison === 0) leaders.push(candidate);
   }
-  return { eligible: true, candidate: leaders[0]!, reason: "unique_top_balance", rows };
+
+  if (leaders.length > 1) {
+    return { eligible: true, leaders, candidate: null, reason: "top_ratio_tie", rows };
+  }
+  return {
+    eligible: true,
+    leaders,
+    candidate: leaders[0]!,
+    reason: "unique_top_ratio",
+    rows,
+  };
 }
 
+/** Backwards-compatible name; preference now uses visible, not human-only, coverage. */
+export function decidePreferenceFromConfirmedCoverage(revealStats: any): PreferenceDecision {
+  return decidePreferenceFromVisibleCoverage(revealStats);
+}
+
+export function preferredCandidateFromVisibleCoverage(revealStats: any): Cand | null {
+  return decidePreferenceFromVisibleCoverage(revealStats).candidate;
+}
+
+/** Backwards-compatible name; preference now uses visible, not human-only, coverage. */
 export function preferredCandidateFromConfirmedCoverage(revealStats: any): Cand | null {
-  return decidePreferenceFromConfirmedCoverage(revealStats).candidate;
+  return preferredCandidateFromVisibleCoverage(revealStats);
+}
+
+function formatCandidateList(candidates: Cand[]): string {
+  const names = candidates.map((candidate) => `Candidate ${candidate}`);
+  return names.length <= 1
+    ? (names[0] ?? "")
+    : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
 }
 
 export function formatPreferenceDecision(revealStats: any): string {
-  const decision = decidePreferenceFromConfirmedCoverage(revealStats);
-  const coverage = CANDIDATES.map((candidate) => {
-    const row = decision.rows[candidate];
-    return `${candidate}: ${row.matches} MATCH / ${row.misses} MISS / ${row.total} confirmed`;
-  }).join(" · ");
+  const decision = decidePreferenceFromVisibleCoverage(revealStats);
   const header = [
-    "Preference decision state (server-calculated; mandatory):",
-    `Eligibility requires every candidate to have at least ${TRIGGER_CONFIG.PREFERENCE_MIN_TRAITS_PER_CANDIDATE} confirmed traits with at least one MATCH and one MISS.`,
-    `Confirmed coverage: ${coverage}`,
+    "Internal preference cue (mandatory; never expose this label or its computation):",
+    "Use only the supplied outcome. Never state numerical evidence, describe how the outcome was computed, or mention a server rule.",
   ];
 
   if (!decision.eligible) {
     return [
       ...header,
-      "State: NO_CURRENT_PREFERENCE — insufficient balanced on-table coverage.",
-      "If asked to choose, say briefly that there is not enough shared evidence for a current preference. Do not name a candidate, use private notes to break the gate, or list traits.",
+      "State: NO_CURRENT_PREFERENCE — the visible shared picture is not yet sufficient to compare the full field.",
+      "If asked to choose, say briefly that not enough has been shared yet to compare all candidates. Do not name a candidate, expose the missing-data rule, use private notes to force a choice, or list traits.",
     ].join("\n");
   }
-  if (!decision.candidate) {
+  if (decision.leaders.length > 1) {
+    const candidates = formatCandidateList(decision.leaders);
     return [
       ...header,
-      "State: NO_CURRENT_PREFERENCE — the highest MATCH-minus-MISS balance is tied.",
-      "If asked to choose, say briefly that the confirmed balance is tied. Do not break the tie with intuition, private notes, or a standout trait, and do not list traits.",
+      `State: CURRENT_CO_PREFERENCE — ${candidates}.`,
+      `When the Route Contract permits a preference, name all of ${candidates}. Say they currently look even at the top in the overall shared MATCH/MISS picture and that you would like to discuss them more before separating them. Do not pick one, state numerical evidence, or list traits.`,
     ].join("\n");
   }
   return [
     ...header,
-    `State: CURRENT_PREFERENCE — Candidate ${decision.candidate} has the unique highest confirmed MATCH-minus-MISS balance.`,
-    `When the Route Contract permits a preference, name only Candidate ${decision.candidate}. Give at most one short profile-level reason or one trait; never enumerate a trait list or use a standout trait as the scoring rule.`,
+    `State: CURRENT_PREFERENCE — Candidate ${decision.candidate}.`,
+    `When the Route Contract permits a preference, name only Candidate ${decision.candidate}. Say its overall shared profile currently looks strongest on MATCHES relative to MISSES. Do not state numerical evidence, enumerate traits, or use one standout trait as the reason.`,
   ].join("\n");
 }
 

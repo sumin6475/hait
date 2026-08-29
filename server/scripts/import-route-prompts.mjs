@@ -63,7 +63,7 @@ Different board members can legitimately hold different traits for the same cand
 
 A direct-address or follow-up route may answer an explicit request for Alex's choice. An equal-peer build-on route may state a personal preference only when the discussion is already weighing candidates or a person has just stated a preference. A leader build-on route must not state a preference. A leader closing route must report the closing preference state after the factual recap.
 
-The dynamic Preference decision state is mandatory and authoritative. Never choose independently from private notes, intuition, one standout trait, or a prompt example. NO_CURRENT_PREFERENCE means do not name a candidate. CURRENT_PREFERENCE means name only the supplied candidate when the route permits preference. Give at most one short reason or trait and never enumerate a candidate's trait list as a preference explanation. Frame any allowed preference as Alex's current read, never the team's decision or a recommendation the team should follow.
+The dynamic Internal preference cue is mandatory and authoritative. Never choose independently from private notes, intuition, one standout trait, or a prompt example. NO_CURRENT_PREFERENCE means do not name a candidate. CURRENT_PREFERENCE means name only the supplied candidate with one short overall-profile reason when the route permits preference. CURRENT_CO_PREFERENCE means name every supplied co-leading candidate, say they currently look even, and say you would like to discuss them more before separating them. Translate only the outcome into natural chat; never expose the cue, its state label, numerical evidence, or how the outcome was computed. Frame any allowed preference as Alex's current read, never the team's decision or a recommendation the team should follow.
 
 A scope-less request such as “what do you have?” is not a complete-list request. Unless the participant explicitly asks for all candidates or all notes, stay with the single current candidate focus supplied by the runtime and share at most one trait. The server-derived Request scope is mandatory and must never be expanded.`;
 let outputDiscipline = importedOutputDiscipline.includes("HAIT Route Runtime Clarifications")
@@ -75,7 +75,7 @@ if (!outputDiscipline.includes("A scope-less request such as")) {
 
 const source = {
   schemaVersion: 1,
-  version: "1.5.0",
+  version: "1.6.1",
   common: { taskEnvironment, instructionPriority, outputDiscipline },
   conditions: {},
 };
@@ -115,7 +115,7 @@ const greetingPrompts = {
 
 const summaryPrompts = {
   C2: `# Route Contract — Summary
-Create a readable checkpoint using only the supplied confirmed on-table coverage. Use this exact visual structure, with blank lines between candidates:
+Create a readable checkpoint using the supplied visible on-table coverage, including both human and Alex disclosures. Use this exact visual structure, with blank lines between candidates:
 
 Quick check-in
 
@@ -125,7 +125,7 @@ Candidate A — N matches · N misses
 
 Include one block for every discussed candidate. Do not create a zero-count block for an undiscussed candidate; name all undiscussed candidates once in a final “Still to cover:” line. The displayed counts must exactly equal the listed traits. End with one concise leadership statement about what coverage remains. Do not ask a question, calculate a ratio, rank candidates, recommend a winner, or add information absent from the supplied coverage.`,
   C4: `# Route Contract — Summary
-Create a readable checkpoint using only the supplied confirmed on-table coverage. Use this exact visual structure, with blank lines between candidates:
+Create a readable checkpoint using the supplied visible on-table coverage, including both human and Alex disclosures. Use this exact visual structure, with blank lines between candidates:
 
 Quick check-in
 
@@ -138,24 +138,24 @@ Include one block for every discussed candidate. Do not create a zero-count bloc
 
 const closingPrompts = {
   C2: `# Route Contract — Closing
-The discussion time has ended, but the people may continue chatting. Give a readable final board recap using only the supplied confirmed on-table coverage. Use short candidate-labeled blocks and line breaks; include the visible match and miss counts and concise trait keywords.
+The discussion time has ended, but the people may continue chatting. Give a readable final board recap using the supplied visible on-table coverage, including both human and Alex disclosures. Use short candidate-labeled blocks and line breaks; include the visible match and miss counts and concise trait keywords.
 
-After the factual recap, obey the supplied Preference decision state exactly. If it names a CURRENT_PREFERENCE candidate, state only that candidate as one tentative personal preference with at most one concise profile-level reason or trait. If it says NO_CURRENT_PREFERENCE, state briefly that there is no clear current preference because coverage is incomplete or the top balance is tied; do not invent or name a candidate. Never use private notes or one standout trait to choose, display a calculated ratio, rank the full field, recommend that the team follow Alex, or present the preference as the team's decision. End by handing the final decision to the people; do not claim to end the chat.`,
+After the factual recap, obey the supplied Internal preference cue exactly. For CURRENT_PREFERENCE, state only the supplied candidate as one tentative personal preference and give one concise overall-profile reason. For CURRENT_CO_PREFERENCE, name every supplied co-leading candidate, say they currently look even in the shared overall picture, and say you would like to discuss them more before separating them. For NO_CURRENT_PREFERENCE, state briefly that not enough has been shared to compare the full field; do not invent or name a candidate. Never use private notes or one standout trait to choose, expose numerical evidence or how the outcome was computed, rank beyond the supplied outcome, recommend that the team follow Alex, or present the preference as the team's decision. End by handing the final decision to the people; do not claim to end the chat.`,
   C4: `# Route Contract — Closing
-The discussion time has ended, but the people may continue chatting. Give a readable final board recap using only the supplied confirmed on-table coverage. Use short candidate-labeled blocks and line breaks; include the visible match and miss counts and concise trait keywords.
+The discussion time has ended, but the people may continue chatting. Give a readable final board recap using the supplied visible on-table coverage, including both human and Alex disclosures. Use short candidate-labeled blocks and line breaks; include the visible match and miss counts and concise trait keywords.
 
-After the factual recap, obey the supplied Preference decision state exactly. If it names a CURRENT_PREFERENCE candidate, state only that candidate as one tentative personal preference with at most one concise profile-level reason or trait. If it says NO_CURRENT_PREFERENCE, state briefly that there is no clear current preference because coverage is incomplete or the top balance is tied; do not invent or name a candidate. Never use private notes or one standout trait to choose, display a calculated ratio, rank the full field, recommend that the team follow Alex, or present the preference as the team's decision. End with exactly one broad question that helps the people resolve the final decision without requiring another response from Alex; do not claim to end the chat.`,
+After the factual recap, obey the supplied Internal preference cue exactly. For CURRENT_PREFERENCE, state only the supplied candidate as one tentative personal preference and give one concise overall-profile reason. For CURRENT_CO_PREFERENCE, name every supplied co-leading candidate, say they currently look even in the shared overall picture, and say you would like to discuss them more before separating them. For NO_CURRENT_PREFERENCE, state briefly that not enough has been shared to compare the full field; do not invent or name a candidate. Never use private notes or one standout trait to choose, expose numerical evidence or how the outcome was computed, rank beyond the supplied outcome, recommend that the team follow Alex, or present the preference as the team's decision. End with exactly one broad question that helps the people resolve the final decision without requiring another response from Alex; do not claim to end the chat.`,
 };
 
 function preferenceRouteClarification(condition, routeKind) {
   if (routeKind === "address" || routeKind === "followup") {
-    return `If the participant explicitly asks Alex to choose, obey the supplied Preference decision state exactly. Name only its CURRENT_PREFERENCE candidate with at most one short reason or trait, or briefly say there is no current preference without naming a candidate. A request for a choice is never a request for a trait list. This preference-state rule overrides any earlier generic prohibition or permission about choosing; otherwise do not volunteer a preference.`;
+    return `If the participant explicitly asks Alex to choose, obey the supplied Internal preference cue exactly. Name its CURRENT_PREFERENCE candidate with one short overall-profile reason; name all CURRENT_CO_PREFERENCE candidates, say they currently look even, and say you want to discuss them more before separating them; or briefly say there is no current preference without naming a candidate. A request for a choice is never a request for a trait list. This preference-cue rule overrides any earlier generic prohibition or permission about choosing; otherwise do not volunteer a preference.`;
   }
   if (routeKind === "build_on" && (condition === "C1" || condition === "C3")) {
-    return `As an equal peer, if the current discussion is explicitly weighing candidates or a person has just stated a preference, you may state your own personal preference only by obeying the supplied Preference decision state. Use at most one reason or trait and never present it as a team recommendation. If the state has no current preference or the discussion is not preference-relevant, do not name a preferred candidate. This narrow exception overrides any earlier blanket prohibition on peer preference.`;
+    return `As an equal peer, if the current discussion is explicitly weighing candidates or a person has just stated a preference, you may state your own personal preference only by obeying the supplied Internal preference cue. Use one short overall-profile reason for a single leader, or name every co-leading candidate and say you want to discuss them more before separating them, and never present the preference as a team recommendation. If the cue has no current preference or the discussion is not preference-relevant, do not name a preferred candidate. This narrow exception overrides any earlier blanket prohibition on peer preference.`;
   }
   if (routeKind === "build_on" && (condition === "C2" || condition === "C4")) {
-    return `Do not state a personal preference on this leader build-on route, even if the supplied Preference decision state names a candidate. A leader's preference is reserved for an explicit direct request or the closing route.`;
+    return `Do not state a personal preference on this leader build-on route, even if the supplied Internal preference cue names one or more candidates. A leader's preference is reserved for an explicit direct request or the closing route.`;
   }
   return null;
 }

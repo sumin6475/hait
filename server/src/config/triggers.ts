@@ -34,9 +34,6 @@ export const TRIGGER_CONFIG = {
   SUMMARY_MIN_CANDIDATES: 2,
   SUMMARY_LATEST_BEFORE_END_MS: 5 * 60 * 1000,
 
-  // A preference is withheld until every candidate has balanced on-table coverage.
-  PREFERENCE_MIN_TRAITS_PER_CANDIDATE: 3,
-
   MEDIATION_TTL_MS: 3 * 60 * 1000,
   MEDIATION_TTL_HUMAN_MESSAGES: 8,
   MEDIATION_BUILD_ON_THRESHOLD: 2,

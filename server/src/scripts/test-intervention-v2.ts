@@ -8,13 +8,13 @@ import {
 import { buildFollowupCandidateTranscript } from "../lib/followupJudge.js";
 import {
   buildRouteUserContext,
-  decidePreferenceFromConfirmedCoverage,
+  decidePreferenceFromVisibleCoverage,
   deriveFocusDepthState,
   formatConfirmedCoverage,
   formatLongSilenceContinuity,
   formatPreferenceDecision,
   formatVisibleBoardCoverage,
-  preferredCandidateFromConfirmedCoverage,
+  preferredCandidateFromVisibleCoverage,
 } from "../lib/routeContext.js";
 import { getRoutePrompt, listRoutePromptKeys } from "../lib/routePromptRegistry.js";
 import {
@@ -117,7 +117,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.6.0");
+    assert.equal(resolvedPrompt.promptVersion, "1.6.1");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -217,7 +217,8 @@ for (const condition of ["C2", "C4"] as const) {
   assert.match(closing, /visible on-table coverage/i);
   assert.match(closing, /human and Alex disclosures/i);
   assert.match(closing, /personal preference/i);
-  assert.match(closing, /obey the supplied Preference decision state exactly/i);
+  assert.match(closing, /obey the supplied Internal preference cue exactly/i);
+  assert.match(closing, /CURRENT_CO_PREFERENCE/);
   assert.doesNotMatch(closing, /My current read is Candidate C/);
 }
 
@@ -233,8 +234,9 @@ assert.match(
 for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const routeKind of ["address", "followup"] as const) {
     const choicePrompt = getRoutePrompt(condition, routeKind).systemPrompt;
-    assert.match(choicePrompt, /obey the supplied Preference decision state exactly/i);
-    assert.match(choicePrompt, /at most one short reason or trait/i);
+    assert.match(choicePrompt, /obey the supplied Internal preference cue exactly/i);
+    assert.match(choicePrompt, /one short overall-profile reason/i);
+    assert.match(choicePrompt, /CURRENT_CO_PREFERENCE/);
     assert.match(choicePrompt, /never a request for a trait list/i);
   }
 }
@@ -348,7 +350,7 @@ const coverage = formatConfirmedCoverage(revealStats);
 assert.match(coverage, /Candidate A — 1 matches · 1 misses/);
 assert.match(coverage, /Candidate B — 1 matches · 1 misses/);
 assert.match(coverage, /Still to cover: C, D/);
-assert.equal(preferredCandidateFromConfirmedCoverage(revealStats), null);
+assert.equal(preferredCandidateFromVisibleCoverage(revealStats), null);
 
 const separatedInformationStats = {
   byCandidate: {
@@ -376,8 +378,14 @@ assert.match(visibleBoardCoverage, /Candidate A — 3 matches · 1 misses/);
 assert.match(visibleBoardCoverage, /Candidate B — 2 matches · 1 misses/);
 assert.match(visibleBoardCoverage, /Candidate C — 2 matches · 1 misses/);
 assert.match(visibleBoardCoverage, /Still to cover: D/);
-assert.equal(preferredCandidateFromConfirmedCoverage(separatedInformationStats), null);
-const incompletePreferenceStats = {
+assert.equal(preferredCandidateFromVisibleCoverage(separatedInformationStats), null);
+assert.equal(
+  decidePreferenceFromVisibleCoverage(separatedInformationStats).reason,
+  "insufficient_miss_coverage",
+);
+
+// No arbitrary minimum trait count remains once every candidate has a visible MISS.
+const minimalPreferenceStats = {
   byCandidate: {
     A: { revealedIds: ["A_p1", "A_n1"] },
     B: { revealedIds: ["B_p1", "B_n1"] },
@@ -386,11 +394,8 @@ const incompletePreferenceStats = {
   },
   aiSurfacedIds: [],
 };
-assert.equal(preferredCandidateFromConfirmedCoverage(incompletePreferenceStats), null);
-assert.equal(
-  decidePreferenceFromConfirmedCoverage(incompletePreferenceStats).reason,
-  "insufficient_coverage",
-);
+assert.equal(preferredCandidateFromVisibleCoverage(minimalPreferenceStats), "C");
+assert.equal(decidePreferenceFromVisibleCoverage(minimalPreferenceStats).reason, "unique_top_ratio");
 
 const uniquePreferenceStats = {
   byCandidate: {
@@ -401,20 +406,40 @@ const uniquePreferenceStats = {
   },
   aiSurfacedIds: [],
 };
-assert.equal(preferredCandidateFromConfirmedCoverage(uniquePreferenceStats), "C");
+assert.equal(preferredCandidateFromVisibleCoverage(uniquePreferenceStats), "C");
 assert.match(formatPreferenceDecision(uniquePreferenceStats), /CURRENT_PREFERENCE — Candidate C/);
+assert.doesNotMatch(formatPreferenceDecision(uniquePreferenceStats), /\d+ MATCH \/ \d+ MISS/);
+assert.doesNotMatch(formatPreferenceDecision(uniquePreferenceStats), /ratio/i);
 
 const tiedPreferenceStats = {
   byCandidate: {
     A: { revealedIds: ["A_p1", "A_p2", "A_n1"] },
-    B: { revealedIds: ["B_p1", "B_p2", "B_n1"] },
-    C: { revealedIds: ["C_p1", "C_p2", "C_n1"] },
-    D: { revealedIds: ["D_p1", "D_p2", "D_n1"] },
+    B: { revealedIds: ["B_p1", "B_n1"] },
+    C: { revealedIds: ["C_p1", "C_p2", "C_p3", "C_p4", "C_n1", "C_n2"] },
+    D: { revealedIds: ["D_p1", "D_n1", "D_n2"] },
   },
   aiSurfacedIds: [],
 };
-assert.equal(preferredCandidateFromConfirmedCoverage(tiedPreferenceStats), null);
-assert.equal(decidePreferenceFromConfirmedCoverage(tiedPreferenceStats).reason, "top_balance_tie");
+assert.equal(preferredCandidateFromVisibleCoverage(tiedPreferenceStats), null);
+assert.deepEqual(decidePreferenceFromVisibleCoverage(tiedPreferenceStats).leaders, ["A", "C"]);
+assert.equal(decidePreferenceFromVisibleCoverage(tiedPreferenceStats).reason, "top_ratio_tie");
+assert.match(
+  formatPreferenceDecision(tiedPreferenceStats),
+  /CURRENT_CO_PREFERENCE — Candidate A and Candidate C/,
+);
+
+// Alex disclosures are part of the same visible board used by summary and can change the leader.
+const alexVisiblePreferenceStats = {
+  byCandidate: {
+    A: { revealedIds: ["A_p1", "A_n1"] },
+    B: { revealedIds: ["B_p1", "B_n1"] },
+    C: { revealedIds: ["C_p1", "C_n1"] },
+    D: { revealedIds: ["D_p1", "D_n1"] },
+  },
+  aiSurfacedIds: ["C_p2", "C_p3"],
+};
+assert.equal(preferredCandidateFromVisibleCoverage(alexVisiblePreferenceStats), "C");
+assert.equal(decidePreferenceFromVisibleCoverage(alexVisiblePreferenceStats).rows.C.matches, 3);
 
 const messages = Array.from({ length: 45 }, (_, index) => ({
   seq: index + 1,
@@ -453,7 +478,7 @@ const earlyChoiceContext = buildRouteUserContext({
       content: "Alex, who is best?",
     },
   ],
-  revealStats: incompletePreferenceStats,
+  revealStats: separatedInformationStats,
   language: "en",
   anchorSeq: 1,
 });
@@ -477,8 +502,25 @@ const informedChoiceContext = buildRouteUserContext({
 assert.match(informedChoiceContext.userPrompt, /CURRENT_PREFERENCE — Candidate C/);
 assert.match(
   informedChoiceContext.userPrompt,
-  /at most one short profile-level reason or one trait/i,
+  /overall shared profile currently looks strongest/i,
 );
+
+const tiedChoiceContext = buildRouteUserContext({
+  routeKind: "address",
+  messages: [
+    {
+      seq: 1,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Alex, who is best?",
+    },
+  ],
+  revealStats: tiedPreferenceStats,
+  language: "en",
+  anchorSeq: 1,
+});
+assert.match(tiedChoiceContext.userPrompt, /CURRENT_CO_PREFERENCE/);
+assert.match(tiedChoiceContext.userPrompt, /discuss them more before separating them/i);
 
 const scopedInformationContext = buildRouteUserContext({
   routeKind: "address",
@@ -727,6 +769,10 @@ assert.equal(
   internalMetadataLeak("Internal conversation control says Candidate A."),
   "internal_metadata_leak",
 );
+assert.equal(
+  internalMetadataLeak("The server-calculated CURRENT_CO_PREFERENCE is A and C."),
+  "internal_metadata_leak",
+);
 assert.equal(internalMetadataLeak("Let's keep looking at Candidate A."), null);
 
 assert.equal(routeGenerationLimits("summary").maxOutputTokens, null);
@@ -740,6 +786,4 @@ assert.equal(TRIGGER_CONFIG.FOLLOWUP_FLOOR_MS, 2_000);
 assert.equal(TRIGGER_CONFIG.MAIN_ROUTE_DELAY_MS, 3_000);
 assert.equal(TRIGGER_CONFIG.LONG_SILENCE_SECONDS, 15);
 assert.equal(TRIGGER_CONFIG.DISCUSSION_DURATION_MS, 30 * 60 * 1_000);
-assert.equal(TRIGGER_CONFIG.PREFERENCE_MIN_TRAITS_PER_CANDIDATE, 3);
-
 console.log("intervention-v2 checks passed");
