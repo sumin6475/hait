@@ -12,7 +12,11 @@ import { Message } from "../models/Message.js";
 import { Session } from "../models/Session.js";
 import { allocSeq } from "./seq.js";
 import { getRoutePrompt } from "./routePromptRegistry.js";
-import { buildRouteUserContext, type TranscriptMessage } from "./routeContext.js";
+import {
+  buildRouteUserContext,
+  type RequestIntent,
+  type TranscriptMessage,
+} from "./routeContext.js";
 import { transcriptLabel } from "./labels.js";
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
@@ -54,12 +58,21 @@ export interface RouteTurnResult {
   error?: string;
 }
 
-export function routeGenerationLimits(routeKind: RouteKind) {
+export function routeGenerationLimits(routeKind: RouteKind, requestIntent?: RequestIntent) {
   if (routeKind === "summary") {
     return { maxOutputTokens: null, maxContentChars: null, timeoutMs: 60_000 };
   }
   if (routeKind === "closing") {
     return { maxOutputTokens: null, maxContentChars: null, timeoutMs: 60_000 };
+  }
+  // Complete-list turns enumerate every match and miss; the content schema cap
+  // rejects oversized output outright, so give these turns room up front
+  // instead of losing the turn to a parse failure or a repair loop.
+  if (
+    requestIntent?.kind === "complete_single_candidate" ||
+    requestIntent?.kind === "complete_all_candidates"
+  ) {
+    return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
   }
   return { maxOutputTokens: 240, maxContentChars: 800, timeoutMs: 30_000 };
 }
@@ -136,6 +149,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       contextToSeq: context.contextToSeq ?? undefined,
       floorMs: input.floorMs,
       ...focusDepthAudit,
+      requestIntentKind: context.requestIntent.kind,
+      requestIntentSource: context.requestIntent.source,
       generationSucceeded: false,
       broadcastSucceeded: false,
       repairAudit,
@@ -147,7 +162,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   const generated = await generateScopedRouteMessage({
     systemPrompt: prompt.systemPrompt,
     userPrompt: context.userPrompt,
-    limits: routeGenerationLimits(input.routeKind),
+    limits: routeGenerationLimits(input.routeKind, context.requestIntent),
     guard: context.outputScopeGuard,
     logContext:
       `stage=${input.decisionStage ?? "system"} route=${input.routeKind} ` +
@@ -273,6 +288,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       mediationEvidence: input.mediationEvidence,
       buildOnsSinceMediation: input.buildOnsSinceMediation,
       outputScopeCandidate: context.outputScopeGuard?.candidate,
+      requestIntentKind: context.requestIntent.kind,
+      requestIntentSource: context.requestIntent.source,
       outputScopeRepaired: Boolean(generated.scopeRepair),
       outputScopeViolation: generated.scopeRepair?.violation,
       internalMetadataRepaired: Boolean(generated.internalMetadataRepair),

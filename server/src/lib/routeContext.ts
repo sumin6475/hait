@@ -448,16 +448,28 @@ function anchorHumanMessage(
 function requestOverridesFocusControl(
   routeKind: RouteKind,
   anchor: TranscriptMessage | undefined,
+  intent: RequestIntent,
 ): boolean {
   if (routeKind !== "address" && routeKind !== "followup") return false;
   if (!anchor) return false;
-  if (
-    matchesAny(anchor.content, EXPLICIT_ALL_SCOPE) ||
-    matchesAny(anchor.content, EXPLICIT_COMPLETE_SINGLE)
-  ) {
+  if (intent.kind === "complete_all_candidates" || intent.kind === "complete_single_candidate") {
     return true;
   }
   return FOCUS_SCOPE_OVERRIDE.test(anchor.content) || candidateMentions(anchor.content).size > 1;
+}
+
+// A peer build-on may state a preference only when the discussion is already
+// weighing candidates or a person has just stated one (Route Contract).
+const PEER_PREFERENCE_STATEMENT =
+  /\b(?:i prefer|i choose|i'?m leaning|my pick|go with|vote for|rather have|best|worst|strongest|weakest)\b/i;
+
+function peerBuildOnPreferenceRelevant(anchor: TranscriptMessage | undefined): boolean {
+  if (!anchor) return false;
+  return (
+    PEER_PREFERENCE_STATEMENT.test(anchor.content) ||
+    FOCUS_SCOPE_OVERRIDE.test(anchor.content) ||
+    candidateMentions(anchor.content).size > 1
+  );
 }
 
 function formatInternalFocusControl(state: FocusDepthState): string | null {
@@ -496,7 +508,11 @@ export interface RouteOutputScopeGuard {
   // the subject stable; only a route contract or an explicitly scope-less
   // request should mechanically limit how many traits can be answered.
   maxTraitIds?: number;
-  reason: "scopeless_information_request" | "focus_depth" | "route_single_point";
+  reason:
+    | "scopeless_information_request"
+    | "focus_depth"
+    | "route_single_point"
+    | "explicit_complete_request";
 }
 
 const BROAD_INFORMATION_REQUESTS = [
@@ -512,55 +528,182 @@ const EXPLICIT_ALL_SCOPE = [
   /(?:모든|전체)\s*(?:후보|후보자|프로필|노트|메모)/,
 ];
 const EXPLICIT_COMPLETE_SINGLE = [
-  /\b(?:all|every|complete|full)\s+(?:of\s+)?(?:the\s+)?(?:traits?|matches|misses|profile|notes?)\b/i,
-  /\beverything\s+you\s+(?:have|got)\b/i,
-  /(?:전부|모두|전체).*(?:속성|장단점|매치|미스)/,
+  /\b(?:all|every|complete|full)\s+(?:of\s+)?(?:the\s+)?(?:traits?|matches|misses|profiles?|notes?)\b/i,
+  /\beverything\s+you\s+(?:have|got|know)\b/i,
+  /(?:전부|모두|전체|모든)\s*(?:특성|속성|장단점|매치|미스|프로필|노트|메모)/,
 ];
+const EVERYTHING_REQUEST = /\beverything\s+(?:you\s+(?:have|got|know)|you've\s+got|on)\b/i;
 
 function matchesAny(text: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(text));
 }
 
-function requestScopeForRoute(input: {
+/* ────────────────────────────────────────────────────────────────────────────
+ * RequestIntent — the anchor human message's request is classified exactly once,
+ * and that single classification drives the request-scope block, the output
+ * guard, the focus-control override, and the preference-cue injection. This
+ * keeps those four consumers from making independent (and conflicting) calls
+ * about the same sentence.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export type RequestIntentKind =
+  | "complete_single_candidate" // explicit complete list for one candidate
+  | "complete_all_candidates" // all candidates / all notes
+  | "scoped_information_request" // broad request with no explicit scope → one trait
+  | "preference_request" // who is best / which one / your pick
+  | "none";
+
+// Where the answer is expected to come from. A peer holds only its own notes
+// and never a whole-board view; a visible_board request to a peer is answered
+// with a passive limitation instead of an aggregation.
+export type RequestSource = "alex_notes" | "visible_board";
+
+export interface RequestIntent {
+  kind: RequestIntentKind;
+  candidate: Cand | null;
+  source: RequestSource;
+}
+
+export const NO_REQUEST_INTENT: RequestIntent = {
+  kind: "none",
+  candidate: null,
+  source: "alex_notes",
+};
+
+const VISIBLE_BOARD_SCOPE =
+  /\b(?:on the table|so far|at this point|already (?:shared|said|mentioned|discussed)|been (?:said|shared|discussed|covered)|we(?:'ve| have) (?:heard|got|covered)|in the (?:chat|discussion))\b|(?:테이블|지금까지|여태|나온|공유된|말해진|논의된)/i;
+
+export function classifyRequestIntent(content: string | undefined | null): RequestIntent {
+  const text = content?.trim() ?? "";
+  if (!text) return NO_REQUEST_INTENT;
+  const source: RequestSource = VISIBLE_BOARD_SCOPE.test(text) ? "visible_board" : "alex_notes";
+  const mentions = candidateMentions(text);
+  const completeMarker =
+    matchesAny(text, EXPLICIT_COMPLETE_SINGLE) || EVERYTHING_REQUEST.test(text);
+  const allMarker = matchesAny(text, EXPLICIT_ALL_SCOPE);
+  const named = mentions.size === 1 ? [...mentions][0]! : null;
+
+  // Priority 1 — a named candidate plus a complete marker is a complete list
+  // for THAT candidate. It is not gated behind broad-information phrasing
+  // ("Can you give me all traits of Candidate B?" carries no "what do you
+  // have") and it outranks the current conversational focus and the one-trait
+  // guard.
+  if (completeMarker && named && !allMarker) {
+    return { kind: "complete_single_candidate", candidate: named, source };
+  }
+  // Priority 2 — whole-field requests.
+  if (allMarker || (completeMarker && mentions.size > 1)) {
+    return { kind: "complete_all_candidates", candidate: null, source };
+  }
+  // Complete marker without a named candidate → complete list of the current
+  // focus (resolved when the scope block is built).
+  if (completeMarker) {
+    return { kind: "complete_single_candidate", candidate: null, source };
+  }
+  // Priority 3 — broad information request with no explicit scope.
+  if (matchesAny(text, BROAD_INFORMATION_REQUESTS)) {
+    return { kind: "scoped_information_request", candidate: null, source };
+  }
+  // Priority 4 — preference questions; only these make the preference cue
+  // relevant on address/followup routes.
+  if (FOCUS_SCOPE_OVERRIDE.test(text)) {
+    return { kind: "preference_request", candidate: null, source };
+  }
+  return NO_REQUEST_INTENT;
+}
+
+/** Peer has no whole-board view: a whole-table request is answered passively, never aggregated. */
+function peerWholeTableLimitation(language: "en" | "ko", candidate: Cand | null): string {
+  if (language === "ko") {
+    return [
+      "Request scope (server-derived; mandatory): 참가자가 테이블에 올라온 전체 내용을 요청했지만, 당신은 본인의 노트만 갖고 있어 테이블 전체를 볼 수 없습니다.",
+      "모두가 말한 내용을 취합·재구성·요약하지 말고, 특성을 나열하지 마세요.",
+      '짧고 수동적으로, 캐릭터를 유지하며 답하세요 — "테이블 전체 내용은 잘 모르겠어"라는 취지로.',
+      candidate
+        ? `도움이 된다면 Candidate ${candidate}에 대해 본인 노트에서 한 가지만 덧붙여도 됩니다.`
+        : "도움이 된다면 본인 노트에서 한 가지만 덧붙여도 됩니다.",
+      "규칙이나 역할 때문에 답할 수 없다고 말하지 마세요.",
+    ].join(" ");
+  }
+  return [
+    "Request scope (server-derived; mandatory): the participant asked for everything that has been said on the table, but you hold only your own notes and do not have the full board.",
+    "Do not aggregate, reconstruct, or summarize what everyone has said, and do not list traits.",
+    'Reply briefly and passively, staying in character — the spirit of "I\'m not really sure what the whole table looks like."',
+    candidate
+      ? `If it helps, you may add one single point from your own notes on Candidate ${candidate}.`
+      : "If it helps, you may add one single point from your own notes.",
+    "Do not say that a rule or your role prevents you from answering.",
+  ].join(" ");
+}
+
+function requestScopeFromIntent(input: {
   routeKind: RouteKind;
+  conditionCode: ConditionCode;
   window: TranscriptMessage[];
   revealStats: any;
-  anchorSeq: number;
+  language: "en" | "ko";
+  intent: RequestIntent;
 }): { block: string; guard?: RouteOutputScopeGuard } | null {
   if (input.routeKind !== "address" && input.routeKind !== "followup") return null;
-  const anchor = anchorHumanMessage(input.window, input.anchorSeq);
-  if (!anchor || !matchesAny(anchor.content, BROAD_INFORMATION_REQUESTS)) return null;
-  if (matchesAny(anchor.content, EXPLICIT_ALL_SCOPE)) {
+  const { intent } = input;
+  const peer = !isLeaderCondition(input.conditionCode);
+
+  if (intent.kind === "complete_all_candidates") {
+    if (peer && intent.source === "visible_board") {
+      return { block: peerWholeTableLimitation(input.language, null) };
+    }
     return {
       block:
         "Request scope (server-derived): the participant explicitly requested an all-candidate or all-notes scope. Answer only that explicit scope and remain concise.",
     };
   }
 
-  const transcriptFocus = currentTopicCandidate(
-    input.window.map((message) => ({ sender: message.speaker, content: message.content })),
-  );
-  const focus =
-    transcriptFocus ?? lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
-  if (!focus) {
+  if (intent.kind === "complete_single_candidate") {
+    const focus =
+      intent.candidate ??
+      currentTopicCandidate(
+        input.window.map((message) => ({ sender: message.speaker, content: message.content })),
+      ) ??
+      lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
+    if (!focus) {
+      return {
+        block:
+          "Request scope (server-derived): this is a complete-list request, but no single candidate can be established from the request or the current discussion. Do not dump notes or expand across candidates; give a brief scope limitation consistent with the condition style.",
+      };
+    }
+    if (peer && intent.source === "visible_board") {
+      return { block: peerWholeTableLimitation(input.language, focus) };
+    }
     return {
-      block:
-        "Request scope (server-derived): this is not an all-candidate request, but no single current candidate focus can be established. Do not dump notes or expand across candidates; give a brief scope limitation consistent with the condition style.",
+      block: `Request scope (server-derived): the explicit complete-list request applies only to Candidate ${focus}. List every match and every miss you hold for Candidate ${focus}, and do not expand to another candidate.`,
+      guard: { candidate: focus, reason: "explicit_complete_request" },
     };
   }
-  if (matchesAny(anchor.content, EXPLICIT_COMPLETE_SINGLE)) {
+
+  if (intent.kind === "scoped_information_request") {
+    const transcriptFocus = currentTopicCandidate(
+      input.window.map((message) => ({ sender: message.speaker, content: message.content })),
+    );
+    const focus =
+      transcriptFocus ??
+      lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
+    if (!focus) {
+      return {
+        block:
+          "Request scope (server-derived): this is not an all-candidate request, but no single current candidate focus can be established. Do not dump notes or expand across candidates; give a brief scope limitation consistent with the condition style.",
+      };
+    }
     return {
-      block: `Request scope (server-derived): the explicit complete-list request applies only to the current focus, Candidate ${focus}. Do not expand to another candidate.`,
+      block: `Request scope (server-derived; mandatory): this is not an all-candidate or complete-list request. The current discussion focus is Candidate ${focus}. Answer only about Candidate ${focus}, include at most one trait, and do not expand to another candidate.`,
+      guard: {
+        candidate: focus,
+        maxTraitIds: 1,
+        reason: "scopeless_information_request",
+      },
     };
   }
-  return {
-    block: `Request scope (server-derived; mandatory): this is not an all-candidate or complete-list request. The current discussion focus is Candidate ${focus}. Answer only about Candidate ${focus}, include at most one trait, and do not expand to another candidate.`,
-    guard: {
-      candidate: focus,
-      maxTraitIds: 1,
-      reason: "scopeless_information_request",
-    },
-  };
+
+  return null;
 }
 
 export function buildRouteUserContext(input: {
@@ -576,6 +719,7 @@ export function buildRouteUserContext(input: {
   contextToSeq: number | null;
   outputScopeGuard?: RouteOutputScopeGuard;
   focusDepthState: FocusDepthState;
+  requestIntent: RequestIntent;
 } {
   const window = input.messages.slice(-WINDOWS[input.routeKind]);
   const transcript = window
@@ -621,25 +765,41 @@ export function buildRouteUserContext(input: {
   if (input.routeKind === "long_silence") {
     blocks.push(formatLongSilenceContinuity(window));
   }
+  // The anchor human message is classified exactly once; the same intent
+  // drives the focus-control override, the preference cue, and the scope block.
+  const anchor = anchorHumanMessage(window, input.anchorSeq);
+  const requestIntent =
+    input.routeKind === "address" || input.routeKind === "followup"
+      ? classifyRequestIntent(anchor?.content)
+      : NO_REQUEST_INTENT;
   const focusControlOverridden = requestOverridesFocusControl(
     input.routeKind,
-    anchorHumanMessage(window, input.anchorSeq),
+    anchor,
+    requestIntent,
   );
   const focusControl = focusControlOverridden ? null : formatInternalFocusControl(focusDepthState);
   if (focusControl) blocks.push(focusControl);
-  if (
-    input.routeKind === "address" ||
-    input.routeKind === "followup" ||
-    input.routeKind === "build_on" ||
-    input.routeKind === "closing"
-  ) {
+  // Inject the preference cue only where the Route Contract can actually spend
+  // it: closing always; address/followup on explicit preference requests;
+  // peer build-on while the discussion is already weighing candidates. A
+  // leader build-on must not state a preference, so the cue is noise there.
+  const preferenceCueWanted =
+    input.routeKind === "closing" ||
+    ((input.routeKind === "address" || input.routeKind === "followup") &&
+      requestIntent.kind === "preference_request") ||
+    (input.routeKind === "build_on" &&
+      !isLeaderCondition(input.conditionCode) &&
+      peerBuildOnPreferenceRelevant(anchor));
+  if (preferenceCueWanted) {
     blocks.push(formatPreferenceDecision(input.revealStats));
   }
-  const requestScope = requestScopeForRoute({
+  const requestScope = requestScopeFromIntent({
     routeKind: input.routeKind,
+    conditionCode: input.conditionCode,
     window,
     revealStats: input.revealStats,
-    anchorSeq: input.anchorSeq,
+    language: input.language,
+    intent: requestIntent,
   });
   if (requestScope) blocks.push(requestScope.block);
   if (transcript) blocks.push(`Recent conversation:\n${transcript}`);
@@ -669,5 +829,6 @@ export function buildRouteUserContext(input: {
     contextToSeq: window.at(-1)?.seq ?? null,
     outputScopeGuard,
     focusDepthState,
+    requestIntent,
   };
 }

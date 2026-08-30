@@ -8,6 +8,7 @@ import {
 import { buildFollowupCandidateTranscript } from "../lib/followupJudge.js";
 import {
   buildRouteUserContext,
+  classifyRequestIntent,
   decidePreferenceFromVisibleCoverage,
   deriveFocusDepthState,
   deriveMainJudgeSignalFromRules,
@@ -727,7 +728,249 @@ const explicitCompleteCandidateContext = buildRouteUserContext({
   anchorSeq: 10,
 });
 assert.match(explicitCompleteCandidateContext.userPrompt, /applies only.*Candidate B/i);
-assert.equal(explicitCompleteCandidateContext.outputScopeGuard, undefined);
+// Complete-list requests are bounded to the named candidate but carry no trait-count cap.
+assert.deepEqual(explicitCompleteCandidateContext.outputScopeGuard, {
+  candidate: "B",
+  reason: "explicit_complete_request",
+});
+assert.equal(explicitCompleteCandidateContext.requestIntent.kind, "complete_single_candidate");
+assert.equal(explicitCompleteCandidateContext.requestIntent.source, "alex_notes");
+
+// [RequestIntent] 분류기 단위 판정표 — 표면 문장 추가가 아니라 카테고리 흡수 확인.
+assert.deepEqual(classifyRequestIntent("Can you give me all traits of Candidate B?"), {
+  kind: "complete_single_candidate",
+  candidate: "B",
+  source: "alex_notes",
+});
+assert.deepEqual(classifyRequestIntent("Tell me everything you have on B"), {
+  kind: "complete_single_candidate",
+  candidate: "B",
+  source: "alex_notes",
+});
+assert.equal(
+  classifyRequestIntent("What do you have for all candidates?").kind,
+  "complete_all_candidates",
+);
+assert.equal(
+  classifyRequestIntent("Yeah, what do you have, Alex?").kind,
+  "scoped_information_request",
+);
+assert.equal(classifyRequestIntent("Alex, who is best?").kind, "preference_request");
+assert.equal(classifyRequestIntent("Which one would you pick?").kind, "preference_request");
+assert.equal(
+  classifyRequestIntent("Candidate A has a good overview of complex contexts.").kind,
+  "none",
+);
+assert.equal(
+  classifyRequestIntent("What do you have on the table so far for Candidate B?").source,
+  "visible_board",
+);
+assert.equal(classifyRequestIntent("Alex, who is best?").source, "alex_notes");
+
+// [RequestIntent] 핵심 회귀 케이스 — "what do you have" 같은 표면 문장 없이도,
+// 그리고 대화 포커스가 다른 후보여도, 명시된 후보 B의 전체 목록 요청으로 확정된다.
+const completeSingleBareContext = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C1",
+  messages: [
+    {
+      seq: 8,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Let's stick with Candidate A.",
+    },
+    {
+      seq: 9,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "Can you give me all traits of Candidate B?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 9,
+});
+assert.match(completeSingleBareContext.userPrompt, /applies only to Candidate B/);
+assert.match(completeSingleBareContext.userPrompt, /List every match and every miss/i);
+assert.deepEqual(completeSingleBareContext.outputScopeGuard, {
+  candidate: "B",
+  reason: "explicit_complete_request",
+});
+// 선호 cue 미주입 — 선호를 묻지 않은 요청에 선호 신호가 섞이지 않는다.
+assert.doesNotMatch(completeSingleBareContext.userPrompt, /Internal preference cue/);
+// focus control은 명시적 전체 요청을 막지 못한다.
+assert.doesNotMatch(completeSingleBareContext.userPrompt, /Conversational target: Candidate A/);
+// B 전체 목록 출력은 가드를 통과하고, 다른 후보 확장은 차단된다.
+assert.equal(
+  outputScopeViolation(
+    "Candidate B — MATCH: keeps a cool head in crisis situations; MATCH: can be relied on 100%; " +
+      "MATCH: assesses weather conditions very well; MATCH: good at multitasking; " +
+      "MISS: considered arrogant; MISS: sometimes abusive in tone.",
+    ["B_p1", "B_p2", "B_p3", "B_p4", "B_n1", "B_n2"],
+    completeSingleBareContext.outputScopeGuard!,
+  ),
+  null,
+);
+assert.equal(
+  outputScopeViolation(
+    "Candidate B keeps a cool head, and Candidate A has excellent spatial awareness.",
+    ["B_p1", "A_p3"],
+    completeSingleBareContext.outputScopeGuard!,
+  ),
+  "trait_outside_current_candidate",
+);
+
+// [RequestIntent] edge 1/2 — "테이블에 나온 전체" 요청과 "알렉스가 가진 전체" 요청 구분.
+// 피어 + 테이블 전체 → 취합 없이 수동적 한계 진술.
+const peerTableCompleteContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  messages: [
+    {
+      seq: 9,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Alex, what do you have on the table so far — all traits of Candidate B?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 9,
+});
+assert.equal(peerTableCompleteContext.requestIntent.source, "visible_board");
+assert.match(peerTableCompleteContext.userPrompt, /do not have the full board/i);
+assert.match(peerTableCompleteContext.userPrompt, /not really sure what the whole table looks like/i);
+assert.equal(peerTableCompleteContext.outputScopeGuard, undefined);
+
+// 리더 + 테이블 전체 → 전체 가시 보드를 갖고 있으므로 그대로 전체 목록 응답.
+const leaderTableCompleteContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 9,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Alex, what do you have on the table so far — all traits of Candidate B?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 9,
+});
+assert.match(leaderTableCompleteContext.userPrompt, /applies only to Candidate B/);
+assert.doesNotMatch(leaderTableCompleteContext.userPrompt, /do not have the full board/i);
+
+// 한국어 세션의 피어 테이블 전체 요청 — 수동적 한계 문구가 한국어로 주입된다.
+const koPeerTableCompleteContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C3",
+  messages: [
+    {
+      seq: 9,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "알렉스, 지금까지 테이블에 나온 B의 모든 특성이 뭐야?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "ko",
+  anchorSeq: 9,
+});
+assert.equal(koPeerTableCompleteContext.requestIntent.kind, "complete_single_candidate");
+assert.equal(koPeerTableCompleteContext.requestIntent.source, "visible_board");
+assert.match(koPeerTableCompleteContext.userPrompt, /테이블 전체 내용은 잘 모르겠어/);
+
+// [RequestIntent] 선호 cue 주입 게이트 — 선호를 말할 수 있는 턴에만 주입된다.
+// address + 선호 미질문 → 미주입.
+const nonPreferenceAddressContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  messages: [
+    {
+      seq: 9,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Alex, what do you have on Candidate A?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 9,
+});
+assert.doesNotMatch(nonPreferenceAddressContext.userPrompt, /Internal preference cue/);
+
+// peer build_on + 인간이 선호 표현 → 주입.
+const peerBuildOnPreferenceContext = buildRouteUserContext({
+  routeKind: "build_on",
+  conditionCode: "C1",
+  messages: [
+    {
+      seq: 8,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Honestly I'm leaning toward Candidate B right now.",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 8,
+});
+assert.match(peerBuildOnPreferenceContext.userPrompt, /Internal preference cue/);
+
+// peer build_on + 중립 정보 공유 → 미주입.
+const peerBuildOnNeutralContext = buildRouteUserContext({
+  routeKind: "build_on",
+  conditionCode: "C1",
+  messages: [
+    {
+      seq: 8,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Candidate A has a good overview of complex contexts.",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 8,
+});
+assert.doesNotMatch(peerBuildOnNeutralContext.userPrompt, /Internal preference cue/);
+
+// leader build_on + 선호 표현이어도 미주입 — 리더의 선호는 closing 전용(계약과 일치).
+const leaderBuildOnPreferenceContext = buildRouteUserContext({
+  routeKind: "build_on",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 8,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Honestly I'm leaning toward Candidate B right now.",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 8,
+});
+assert.doesNotMatch(leaderBuildOnPreferenceContext.userPrompt, /Internal preference cue/);
+
+// closing은 기존대로 주입(리더 조건).
+const closingPreferenceContext = buildRouteUserContext({
+  routeKind: "closing",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 8,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Candidate A has a good overview of complex contexts.",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 8,
+});
+assert.match(closingPreferenceContext.userPrompt, /Internal preference cue/);
 
 const longSilenceMessages = [
   {
@@ -925,6 +1168,18 @@ assert.equal(routeGenerationLimits("summary").maxContentChars, null);
 assert.equal(routeGenerationLimits("closing").maxOutputTokens, null);
 assert.equal(routeGenerationLimits("closing").maxContentChars, null);
 assert.equal(routeGenerationLimits("build_on").maxOutputTokens, 240);
+
+// [RequestIntent] 전체 목록 요청은 잘림 없이 넉넉하게 — 파일럿에서 반복되는 요청이라 차단 필수.
+const completeListIntent = {
+  kind: "complete_single_candidate",
+  candidate: "B",
+  source: "alex_notes",
+} as const;
+assert.equal(routeGenerationLimits("address", completeListIntent).maxOutputTokens, 600);
+assert.equal(routeGenerationLimits("address", completeListIntent).maxContentChars, 2_400);
+assert.equal(routeGenerationLimits("followup", completeListIntent).maxOutputTokens, 600);
+assert.equal(routeGenerationLimits("address").maxOutputTokens, 240);
+assert.equal(routeGenerationLimits("address", { ...completeListIntent, kind: "none" }).maxOutputTokens, 240);
 
 assert.equal(TRIGGER_CONFIG.ADDRESS_FLOOR_MS, 2_000);
 assert.equal(TRIGGER_CONFIG.FOLLOWUP_FLOOR_MS, 2_000);

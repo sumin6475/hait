@@ -111,7 +111,7 @@ conditionsRouter.post("/test-chat", requireAdmin, async (req, res) => {
     const generated = await generateScopedRouteMessage({
       systemPrompt: resolved.systemPrompt,
       userPrompt: context.userPrompt,
-      limits: routeGenerationLimits(routeKind),
+      limits: routeGenerationLimits(routeKind, context.requestIntent),
       guard: context.outputScopeGuard,
       logContext: `route=${routeKind} anchor=${messages.at(-1)?.seq ?? 0} source=admin_test_chat`,
     });
