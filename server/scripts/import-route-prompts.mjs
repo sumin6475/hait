@@ -75,7 +75,7 @@ if (!outputDiscipline.includes("A scope-less request such as")) {
 
 const source = {
   schemaVersion: 1,
-  version: "1.6.1",
+  version: "1.6.2",
   common: { taskEnvironment, instructionPriority, outputDiscipline },
   conditions: {},
 };
