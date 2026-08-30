@@ -507,6 +507,7 @@ const messages = Array.from({ length: 45 }, (_, index) => ({
 }));
 const summaryContext = buildRouteUserContext({
   routeKind: "summary",
+  conditionCode: "C1",
   messages,
   revealStats,
   language: "en",
@@ -519,6 +520,7 @@ assert.match(summaryContext.userPrompt, /human and Alex disclosures/i);
 assert.doesNotMatch(summaryContext.userPrompt, /Internal conversation control/);
 const backchannelContext = buildRouteUserContext({
   routeKind: "backchannel",
+  conditionCode: "C1",
   messages,
   revealStats,
   language: "en",
@@ -528,6 +530,7 @@ assert.equal(backchannelContext.contextFromSeq, 42);
 
 const earlyChoiceContext = buildRouteUserContext({
   routeKind: "address",
+  conditionCode: "C1",
   messages: [
     {
       seq: 1,
@@ -545,6 +548,7 @@ assert.match(earlyChoiceContext.userPrompt, /Do not name a candidate/);
 
 const informedChoiceContext = buildRouteUserContext({
   routeKind: "followup",
+  conditionCode: "C1",
   messages: [
     {
       seq: 1,
@@ -565,6 +569,7 @@ assert.match(
 
 const tiedChoiceContext = buildRouteUserContext({
   routeKind: "address",
+  conditionCode: "C1",
   messages: [
     {
       seq: 1,
@@ -582,6 +587,7 @@ assert.match(tiedChoiceContext.userPrompt, /discuss them more before separating 
 
 const scopedInformationContext = buildRouteUserContext({
   routeKind: "address",
+  conditionCode: "C1",
   messages: [
     {
       seq: 5,
@@ -646,8 +652,50 @@ assert.equal(
   "candidate_outside_current_focus",
 );
 
+// [Step 55] address/followup 커버리지 역할 분리: 리더는 전체 가시 보드, 피어는 비공개 노트만.
+const leaderCoverageMessages = [
+  {
+    seq: 8,
+    senderRole: "humanY",
+    speaker: "Participant Y",
+    content: "Yeah, what do you have on Candidate A, Alex?",
+  },
+];
+const leaderAddressCoverageContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: leaderCoverageMessages,
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 8,
+});
+assert.match(leaderAddressCoverageContext.userPrompt, /Visible on-table coverage/);
+assert.doesNotMatch(leaderAddressCoverageContext.userPrompt, /Relevant not-yet-surfaced notes/);
+
+const peerAddressCoverageContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  messages: leaderCoverageMessages,
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 8,
+});
+assert.match(peerAddressCoverageContext.userPrompt, /Relevant not-yet-surfaced notes/);
+assert.doesNotMatch(peerAddressCoverageContext.userPrompt, /Visible on-table coverage/);
+
+const leaderFollowupCoverageContext = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C4",
+  messages: leaderCoverageMessages,
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 8,
+});
+assert.match(leaderFollowupCoverageContext.userPrompt, /Visible on-table coverage/);
+
 const explicitAllContext = buildRouteUserContext({
   routeKind: "address",
+  conditionCode: "C1",
   messages: [
     {
       seq: 9,
@@ -665,6 +713,7 @@ assert.equal(explicitAllContext.outputScopeGuard, undefined);
 
 const explicitCompleteCandidateContext = buildRouteUserContext({
   routeKind: "address",
+  conditionCode: "C1",
   messages: [
     {
       seq: 10,
@@ -699,6 +748,7 @@ assert.match(continuity, /request in these lines has already been made/i);
 assert.match(continuity, /Let's move on to Candidate C/);
 const longSilenceContext = buildRouteUserContext({
   routeKind: "long_silence",
+  conditionCode: "C1",
   messages: longSilenceMessages,
   revealStats,
   language: "en",
@@ -752,6 +802,7 @@ assert.deepEqual(focusState, {
 });
 const focusedLongSilenceContext = buildRouteUserContext({
   routeKind: "long_silence",
+  conditionCode: "C1",
   messages: explicitReturnMessages,
   revealStats: focusDepthStats,
   language: "en",
@@ -777,6 +828,7 @@ assert.equal(
 
 const bareAddressContext = buildRouteUserContext({
   routeKind: "address",
+  conditionCode: "C1",
   messages: [
     ...explicitReturnMessages,
     { seq: 10, senderRole: "humanX", speaker: "Participant X", content: "Alex?" },
@@ -791,6 +843,7 @@ assert.equal(bareAddressContext.outputScopeGuard?.maxTraitIds, undefined);
 
 const buildOnScopeContext = buildRouteUserContext({
   routeKind: "build_on",
+  conditionCode: "C1",
   messages: explicitReturnMessages,
   revealStats: focusDepthStats,
   language: "en",
@@ -804,6 +857,7 @@ assert.deepEqual(buildOnScopeContext.outputScopeGuard, {
 
 const preferenceAddressContext = buildRouteUserContext({
   routeKind: "address",
+  conditionCode: "C1",
   messages: [
     ...explicitReturnMessages,
     {

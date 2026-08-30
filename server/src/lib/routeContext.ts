@@ -1,4 +1,4 @@
-import type { RouteKind } from "../types.js";
+import type { ConditionCode, RouteKind } from "../types.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { currentTopicCandidate } from "./poolingTally.js";
@@ -30,6 +30,11 @@ const WINDOWS: Record<RouteKind, number> = {
   summary: 40,
   closing: 40,
 };
+
+// 리더 조건은 여기서만 정의한다 (interventionEngine도 이 함수를 사용).
+export function isLeaderCondition(conditionCode: ConditionCode): boolean {
+  return conditionCode === "C2" || conditionCode === "C4";
+}
 
 /**
  * Compact, server-derived input for the Main Judge. This intentionally carries
@@ -560,6 +565,7 @@ function requestScopeForRoute(input: {
 
 export function buildRouteUserContext(input: {
   routeKind: RouteKind;
+  conditionCode: ConditionCode;
   messages: TranscriptMessage[];
   revealStats: any;
   language: "en" | "ko";
@@ -600,8 +606,17 @@ export function buildRouteUserContext(input: {
       `Confirmed on-table coverage (human-grounded; AI-only disclosures excluded):\n${formatConfirmedCoverage(input.revealStats)}`,
     );
   } else if (input.routeKind === "address" || input.routeKind === "followup") {
-    const notes = formatUnsurfacedNotes(window, input.revealStats);
-    if (notes) blocks.push(notes);
+    // 리더: 전체 가시 보드를 줘서 종합·정리 역할을 가능하게 한다.
+    // (파일럿 근거: 리더가 전체 그림을 모르면 리더 이미지가 훼손됨)
+    // 피어: 아직 안 꺼낸 비공개 노트만 줘서 "자기 관점 기여"의 자연스러움을 유지한다.
+    if (isLeaderCondition(input.conditionCode)) {
+      blocks.push(
+        `Visible on-table coverage (human and Alex disclosures; deduplicated):\n${formatVisibleBoardCoverage(input.revealStats)}`,
+      );
+    } else {
+      const notes = formatUnsurfacedNotes(window, input.revealStats);
+      if (notes) blocks.push(notes);
+    }
   }
   if (input.routeKind === "long_silence") {
     blocks.push(formatLongSilenceContinuity(window));

@@ -93,6 +93,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   const prompt = getRoutePrompt(input.conditionCode, input.routeKind);
   const context = buildRouteUserContext({
     routeKind: input.routeKind,
+    conditionCode: input.conditionCode,
     messages,
     revealStats: (session as any).revealStats,
     language: ((session as any).language ?? "en") as "en" | "ko",

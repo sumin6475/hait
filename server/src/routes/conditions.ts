@@ -95,6 +95,7 @@ conditionsRouter.post("/test-chat", requireAdmin, async (req, res) => {
       : undefined;
     const context = buildRouteUserContext({
       routeKind,
+      conditionCode,
       messages,
       revealStats: {
         byCandidate,

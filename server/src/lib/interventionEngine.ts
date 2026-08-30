@@ -24,6 +24,7 @@ import {
   deriveMainJudgeSignal,
   formatVisibleBoardCoverage,
   formatMainJudgeSignal,
+  isLeaderCondition,
   type TranscriptMessage,
 } from "./routeContext.js";
 import { executeRouteTurn } from "./routeTurn.js";
@@ -81,7 +82,7 @@ interface RuntimeState {
 const runtimes = new Map<string, RuntimeState>();
 
 function isLeader(conditionCode: ConditionCode): boolean {
-  return conditionCode === "C2" || conditionCode === "C4";
+  return isLeaderCondition(conditionCode);
 }
 
 function emitTyping(runtime: RuntimeState, owner: string, active: boolean) {
