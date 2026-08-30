@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
+import type { MainJudgeSignal } from "./routeContext.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 const JUDGE_MODEL = "gpt-4o-mini";
@@ -33,17 +34,25 @@ ACKNOWLEDGE — Alex has no substantive information to add, but one brief acknow
 
 SILENT — Alex should not speak. This is the default and common result.
 
-A candidate being mentioned, praised, criticized, compared, or preferred is not by itself a reason to contribute. Choose contribute only when the supplied availability signal identifies a concrete information gain or factual correction. Choose acknowledge sparingly. When uncertain, choose silent. Do not choose mediation or a candidate, and do not write Alex's message.
+A candidate being mentioned, praised, criticized, compared, or preferred is not by itself a reason to contribute. The user message includes three compact server-derived fields: current focus, exchange class, and whether Alex has one unsurfaced private contribution for that focus. Treat them as authoritative.
+
+Decision policy for those fields:
+- For exchange_class=substantive with private_contribution=available, choose CONTRIBUTE unless the recent chat shows that same contribution is already visible.
+- For exchange_class=acknowledgment, choose ACKNOWLEDGE only when it directly takes up Alex's immediately preceding point; otherwise choose SILENT.
+- For exchange_class=preference, procedural, or unclear, choose SILENT unless there is a factual correction that must be made now.
+- When private_contribution=none, do not choose CONTRIBUTE unless correcting a concrete factual error.
+
+Choose acknowledge sparingly. When uncertain, choose silent. Do not choose mediation or a candidate, and do not write Alex's message.
 
 Output JSON only.`;
 
 export async function judgeIntervention(
   transcript: { speaker: string; content: string }[],
   msgsSinceAlex: number,
-  relevantUnsurfacedSignal = "none",
+  signal: MainJudgeSignal,
 ): Promise<JudgeDecision | null> {
   const lines = transcript.map((t) => `${t.speaker}: ${t.content}`).join("\n");
-  const user = `Messages since Alex last spoke: ${msgsSinceAlex}\nAvailable unsurfaced information relevant to the current topic: ${relevantUnsurfacedSignal}\n\nRecent chat:\n${lines}\n\nClassify the intervention level now. Output JSON only.`;
+  const user = `Messages since Alex last spoke: ${msgsSinceAlex}\nCurrent focus: ${signal.focusCandidate ?? "none"}\nExchange class: ${signal.exchangeClass}\nPrivate contribution: ${signal.privateContributionAvailable ? "available" : "none"}\n\nRecent chat:\n${lines}\n\nClassify the intervention level now. Output JSON only.`;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), JUDGE_TIMEOUT_MS);
   try {

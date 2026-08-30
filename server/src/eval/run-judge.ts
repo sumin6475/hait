@@ -44,7 +44,13 @@ for (const c of doc.cases) {
 
   const results: ({ speak: boolean; reason: string } | null)[] = [];
   for (let r = 0; r < RUNS; r++) {
-    const decision = await judgeIntervention(transcript, c.msgs_since_alex);
+    // Fixture cases predate the runtime's compact server-derived signal. Keep
+    // this legacy evaluator conservative rather than fabricating pool state.
+    const decision = await judgeIntervention(transcript, c.msgs_since_alex, {
+      focusCandidate: null,
+      exchangeClass: "unclear",
+      privateContributionAvailable: false,
+    });
     // Keep the historical report shape while the runtime uses the V2 three-way decision.
     results.push(
       decision

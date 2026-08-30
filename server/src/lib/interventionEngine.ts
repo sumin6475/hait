@@ -21,8 +21,9 @@ import {
 } from "./interventionRoutingV2.js";
 import {
   decidePreferenceFromVisibleCoverage,
+  deriveMainJudgeSignal,
   formatVisibleBoardCoverage,
-  relevantUnsurfacedSignal,
+  formatMainJudgeSignal,
   type TranscriptMessage,
 } from "./routeContext.js";
 import { executeRouteTurn } from "./routeTurn.js";
@@ -827,16 +828,22 @@ export async function onHumanMessage(input: {
   }
 
   const allTranscript = transcript(docs);
-  const availableSignal = relevantUnsurfacedSignal(allTranscript, (session as any).revealStats);
+  const judgeSignal = await deriveMainJudgeSignal({
+    messages: allTranscript,
+    revealStats: (session as any).revealStats,
+    anchorSeq: input.messageSeq,
+  });
+  // [Step 55] signal LLM 대기 중 새 메시지가 오면 본 judge 호출을 스킵 (기존 stale 가드 패턴)
+  if (runtime.latestPushSeq !== input.messageSeq) return;
   const decision = await judgeIntervention(
     allTranscript.slice(-JUDGE_WINDOW_SIZE).map(({ speaker, content }) => ({ speaker, content })),
     sinceAI,
-    availableSignal,
+    judgeSignal,
   );
   if (decision) {
     log.info(
       `[intervention-v2] main_judge anchor=${input.messageSeq} decision=${decision.decision} ` +
-        `evidence=${decision.evidence} msgsSinceAI=${sinceAI} signal=${availableSignal} ` +
+        `evidence=${decision.evidence} msgsSinceAI=${sinceAI} signal="${formatMainJudgeSignal(judgeSignal)}" ` +
         `session=${runtime.sessionCode}`,
     );
   }

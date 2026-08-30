@@ -8,6 +8,9 @@ import {
   humanConfirmedIds,
   lastHumanDiscussionCandidate,
 } from "./informationPools.js";
+import { deriveSignalFromLLM, type JudgeExchangeClass } from "./signalJudge.js";
+
+export type { JudgeExchangeClass } from "./signalJudge.js";
 
 export interface TranscriptMessage {
   seq: number;
@@ -28,16 +31,109 @@ const WINDOWS: Record<RouteKind, number> = {
   closing: 40,
 };
 
-export function relevantUnsurfacedSignal(messages: TranscriptMessage[], revealStats: any): string {
-  const topic = currentTopicCandidate(
-    messages.map((message) => ({ sender: message.speaker, content: message.content })),
+/**
+ * Compact, server-derived input for the Main Judge. This intentionally carries
+ * only a focus, an exchange class, and private-note availability—not raw tally
+ * state or a second interpretation of the conversation.
+ */
+export interface MainJudgeSignal {
+  focusCandidate: Cand | null;
+  exchangeClass: JudgeExchangeClass;
+  privateContributionAvailable: boolean;
+}
+
+const ACKNOWLEDGMENT_ONLY =
+  /^\s*(?:ok(?:ay)?|yeah|yep|right|same here|me too|i agree|exactly|got it|thanks|fair enough)[.!\s]*$/i;
+const PROCEDURAL_MESSAGE =
+  /\b(?:let'?s|we should|we need to|time to|move on|sum up|wrap up|decide|vote|pick|choose|go through)\b/i;
+const PREFERENCE_MESSAGE =
+  /\b(?:i think|i prefer|i choose|i'?m leaning|my pick|best|worst|strongest|weakest)\b/i;
+const QUESTION_LIKE = /\?\s*$|^\s*(?:what|which|who|how|why|can|could|would|do|does|is|are)\b/i;
+
+function judgeAnchorHumanMessage(
+  messages: TranscriptMessage[],
+  anchorSeq: number,
+): TranscriptMessage | undefined {
+  return (
+    messages.find((message) => message.seq === anchorSeq && message.senderRole !== "ai") ??
+    [...messages].reverse().find((message) => message.senderRole !== "ai")
   );
-  if (!topic) return "none";
+}
+
+function classifyJudgeExchange(message?: TranscriptMessage): JudgeExchangeClass {
+  const content = message?.content.trim() ?? "";
+  if (!content) return "unclear";
+  if (ACKNOWLEDGMENT_ONLY.test(content)) return "acknowledgment";
+  if (PROCEDURAL_MESSAGE.test(content)) return "procedural";
+  if (PREFERENCE_MESSAGE.test(content)) return "preference";
+  if (QUESTION_LIKE.test(content)) return "unclear";
+  return "substantive";
+}
+
+function privateContributionFor(focusCandidate: Cand | null, revealStats: any): boolean {
   const surfaced = allSurfacedIds(revealStats);
-  const available = ALEX_Z_IDS.filter(
-    (id) => TRAIT_BY_ID.get(id)?.candidate === topic && !surfaced.has(id),
+  return Boolean(
+    focusCandidate &&
+      ALEX_Z_IDS.some(
+        (id) => TRAIT_BY_ID.get(id)?.candidate === focusCandidate && !surfaced.has(id),
+      ),
   );
-  return available.length ? `yes:${topic}` : "none";
+}
+
+/**
+ * [Step 55] 규칙 기반 시그널 계산 — LLM 실패 시 fallback이자 단위 테스트용 동기 경로.
+ * 동작은 기존 deriveMainJudgeSignal과 동일하게 유지한다.
+ */
+export function deriveMainJudgeSignalFromRules(input: {
+  messages: TranscriptMessage[];
+  revealStats: any;
+  anchorSeq: number;
+}): MainJudgeSignal {
+  const topicFromTranscript = currentTopicCandidate(
+    input.messages.map((message) => ({ sender: message.speaker, content: message.content })),
+  );
+  const recentSeqFloor = Math.max(0, input.anchorSeq - 8);
+  const focusCandidate =
+    topicFromTranscript ?? lastHumanDiscussionCandidate(input.revealStats, recentSeqFloor);
+  return {
+    focusCandidate,
+    exchangeClass: classifyJudgeExchange(judgeAnchorHumanMessage(input.messages, input.anchorSeq)),
+    privateContributionAvailable: privateContributionFor(focusCandidate, input.revealStats),
+  };
+}
+
+/**
+ * [Step 55] Main Judge 시그널 — LLM 우선, 실패 시 규칙 fallback.
+ * anchor 휴먼 메시지가 없거나 빈 내용이면 LLM을 부르지 않고 바로 규칙 경로를 탄다.
+ * privateContributionAvailable은 포커스 출처와 무관하게 항상 서버가 계산한다.
+ */
+export async function deriveMainJudgeSignal(input: {
+  messages: TranscriptMessage[];
+  revealStats: any;
+  anchorSeq: number;
+}): Promise<MainJudgeSignal> {
+  const anchor = judgeAnchorHumanMessage(input.messages, input.anchorSeq);
+  if (anchor && anchor.content.trim()) {
+    const llmSignal = await deriveSignalFromLLM({
+      messages: input.messages.map(({ speaker, content }) => ({ speaker, content })),
+      anchorMessage: { speaker: anchor.speaker, content: anchor.content },
+    });
+    if (llmSignal) {
+      return {
+        ...llmSignal,
+        privateContributionAvailable: privateContributionFor(llmSignal.focusCandidate, input.revealStats),
+      };
+    }
+  }
+  return deriveMainJudgeSignalFromRules(input);
+}
+
+export function formatMainJudgeSignal(signal: MainJudgeSignal): string {
+  return [
+    `focus=${signal.focusCandidate ?? "none"}`,
+    `class=${signal.exchangeClass}`,
+    `private=${signal.privateContributionAvailable ? "available" : "none"}`,
+  ].join(" ");
 }
 
 function formatCoverageFromIds(surfaced: Set<string>): string {

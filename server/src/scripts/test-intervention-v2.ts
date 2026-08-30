@@ -10,6 +10,7 @@ import {
   buildRouteUserContext,
   decidePreferenceFromVisibleCoverage,
   deriveFocusDepthState,
+  deriveMainJudgeSignalFromRules,
   formatConfirmedCoverage,
   formatLongSilenceContinuity,
   formatPreferenceDecision,
@@ -834,6 +835,26 @@ const comparisonFocusState = deriveFocusDepthState({
 assert.equal(comparisonFocusState.candidate, null);
 assert.equal(comparisonFocusState.basis, "comparison");
 assert.equal(comparisonFocusState.directive, "free");
+
+const preferenceSignal = deriveMainJudgeSignalFromRules({
+  messages: [
+    { seq: 1, senderRole: "ai", speaker: "Alex", content: "I shared one point." },
+    { seq: 2, senderRole: "humanX", speaker: "Participant X", content: "I think Candidate C is best." },
+  ],
+  revealStats: focusDepthStats,
+  anchorSeq: 2,
+});
+assert.equal(preferenceSignal.focusCandidate, "C");
+assert.equal(preferenceSignal.exchangeClass, "preference");
+const proceduralSignal = deriveMainJudgeSignalFromRules({
+  messages: [
+    { seq: 1, senderRole: "humanX", speaker: "Participant X", content: "Candidate A has a good overview." },
+    { seq: 2, senderRole: "humanY", speaker: "Participant Y", content: "Let's sum up the candidates." },
+  ],
+  revealStats: focusDepthStats,
+  anchorSeq: 2,
+});
+assert.equal(proceduralSignal.exchangeClass, "procedural");
 
 assert.equal(
   internalMetadataLeak("Internal conversation control says Candidate A."),
