@@ -391,8 +391,11 @@ function formatUnsurfacedNotes(messages: TranscriptMessage[], revealStats: any):
 
 export interface RouteOutputScopeGuard {
   candidate: Cand;
-  maxTraitIds: 1;
-  reason: "scopeless_information_request" | "focus_depth";
+  // Candidate focus and trait-count limits are independent. A depth lock keeps
+  // the subject stable; only a route contract or an explicitly scope-less
+  // request should mechanically limit how many traits can be answered.
+  maxTraitIds?: number;
+  reason: "scopeless_information_request" | "focus_depth" | "route_single_point";
 }
 
 const BROAD_INFORMATION_REQUESTS = [
@@ -486,6 +489,11 @@ export function buildRouteUserContext(input: {
       ? "Session language: Korean. Return Alex's visible message in natural Korean."
       : "Session language: English. Return Alex's visible message in English.",
   ];
+  const focusDepthState = deriveFocusDepthState({
+    routeKind: input.routeKind,
+    messages: window,
+    revealStats: input.revealStats,
+  });
 
   if (input.routeKind === "summary" || input.routeKind === "closing") {
     blocks.push(
@@ -495,22 +503,13 @@ export function buildRouteUserContext(input: {
     blocks.push(
       `Confirmed on-table coverage (human-grounded; AI-only disclosures excluded):\n${formatConfirmedCoverage(input.revealStats)}`,
     );
-  } else if (
-    input.routeKind === "build_on" ||
-    input.routeKind === "address" ||
-    input.routeKind === "followup"
-  ) {
+  } else if (input.routeKind === "address" || input.routeKind === "followup") {
     const notes = formatUnsurfacedNotes(window, input.revealStats);
     if (notes) blocks.push(notes);
   }
   if (input.routeKind === "long_silence") {
     blocks.push(formatLongSilenceContinuity(window));
   }
-  const focusDepthState = deriveFocusDepthState({
-    routeKind: input.routeKind,
-    messages: window,
-    revealStats: input.revealStats,
-  });
   const focusControlOverridden = requestOverridesFocusControl(
     input.routeKind,
     anchorHumanMessage(window, input.anchorSeq),
@@ -538,15 +537,26 @@ export function buildRouteUserContext(input: {
     focusControl && focusDepthState.candidate
       ? {
           candidate: focusDepthState.candidate,
-          maxTraitIds: 1,
           reason: "focus_depth",
         }
       : undefined;
+  // Build-on is a one-point route by contract even after depth has been met.
+  // Keep that output limit separate from focus depth so direct answers can
+  // satisfy their exact request without being clipped to one trait.
+  const routeSinglePointGuard: RouteOutputScopeGuard | undefined =
+    input.routeKind === "build_on" && focusDepthState.candidate
+      ? {
+          candidate: focusDepthState.candidate,
+          maxTraitIds: 1,
+          reason: "route_single_point",
+        }
+      : undefined;
+  const outputScopeGuard = requestScope?.guard ?? routeSinglePointGuard ?? focusGuard;
   return {
     userPrompt: blocks.join("\n\n"),
     contextFromSeq: window[0]?.seq ?? null,
     contextToSeq: window.at(-1)?.seq ?? null,
-    outputScopeGuard: requestScope?.guard ?? focusGuard,
+    outputScopeGuard,
     focusDepthState,
   };
 }

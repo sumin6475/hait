@@ -763,7 +763,6 @@ assert.doesNotMatch(focusedLongSilenceContext.userPrompt, /Depth threshold:\s*3/
 assert.doesNotMatch(focusedLongSilenceContext.userPrompt, /confirmed count:\s*2/i);
 assert.deepEqual(focusedLongSilenceContext.outputScopeGuard, {
   candidate: "A",
-  maxTraitIds: 1,
   reason: "focus_depth",
 });
 assert.equal(
@@ -787,6 +786,20 @@ const bareAddressContext = buildRouteUserContext({
 });
 assert.equal(bareAddressContext.focusDepthState.candidate, "A");
 assert.equal(bareAddressContext.outputScopeGuard?.reason, "focus_depth");
+assert.equal(bareAddressContext.outputScopeGuard?.maxTraitIds, undefined);
+
+const buildOnScopeContext = buildRouteUserContext({
+  routeKind: "build_on",
+  messages: explicitReturnMessages,
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 9,
+});
+assert.deepEqual(buildOnScopeContext.outputScopeGuard, {
+  candidate: "A",
+  maxTraitIds: 1,
+  reason: "route_single_point",
+});
 
 const preferenceAddressContext = buildRouteUserContext({
   routeKind: "address",
