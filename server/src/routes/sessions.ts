@@ -264,6 +264,7 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         outputScopeCandidate: i.outputScopeCandidate,
         outputScopeRepaired: i.outputScopeRepaired,
         outputScopeViolation: i.outputScopeViolation,
+        repairAudit: i.repairAudit,
         calloutTarget: i.calloutTarget,
         calloutCand: i.calloutCand,
         model: i.model,

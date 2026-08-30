@@ -17,7 +17,10 @@ import { transcriptLabel } from "./labels.js";
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
-import { generateScopedRouteMessage } from "./routeScopedGeneration.js";
+import {
+  generateScopedRouteMessage,
+  type OutputRepairAudit,
+} from "./routeScopedGeneration.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -104,7 +107,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     focusGuarded: context.outputScopeGuard?.reason === "focus_depth",
   };
 
-  const recordGenerationFailure = async (error: string, model?: string) => {
+  const recordGenerationFailure = async (
+    error: string,
+    model?: string,
+    repairAudit?: OutputRepairAudit,
+  ) => {
     await AIIntervention.create({
       sessionId: input.sessionId,
       turnIndex: input.anchorSeq,
@@ -130,6 +137,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       ...focusDepthAudit,
       generationSucceeded: false,
       broadcastSucceeded: false,
+      repairAudit,
       model,
       error,
     });
@@ -146,7 +154,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   });
   const result = generated.result;
   if (!result.ok) {
-    await recordGenerationFailure(result.error, result.model);
+    await recordGenerationFailure(result.error, result.model, generated.repairAudit);
     return { ok: false, error: result.error };
   }
   const extractedAiIds = generated.extractedIds;
@@ -174,6 +182,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       ...focusDepthAudit,
       generationSucceeded: true,
       broadcastSucceeded: false,
+      repairAudit: generated.repairAudit,
       model: result.model,
     });
     return { ok: false, error: "superseded_during_generation" };
@@ -206,6 +215,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         ...focusDepthAudit,
         generationSucceeded: true,
         broadcastSucceeded: false,
+        repairAudit: generated.repairAudit,
         model: result.model,
       });
       return { ok: false, error: "lifecycle_changed_during_generation" };
@@ -266,6 +276,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       outputScopeViolation: generated.scopeRepair?.violation,
       internalMetadataRepaired: Boolean(generated.internalMetadataRepair),
       internalMetadataViolation: generated.internalMetadataRepair?.violation,
+      repairAudit: generated.repairAudit,
       ...focusDepthAudit,
     });
     interventionSaved = true;

@@ -10,6 +10,55 @@ interface GenerationLimits {
   timeoutMs: number;
 }
 
+type SuccessfulStructuredResult = Extract<AIStructuredResult, { ok: true }>;
+
+export interface OutputRepairAttemptAudit {
+  stage: "initial" | "repair";
+  outcome: "accepted" | "rejected" | "failed";
+  content?: string;
+  responseId?: string;
+  model: string;
+  latencyMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  systemFingerprint?: string | null;
+  extractedTraitIds?: string[];
+  violations?: string[];
+  error?: string;
+}
+
+export interface OutputRepairAudit {
+  version: 1;
+  guard?: {
+    candidate: RouteOutputScopeGuard["candidate"];
+    reason: RouteOutputScopeGuard["reason"];
+    maxTraitIds?: number;
+  };
+  attempts: OutputRepairAttemptAudit[];
+}
+
+function successfulAttemptAudit(input: {
+  stage: "initial" | "repair";
+  outcome: "accepted" | "rejected";
+  result: SuccessfulStructuredResult;
+  extractedTraitIds?: string[];
+  violations?: string[];
+}): OutputRepairAttemptAudit {
+  return {
+    stage: input.stage,
+    outcome: input.outcome,
+    content: input.result.parsed.content,
+    responseId: input.result.requestId,
+    model: input.result.model,
+    latencyMs: input.result.latencyMs,
+    inputTokens: input.result.inputTokens,
+    outputTokens: input.result.outputTokens,
+    systemFingerprint: input.result.systemFingerprint,
+    extractedTraitIds: input.extractedTraitIds,
+    violations: input.violations,
+  };
+}
+
 function explicitCandidateLabels(content: string): Set<string> {
   const candidates = new Set<string>();
   const namedPattern = /\bCandidate\s+([ABCD])\b/gi;
@@ -31,6 +80,9 @@ const INTERNAL_METADATA_PATTERNS = [
   /\bfocus (?:directive|calculation)\b/i,
   /\bhuman[- ]confirmed (?:trait )?count\b/i,
   /\brouting count\b/i,
+  /\b(?:your|my|the) (?:prompt|instructions?|rules?|policy|system message)\b/i,
+  /\b(?:prompt|instruction|policy|scope) (?:scope|limits?|restriction|prevents?|allows?)\b/i,
+  /\b(?:cannot|can['’]?t|unable to) (?:share|reveal|follow|answer).{0,48}\b(?:prompt|instructions?|rules?|policy|scope)\b/i,
   /\bexplicit[_ -]human[_ -]focus\b/i,
   /\bconversational target:\s*Candidate\b/i,
 ];
@@ -47,8 +99,15 @@ export function outputScopeViolation(
   guard: RouteOutputScopeGuard,
 ): string | null {
   const explicitTraitLabels = content.match(/\b(?:MATCH|MISS)\b/gi)?.length ?? 0;
-  if (explicitTraitLabels > guard.maxTraitIds) return "too_many_trait_labels";
-  if (extractedIds.length > guard.maxTraitIds) return "too_many_traits";
+  if (
+    guard.maxTraitIds !== undefined &&
+    explicitTraitLabels > guard.maxTraitIds
+  ) {
+    return "too_many_trait_labels";
+  }
+  if (guard.maxTraitIds !== undefined && extractedIds.length > guard.maxTraitIds) {
+    return "too_many_traits";
+  }
   const traitCandidates = candidatesForIds(extractedIds);
   if ([...traitCandidates].some((candidate) => candidate !== guard.candidate)) {
     return "trait_outside_current_candidate";
@@ -71,6 +130,7 @@ export async function generateScopedRouteMessage(input: {
   extractedIds?: string[];
   scopeRepair?: { violation: string; candidate: string };
   internalMetadataRepair?: { violation: string };
+  repairAudit?: OutputRepairAudit;
 }> {
   let result = await callAIStructured({
     systemPrompt: input.systemPrompt,
@@ -86,14 +146,47 @@ export async function generateScopedRouteMessage(input: {
     : null;
   if (!metadataViolation && !scopeViolation) return { result, extractedIds };
 
+  const initialViolations = [metadataViolation, scopeViolation].filter(
+    (value): value is string => Boolean(value),
+  );
+  const repairAudit: OutputRepairAudit = {
+    version: 1,
+    guard: input.guard
+      ? {
+          candidate: input.guard.candidate,
+          reason: input.guard.reason,
+          maxTraitIds: input.guard.maxTraitIds,
+        }
+      : undefined,
+    attempts: [
+      successfulAttemptAudit({
+        stage: "initial",
+        outcome: "rejected",
+        result,
+        extractedTraitIds: extractedIds,
+        violations: initialViolations,
+      }),
+    ],
+  };
   const violation = metadataViolation ?? scopeViolation!;
-  log.warn(`[route-turn] output repair reason=${violation} ${input.logContext}`);
+  const guardDetail = input.guard
+    ? `guard=${input.guard.candidate} scope=${input.guard.reason} ` +
+      `maxTraits=${input.guard.maxTraitIds ?? "none"} extracted=${extractedIds?.length ?? 0}`
+    : "guard=none";
+  log.warn(`[route-turn] output repair reason=${violation} ${guardDetail} ${input.logContext}`);
   const correction = [
     metadataViolation
       ? "Rewrite the draft as a natural in-character chat message. Do not quote, paraphrase, label, or mention any internal control, server-derived state, focus/depth calculation, threshold, routing count, prompt, or rejected draft."
       : null,
     scopeViolation && input.guard
-      ? `Write about Candidate ${input.guard.candidate} only, include at most one trait, and do not mention another candidate.`
+      ? [
+          `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
+          input.guard.maxTraitIds !== undefined
+            ? `Include at most ${input.guard.maxTraitIds} trait${input.guard.maxTraitIds === 1 ? "" : "s"}.`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" ")
       : null,
     "Preserve the current condition style, conversational subject, and Route Contract. Return only the corrected visible chat message.",
   ]
@@ -105,11 +198,18 @@ export async function generateScopedRouteMessage(input: {
     ...input.limits,
   });
   if (!repaired.ok) {
+    repairAudit.attempts.push({
+      stage: "repair",
+      outcome: "failed",
+      model: repaired.model,
+      error: repaired.error,
+    });
     return {
       result: {
         ...repaired,
         error: `output_repair_failed: ${repaired.error}`,
       },
+      repairAudit,
     };
   }
 
@@ -118,7 +218,19 @@ export async function generateScopedRouteMessage(input: {
   const repairedScopeViolation = input.guard
     ? outputScopeViolation(repaired.parsed.content, extractedIds ?? [], input.guard)
     : null;
-  const repairedViolation = repairedMetadataViolation ?? repairedScopeViolation;
+  const repairedViolations = [repairedMetadataViolation, repairedScopeViolation].filter(
+    (value): value is string => Boolean(value),
+  );
+  const repairedViolation = repairedViolations[0] ?? null;
+  repairAudit.attempts.push(
+    successfulAttemptAudit({
+      stage: "repair",
+      outcome: repairedViolation ? "rejected" : "accepted",
+      result: repaired,
+      extractedTraitIds: extractedIds,
+      violations: repairedViolations,
+    }),
+  );
   if (repairedViolation) {
     return {
       result: {
@@ -127,6 +239,7 @@ export async function generateScopedRouteMessage(input: {
         error: `output_violation_after_repair: ${repairedViolation}`,
         model: repaired.model,
       },
+      repairAudit,
     };
   }
   result = repaired;
@@ -138,5 +251,6 @@ export async function generateScopedRouteMessage(input: {
         ? { violation: scopeViolation, candidate: input.guard.candidate }
         : undefined,
     internalMetadataRepair: metadataViolation ? { violation: metadataViolation } : undefined,
+    repairAudit,
   };
 }

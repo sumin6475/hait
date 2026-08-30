@@ -26,6 +26,7 @@ import {
 } from "../lib/informationPools.js";
 import { internalMetadataLeak, outputScopeViolation } from "../lib/routeScopedGeneration.js";
 import { routeGenerationLimits } from "../lib/routeTurn.js";
+import { AIIntervention } from "../models/AIIntervention.js";
 
 const keys = listRoutePromptKeys();
 assert.equal(keys.length, 30);
@@ -33,6 +34,56 @@ assert.equal(keys.filter((key) => key.startsWith("C1.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C2.")).length, 9);
 assert.equal(keys.filter((key) => key.startsWith("C3.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C4.")).length, 9);
+
+const ordinaryIntervention = new AIIntervention({
+  sessionId: "64b000000000000000000001",
+  turnIndex: 1,
+  triggerReason: "push",
+  decision: "speak",
+});
+assert.equal(ordinaryIntervention.validateSync(), undefined);
+assert.equal(ordinaryIntervention.toObject().repairAudit, undefined);
+
+const repairedIntervention = new AIIntervention({
+  sessionId: "64b000000000000000000001",
+  turnIndex: 2,
+  triggerReason: "push",
+  decision: "speak",
+  repairAudit: {
+    version: 1,
+    guard: {
+      candidate: "A",
+      reason: "route_single_point",
+      maxTraitIds: 1,
+    },
+    attempts: [
+      {
+        stage: "initial",
+        outcome: "rejected",
+        content: "Candidate A has two MATCH traits.",
+        responseId: "resp_initial",
+        model: "test-model",
+        extractedTraitIds: ["A_p1", "A_p2"],
+        violations: ["too_many_traits"],
+      },
+      {
+        stage: "repair",
+        outcome: "accepted",
+        content: "Candidate A has one MATCH trait.",
+        responseId: "resp_repair",
+        model: "test-model",
+        extractedTraitIds: ["A_p1"],
+        violations: [],
+      },
+    ],
+  },
+});
+assert.equal(repairedIntervention.validateSync(), undefined);
+const storedRepairAudit = repairedIntervention.toObject().repairAudit!;
+assert.equal(storedRepairAudit.attempts.length, 2);
+assert.equal(storedRepairAudit.attempts[0]!.content, "Candidate A has two MATCH traits.");
+assert.deepEqual(storedRepairAudit.attempts[0]!.violations, ["too_many_traits"]);
+assert.equal(storedRepairAudit.attempts[1]!.outcome, "accepted");
 assert.equal(
   keys.some((key) => key === "C1.summary.v1"),
   false,

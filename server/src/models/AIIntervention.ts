@@ -5,6 +5,42 @@
 import mongoose from "mongoose";
 import type { AIDecision, RouteKind, RerouteReason, ExemptReason } from "../types.js";
 
+const outputRepairAttemptSchema = new mongoose.Schema(
+  {
+    stage: { type: String, enum: ["initial", "repair"], required: true },
+    outcome: { type: String, enum: ["accepted", "rejected", "failed"], required: true },
+    content: { type: String },
+    responseId: { type: String },
+    model: { type: String, required: true },
+    latencyMs: { type: Number },
+    inputTokens: { type: Number },
+    outputTokens: { type: Number },
+    systemFingerprint: { type: String },
+    extractedTraitIds: { type: [String], default: undefined },
+    violations: { type: [String], default: undefined },
+    error: { type: String },
+  },
+  { _id: false },
+);
+
+const outputRepairGuardSchema = new mongoose.Schema(
+  {
+    candidate: { type: String, enum: ["A", "B", "C", "D"], required: true },
+    reason: { type: String, required: true },
+    maxTraitIds: { type: Number },
+  },
+  { _id: false },
+);
+
+const outputRepairAuditSchema = new mongoose.Schema(
+  {
+    version: { type: Number, required: true },
+    guard: { type: outputRepairGuardSchema, default: undefined },
+    attempts: { type: [outputRepairAttemptSchema], required: true },
+  },
+  { _id: false },
+);
+
 const aiInterventionSchema = new mongoose.Schema(
   {
     //어느 세션
@@ -124,6 +160,8 @@ const aiInterventionSchema = new mongoose.Schema(
     focusGuarded: { type: Boolean },
     internalMetadataRepaired: { type: Boolean },
     internalMetadataViolation: { type: String },
+    // Stored only when an output repair runs. It is diagnostic data, never a chat message.
+    repairAudit: { type: outputRepairAuditSchema, default: undefined },
 
     //API 호출 실패 시 에러 메시지
     error: { type: String, default: "" },
