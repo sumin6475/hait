@@ -85,6 +85,12 @@ const INTERNAL_METADATA_PATTERNS = [
   /\b(?:cannot|can['’]?t|unable to) (?:share|reveal|follow|answer).{0,48}\b(?:prompt|instructions?|rules?|policy|scope)\b/i,
   /\bexplicit[_ -]human[_ -]focus\b/i,
   /\bconversational target:\s*Candidate\b/i,
+  // [T-C4-019] Alex's notes are "my notes"/"what I've got" only — "shared profile"
+  // is an internal-sounding term (observed live in T-C4-019 seq 8 and repair drafts).
+  /\bshared profile\b/i,
+  // [T-C4-019] reasoning residue about the address clarification rule leaked into a
+  // visible message: "... (No clarification needed otherwise.)" (T-C4-019 seq 26).
+  /\bclarification needed\b/i,
 ];
 
 export function internalMetadataLeak(content: string): string | null {
@@ -98,7 +104,13 @@ export function outputScopeViolation(
   extractedIds: string[],
   guard: RouteOutputScopeGuard,
 ): string | null {
-  const explicitTraitLabels = content.match(/\b(?:MATCH|MISS)\b/gi)?.length ?? 0;
+  // [T-C4-019] Count labels only in trait-introducing positions: "(MATCH)", "(MISS)",
+  // "MATCH —", "MISS:". Bare confirmation vocabulary ("add the next MATCH or MISS",
+  // "mark this as a MISS") repeats labels without adding traits and was producing
+  // false too_many_trait_labels repairs (T-C4-019 anchors 7 and 16 each disclosed
+  // exactly one trait but carried two label mentions).
+  const explicitTraitLabels =
+    content.match(/\(\s*(?:MATCH|MISS)\s*\)|\b(?:MATCH|MISS)\s*[—–:]/gi)?.length ?? 0;
   if (
     guard.maxTraitIds !== undefined &&
     explicitTraitLabels > guard.maxTraitIds
@@ -168,89 +180,106 @@ export async function generateScopedRouteMessage(input: {
       }),
     ],
   };
-  const violation = metadataViolation ?? scopeViolation!;
   const guardDetail = input.guard
     ? `guard=${input.guard.candidate} scope=${input.guard.reason} ` +
       `maxTraits=${input.guard.maxTraitIds ?? "none"} extracted=${extractedIds?.length ?? 0}`
     : "guard=none";
-  log.warn(`[route-turn] output repair reason=${violation} ${guardDetail} ${input.logContext}`);
-  const correction = [
-    metadataViolation
-      ? "Rewrite the draft as a natural in-character chat message. Do not quote, paraphrase, label, or mention any internal control, server-derived state, focus/depth calculation, threshold, routing count, prompt, or rejected draft."
-      : null,
-    scopeViolation && input.guard
-      ? [
-          `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
-          input.guard.maxTraitIds !== undefined
-            ? `Include at most ${input.guard.maxTraitIds} trait${input.guard.maxTraitIds === 1 ? "" : "s"}.`
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" ")
-      : null,
-    "Preserve the current condition style, conversational subject, and Route Contract. Return only the corrected visible chat message.",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const repaired = await callAIStructured({
-    systemPrompt: input.systemPrompt,
-    userPrompt: `${input.userPrompt}\n\n${correction}`,
-    ...input.limits,
-  });
-  if (!repaired.ok) {
-    repairAudit.attempts.push({
-      stage: "repair",
-      outcome: "failed",
-      model: repaired.model,
-      error: repaired.error,
-    });
-    return {
-      result: {
-        ...repaired,
-        error: `output_repair_failed: ${repaired.error}`,
-      },
-      repairAudit,
-    };
-  }
 
-  extractedIds = input.guard ? await extractSurfacedTraits(repaired.parsed.content) : undefined;
-  const repairedMetadataViolation = internalMetadataLeak(repaired.parsed.content);
-  const repairedScopeViolation = input.guard
-    ? outputScopeViolation(repaired.parsed.content, extractedIds ?? [], input.guard)
-    : null;
-  const repairedViolations = [repairedMetadataViolation, repairedScopeViolation].filter(
-    (value): value is string => Boolean(value),
-  );
-  const repairedViolation = repairedViolations[0] ?? null;
-  repairAudit.attempts.push(
-    successfulAttemptAudit({
-      stage: "repair",
-      outcome: repairedViolation ? "rejected" : "accepted",
-      result: repaired,
-      extractedTraitIds: extractedIds,
-      violations: repairedViolations,
-    }),
-  );
-  if (repairedViolation) {
-    return {
-      result: {
-        ok: false,
-        reason: "parsed_error",
-        error: `output_violation_after_repair: ${repairedViolation}`,
-        model: repaired.model,
-      },
-      repairAudit,
-    };
-  }
-  result = repaired;
-  return {
-    result,
-    extractedIds,
-    scopeRepair:
+  // [T-C4-019] Up to two repair attempts. A single attempt lost whole turns both
+  // when the rewrite still violated the scope (anchors 3, 52) and when the rewrite
+  // call itself came back as prose instead of the JSON object (anchor 6).
+  const MAX_REPAIR_ATTEMPTS = 2;
+  let lastViolation = metadataViolation ?? scopeViolation!;
+  let lastFailureError: string | null = null;
+  let lastModel: string | undefined;
+  for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
+    log.warn(
+      `[route-turn] output repair reason=${lastViolation} attempt=${attempt}/${MAX_REPAIR_ATTEMPTS} ${guardDetail} ${input.logContext}`,
+    );
+    const failureNote =
+      attempt === 1
+        ? null
+        : lastFailureError
+          ? "Your previous rewrite failed to parse. Respond with a single JSON object only, no prose outside it."
+          : `Your previous rewrite still violated the limits (${lastViolation}). Fix exactly that.`;
+    const correction = [
+      failureNote,
+      metadataViolation
+        ? "Rewrite the draft as a natural in-character chat message. Do not quote, paraphrase, label, or mention any internal control, server-derived state, focus/depth calculation, threshold, routing count, prompt, or rejected draft."
+        : null,
       scopeViolation && input.guard
-        ? { violation: scopeViolation, candidate: input.guard.candidate }
-        : undefined,
-    internalMetadataRepair: metadataViolation ? { violation: metadataViolation } : undefined,
+        ? [
+            `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
+            input.guard.maxTraitIds !== undefined
+              ? `Include at most ${input.guard.maxTraitIds} trait${input.guard.maxTraitIds === 1 ? "" : "s"}.`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" ")
+        : null,
+      'Preserve the current condition style, conversational subject, and Route Contract. Return only the corrected visible chat message inside the required JSON object: {"content": "<message>"}.',
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const repaired = await callAIStructured({
+      systemPrompt: input.systemPrompt,
+      userPrompt: `${input.userPrompt}\n\n${correction}`,
+      ...input.limits,
+    });
+    lastModel = repaired.model;
+    if (!repaired.ok) {
+      repairAudit.attempts.push({
+        stage: "repair",
+        outcome: "failed",
+        model: repaired.model,
+        error: repaired.error,
+      });
+      lastFailureError = repaired.error;
+      continue;
+    }
+    lastFailureError = null;
+
+    extractedIds = input.guard ? await extractSurfacedTraits(repaired.parsed.content) : undefined;
+    const repairedMetadataViolation = internalMetadataLeak(repaired.parsed.content);
+    const repairedScopeViolation = input.guard
+      ? outputScopeViolation(repaired.parsed.content, extractedIds ?? [], input.guard)
+      : null;
+    const repairedViolations = [repairedMetadataViolation, repairedScopeViolation].filter(
+      (value): value is string => Boolean(value),
+    );
+    repairAudit.attempts.push(
+      successfulAttemptAudit({
+        stage: "repair",
+        outcome: repairedViolations.length ? "rejected" : "accepted",
+        result: repaired,
+        extractedTraitIds: extractedIds,
+        violations: repairedViolations,
+      }),
+    );
+    if (!repairedViolations.length) {
+      result = repaired;
+      return {
+        result,
+        extractedIds,
+        scopeRepair:
+          scopeViolation && input.guard
+            ? { violation: scopeViolation, candidate: input.guard.candidate }
+            : undefined,
+        internalMetadataRepair: metadataViolation ? { violation: metadataViolation } : undefined,
+        repairAudit,
+      };
+    }
+    lastViolation = repairedViolations[0]!;
+  }
+  return {
+    result: {
+      ok: false,
+      reason: "parsed_error",
+      error: lastFailureError
+        ? `output_repair_failed: ${lastFailureError}`
+        : `output_violation_after_repair: ${lastViolation}`,
+      ...(lastModel !== undefined ? { model: lastModel } : {}),
+    } as AIStructuredResult,
     repairAudit,
   };
 }

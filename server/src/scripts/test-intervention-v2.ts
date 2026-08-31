@@ -240,7 +240,7 @@ const routeContractChecks = {
     address: /Answer the exact question or request first/i,
     followup: /Answer or clarify the exact point on the same thread/i,
     long_silence: /Ask one small, grounded question/i,
-    build_on: /ask one small grounded question about that same point/i,
+    build_on: /ask one small grounded question/i,
     backchannel: /backchannel turn, not an inquiry turn/i,
   },
   C4: {
@@ -248,8 +248,8 @@ const routeContractChecks = {
     address: /Answer the exact question or request first/i,
     followup: /Resolve the exact question, challenge, or clarification/i,
     long_silence: /ask at most one short, inclusive, grounded question/i,
-    build_on: /ask exactly one grounded question/i,
-    mediation: /ask exactly one grounded question that reopens the field/i,
+    build_on: /Ask one grounded question/i,
+    mediation: /reopens the field/i,
     backchannel: /not an inquiry, callout, mediation, or substantive contribution/i,
     summary: /End with exactly one inclusive team-wide question/i,
     closing: /End with exactly one broad question/i,
@@ -519,6 +519,8 @@ assert.equal(summaryContext.contextToSeq, 45);
 assert.match(summaryContext.userPrompt, /Visible on-table coverage/);
 assert.match(summaryContext.userPrompt, /human and Alex disclosures/i);
 assert.doesNotMatch(summaryContext.userPrompt, /Internal conversation control/);
+// [T-C4-019] +/− 기호 번역 지시는 summary에만 미주입 — 동결 리캡 포맷이 "+:/−:" 키워드 형태를 강제하므로.
+assert.doesNotMatch(summaryContext.userPrompt, /Notation \(server-derived\)/);
 const backchannelContext = buildRouteUserContext({
   routeKind: "backchannel",
   conditionCode: "C1",
@@ -640,6 +642,34 @@ assert.equal(
   outputScopeViolation(
     "Candidate A — MATCH: excellent spatial awareness; MISS: unfriendly.",
     [],
+    scopedInformationContext.outputScopeGuard!,
+  ),
+  "too_many_trait_labels",
+);
+// [T-C4-019] 라벨 카운트는 트레이트 도입 위치(괄호/대시/콜론)만 센다 — 확인 어휘는 오탐이었다.
+// "MATCH or MISS" 접속 언급은 트레이트 공개가 아니다 (라이브 anchor=7: 트레이트 1개 공개, 라벨 2회).
+assert.equal(
+  outputScopeViolation(
+    "Candidate A has a very good sense for recognizing dangerous situations. Do you want me to add the next MATCH or MISS for A from my notes?",
+    ["A_p1"],
+    scopedInformationContext.outputScopeGuard!,
+  ),
+  null,
+);
+// 같은 트레이트에 라벨이 두 번 붙어도 1건이다 (라이브 anchor=16: "(MISS)" + "as a MISS").
+assert.equal(
+  outputScopeViolation(
+    "I have that Candidate A transmits restlessness (MISS). Do we agree to add that as a MISS to A's notes?",
+    ["A_n2"],
+    scopedInformationContext.outputScopeGuard!,
+  ),
+  null,
+);
+// 도입 위치 라벨 2개는 여전히 차단된다 (라이브 anchor=6의 실제 이중 공개 형태).
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is very well organized (MATCH) and sometimes unfriendly (MISS).",
+    ["A_p4"],
     scopedInformationContext.outputScopeGuard!,
   ),
   "too_many_trait_labels",
@@ -997,7 +1027,9 @@ const longSilenceContext = buildRouteUserContext({
   language: "en",
   anchorSeq: 2,
 });
-assert.match(longSilenceContext.userPrompt, /Confirmed on-table coverage/);
+// [Step 55] peer long_silence gets unsurfaced notes only (no confirmed coverage — that would
+// leak leader-style mediation framing into a peer turn; T-C3-011 observation).
+assert.doesNotMatch(longSilenceContext.userPrompt, /Confirmed on-table coverage/);
 assert.match(longSilenceContext.userPrompt, /Long-silence continuity state/);
 
 const focusDepthStats = {
@@ -1083,6 +1115,12 @@ const bareAddressContext = buildRouteUserContext({
 assert.equal(bareAddressContext.focusDepthState.candidate, "A");
 assert.equal(bareAddressContext.outputScopeGuard?.reason, "focus_depth");
 assert.equal(bareAddressContext.outputScopeGuard?.maxTraitIds, undefined);
+// [T-C4-019] 반복 방지 블록은 address/followup에만 주입된다 (long_silence/build_on은 자체 규칙 보유).
+assert.match(bareAddressContext.userPrompt, /Anti-repeat \(server-derived\)/);
+assert.doesNotMatch(focusedLongSilenceContext.userPrompt, /Anti-repeat/);
+// [T-C4-019] 표기 번역 블록은 summary 제외 전 루트에 주입된다 (address에서 확인, summary 위쪽에서 미주입 확인).
+assert.match(bareAddressContext.userPrompt, /Notation \(server-derived\)/);
+assert.match(focusedLongSilenceContext.userPrompt, /Notation \(server-derived\)/);
 
 const buildOnScopeContext = buildRouteUserContext({
   routeKind: "build_on",
@@ -1162,6 +1200,17 @@ assert.equal(
   "internal_metadata_leak",
 );
 assert.equal(internalMetadataLeak("Let's keep looking at Candidate A."), null);
+// [T-C4-019] 라이브 누출 2종 — 내부 용어 "shared profile", clarification 규칙 추론 잔여물.
+assert.equal(
+  internalMetadataLeak("Would you like me to add that as a MATCH to the shared profile?"),
+  "internal_metadata_leak",
+);
+assert.equal(
+  internalMetadataLeak(
+    "Which candidate should we discuss first: B, C, or D? (No clarification needed otherwise.)",
+  ),
+  "internal_metadata_leak",
+);
 
 assert.equal(routeGenerationLimits("summary").maxOutputTokens, null);
 assert.equal(routeGenerationLimits("summary").maxContentChars, null);

@@ -745,18 +745,30 @@ export function buildRouteUserContext(input: {
     blocks.push(
       `Visible on-table coverage (human and Alex disclosures; deduplicated):\n${formatVisibleBoardCoverage(input.revealStats)}`,
     );
-  } else if (input.routeKind === "mediation" || input.routeKind === "long_silence") {
+  } else if (input.routeKind === "mediation") {
+    // mediation은 leader 전용이라 팀 커버리지가 중재 발화에 필요하다.
     blocks.push(
       `Confirmed on-table coverage (human-grounded; AI-only disclosures excluded):\n${formatConfirmedCoverage(input.revealStats)}`,
     );
-  } else if (input.routeKind === "address" || input.routeKind === "followup") {
+  } else if (
+    input.routeKind === "long_silence" ||
+    input.routeKind === "address" ||
+    input.routeKind === "followup"
+  ) {
     // 리더: 전체 가시 보드를 줘서 종합·정리 역할을 가능하게 한다.
     // (파일럿 근거: 리더가 전체 그림을 모르면 리더 이미지가 훼손됨)
     // 피어: 아직 안 꺼낸 비공개 노트만 줘서 "자기 관점 기여"의 자연스러움을 유지한다.
+    // (long_silence 피어에 팀 커버리지가 들어가면 리더식 중재 말투가 누출됨 — T-C3-011 관측)
     if (isLeaderCondition(input.conditionCode)) {
-      blocks.push(
-        `Visible on-table coverage (human and Alex disclosures; deduplicated):\n${formatVisibleBoardCoverage(input.revealStats)}`,
-      );
+      const coverage =
+        input.routeKind === "long_silence"
+          ? formatConfirmedCoverage(input.revealStats)
+          : formatVisibleBoardCoverage(input.revealStats);
+      const label =
+        input.routeKind === "long_silence"
+          ? "Confirmed on-table coverage (human-grounded; AI-only disclosures excluded)"
+          : "Visible on-table coverage (human and Alex disclosures; deduplicated)";
+      blocks.push(`${label}:\n${coverage}`);
     } else {
       const notes = formatUnsurfacedNotes(window, input.revealStats);
       if (notes) blocks.push(notes);
@@ -802,6 +814,26 @@ export function buildRouteUserContext(input: {
     intent: requestIntent,
   });
   if (requestScope) blocks.push(requestScope.block);
+  // [T-C4-019] address/followup had no repeat guard: the same either-or question
+  // was broadcast three times in a row (seq 36/39/41). build_on already says
+  // "don't restate what you've already said" and long_silence "vary the opening";
+  // this closes the gap for the two direct-response routes, condition-neutrally.
+  // Runtime context only — the frozen route prompts are untouched.
+  if (input.routeKind === "address" || input.routeKind === "followup") {
+    blocks.push(
+      "Anti-repeat (server-derived): if your recent messages already asked this same question or offered the same options, do not repeat them — acknowledge what was just said and move the discussion forward instead.",
+    );
+  }
+  // [T-C4-019] The frozen "# Your Notes" section teaches Alex the +/− note symbols,
+  // while every dynamic block and contract uses the words match/miss — with no rule
+  // to translate, visible messages oscillated between "+" and "MATCH". summary is
+  // exempt on purpose: its frozen recap format requires the "+:/−:" keyword shape.
+  // Runtime context only — the frozen route prompts are untouched.
+  if (input.routeKind !== "summary") {
+    blocks.push(
+      "Notation (server-derived): the + and − signs exist only for reading your notes. In your visible message never write '+', '−', or a plus/minus list — describe each trait in words as a match or a miss.",
+    );
+  }
   if (transcript) blocks.push(`Recent conversation:\n${transcript}`);
   blocks.push("Return only Alex's next visible chat message.");
   const focusGuard: RouteOutputScopeGuard | undefined =
