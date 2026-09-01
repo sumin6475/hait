@@ -7,7 +7,10 @@ export const TRIGGER_CONFIG = {
   TIME_INTERVAL_SECONDS: 90,
 
   // A long-silence route enters immediately after this quiet period.
-  LONG_SILENCE_SECONDS: 15,
+  // If a later smoke again shows a human message landing while generation is
+  // in flight, consider a separate pre-broadcast freshness guard then; this
+  // change intentionally adjusts only the quiet-period threshold.
+  LONG_SILENCE_SECONDS: 20,
 
   // [Step 37] 단일 빈도 가드 — AI 발화 후 사람 메시지가 N개 오기 전엔 침묵 (호명 제외). 2 = messagesSinceLastAI<2면 침묵.
   COOLDOWN_MIN_MSGS: 2,

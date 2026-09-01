@@ -103,7 +103,11 @@ export function outputScopeViolation(
   content: string,
   extractedIds: string[],
   guard: RouteOutputScopeGuard,
+  previouslySurfacedTraitIds: readonly string[] = [],
 ): string | null {
+  const previouslySurfaced = new Set(previouslySurfacedTraitIds);
+  const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
+  const restatedIds = extractedIds.length - newlyIntroducedIds.length;
   // [T-C4-019] Count labels only in trait-introducing positions: "(MATCH)", "(MISS)",
   // "MATCH —", "MISS:". Bare confirmation vocabulary ("add the next MATCH or MISS",
   // "mark this as a MISS") repeats labels without adding traits and was producing
@@ -111,13 +115,14 @@ export function outputScopeViolation(
   // exactly one trait but carried two label mentions).
   const explicitTraitLabels =
     content.match(/\(\s*(?:MATCH|MISS)\s*\)|\b(?:MATCH|MISS)\s*[—–:]/gi)?.length ?? 0;
-  if (
-    guard.maxTraitIds !== undefined &&
-    explicitTraitLabels > guard.maxTraitIds
-  ) {
+  if (guard.maxTraitIds !== undefined && explicitTraitLabels > guard.maxTraitIds + restatedIds) {
     return "too_many_trait_labels";
   }
-  if (guard.maxTraitIds !== undefined && extractedIds.length > guard.maxTraitIds) {
+  // maxTraitIds limits only information newly introduced by this Alex turn.
+  // A natural acknowledgement of an already surfaced human point must not turn
+  // "uptake + one new point" into a two-trait repair. Candidate scope below is
+  // intentionally still checked across every mentioned trait.
+  if (guard.maxTraitIds !== undefined && newlyIntroducedIds.length > guard.maxTraitIds) {
     return "too_many_traits";
   }
   const traitCandidates = candidatesForIds(extractedIds);
@@ -136,6 +141,7 @@ export async function generateScopedRouteMessage(input: {
   userPrompt: string;
   limits: GenerationLimits;
   guard?: RouteOutputScopeGuard;
+  previouslySurfacedTraitIds?: string[];
   logContext: string;
 }): Promise<{
   result: AIStructuredResult;
@@ -154,12 +160,17 @@ export async function generateScopedRouteMessage(input: {
   let extractedIds = input.guard ? await extractSurfacedTraits(result.parsed.content) : undefined;
   const metadataViolation = internalMetadataLeak(result.parsed.content);
   const scopeViolation = input.guard
-    ? outputScopeViolation(result.parsed.content, extractedIds ?? [], input.guard)
+    ? outputScopeViolation(
+        result.parsed.content,
+        extractedIds ?? [],
+        input.guard,
+        input.previouslySurfacedTraitIds,
+      )
     : null;
   if (!metadataViolation && !scopeViolation) return { result, extractedIds };
 
-  const initialViolations = [metadataViolation, scopeViolation].filter(
-    (value): value is string => Boolean(value),
+  const initialViolations = [metadataViolation, scopeViolation].filter((value): value is string =>
+    Boolean(value),
   );
   const repairAudit: OutputRepairAudit = {
     version: 1,
@@ -211,7 +222,7 @@ export async function generateScopedRouteMessage(input: {
         ? [
             `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
             input.guard.maxTraitIds !== undefined
-              ? `Include at most ${input.guard.maxTraitIds} trait${input.guard.maxTraitIds === 1 ? "" : "s"}.`
+              ? `Introduce at most ${input.guard.maxTraitIds} new trait${input.guard.maxTraitIds === 1 ? "" : "s"}; you may still acknowledge already-surfaced points.`
               : null,
           ]
             .filter(Boolean)
@@ -242,7 +253,12 @@ export async function generateScopedRouteMessage(input: {
     extractedIds = input.guard ? await extractSurfacedTraits(repaired.parsed.content) : undefined;
     const repairedMetadataViolation = internalMetadataLeak(repaired.parsed.content);
     const repairedScopeViolation = input.guard
-      ? outputScopeViolation(repaired.parsed.content, extractedIds ?? [], input.guard)
+      ? outputScopeViolation(
+          repaired.parsed.content,
+          extractedIds ?? [],
+          input.guard,
+          input.previouslySurfacedTraitIds,
+        )
       : null;
     const repairedViolations = [repairedMetadataViolation, repairedScopeViolation].filter(
       (value): value is string => Boolean(value),

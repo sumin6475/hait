@@ -108,13 +108,27 @@ conditionsRouter.post("/test-chat", requireAdmin, async (req, res) => {
       language: "en",
       anchorSeq: messages.at(-1)?.seq ?? 0,
     });
-    const generated = await generateScopedRouteMessage({
-      systemPrompt: resolved.systemPrompt,
-      userPrompt: context.userPrompt,
-      limits: routeGenerationLimits(routeKind, context.requestIntent),
-      guard: context.outputScopeGuard,
-      logContext: `route=${routeKind} anchor=${messages.at(-1)?.seq ?? 0} source=admin_test_chat`,
-    });
+    const generated = context.deterministicResponse
+      ? {
+          result: {
+            ok: true as const,
+            parsed: { content: context.deterministicResponse },
+            requestId: "server-deterministic-peer-complete",
+            latencyMs: 0,
+            inputTokens: 0,
+            outputTokens: 0,
+            systemFingerprint: null,
+            model: "server-deterministic-peer-complete",
+          },
+        }
+      : await generateScopedRouteMessage({
+          systemPrompt: resolved.systemPrompt,
+          userPrompt: context.userPrompt,
+          limits: routeGenerationLimits(routeKind, context.requestIntent),
+          guard: context.outputScopeGuard,
+          previouslySurfacedTraitIds: [...new Set([...humanSurfacedIds, ...aiSurfacedIds])],
+          logContext: `route=${routeKind} anchor=${messages.at(-1)?.seq ?? 0} source=admin_test_chat`,
+        });
     const result = generated.result;
 
     if (!result.ok) {

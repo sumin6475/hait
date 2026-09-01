@@ -14,6 +14,7 @@ import { allocSeq } from "./seq.js";
 import { getRoutePrompt } from "./routePromptRegistry.js";
 import {
   buildRouteUserContext,
+  formatDeterministicSummary,
   type RequestIntent,
   type TranscriptMessage,
 } from "./routeContext.js";
@@ -21,6 +22,7 @@ import { transcriptLabel } from "./labels.js";
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
+import { allSurfacedIds } from "./informationPools.js";
 import {
   generateScopedRouteMessage,
   type OutputRepairAudit,
@@ -112,6 +114,12 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     language: ((session as any).language ?? "en") as "en" | "ko",
     anchorSeq: input.anchorSeq,
   });
+  const previouslySurfacedTraitIds = [
+    ...new Set([
+      ...allSurfacedIds((session as any).revealStats),
+      ...docs.flatMap((message: any) => message.sharedInfoIds ?? []),
+    ]),
+  ];
   const focusDepthAudit = {
     focusCandidate: context.focusDepthState.candidate ?? undefined,
     focusBasis: context.focusDepthState.basis,
@@ -159,15 +167,41 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     });
   };
 
-  const generated = await generateScopedRouteMessage({
-    systemPrompt: prompt.systemPrompt,
-    userPrompt: context.userPrompt,
-    limits: routeGenerationLimits(input.routeKind, context.requestIntent),
-    guard: context.outputScopeGuard,
-    logContext:
-      `stage=${input.decisionStage ?? "system"} route=${input.routeKind} ` +
-      `reason=${input.routeReason ?? "none"} anchor=${input.anchorSeq} session=${input.sessionCode}`,
-  });
+  // Summary is a factual board rendering, not a free-form generation task. Use
+  // the exact established layout directly so counts, trait lists, and line
+  // breaks cannot drift or be truncated. Every other route keeps the existing
+  // model generation and repair path unchanged.
+  const summaryContent =
+    input.routeKind === "summary"
+      ? formatDeterministicSummary((session as any).revealStats, input.conditionCode)
+      : null;
+  const deterministicContent = summaryContent ?? context.deterministicResponse ?? null;
+  const deterministicModel = summaryContent
+    ? "server-deterministic-summary"
+    : "server-deterministic-peer-complete";
+  const generated = deterministicContent
+    ? {
+        result: {
+          ok: true as const,
+          parsed: { content: deterministicContent },
+          requestId: deterministicModel,
+          latencyMs: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          systemFingerprint: null,
+          model: deterministicModel,
+        },
+      }
+    : await generateScopedRouteMessage({
+        systemPrompt: prompt.systemPrompt,
+        userPrompt: context.userPrompt,
+        limits: routeGenerationLimits(input.routeKind, context.requestIntent),
+        guard: context.outputScopeGuard,
+        previouslySurfacedTraitIds,
+        logContext:
+          `stage=${input.decisionStage ?? "system"} route=${input.routeKind} ` +
+          `reason=${input.routeReason ?? "none"} anchor=${input.anchorSeq} session=${input.sessionCode}`,
+      });
   const result = generated.result;
   if (!result.ok) {
     await recordGenerationFailure(result.error, result.model, generated.repairAudit);

@@ -468,7 +468,7 @@ async function handleLongSilence(runtime: RuntimeState) {
     anchorSeq: last.seq,
     routeKind: "long_silence",
     priorityRoute: "long_silence",
-    priorityEvidence: "15_second_quiet_period",
+    priorityEvidence: `${TRIGGER_CONFIG.LONG_SILENCE_SECONDS}_second_quiet_period`,
     mainJudgeDecision: null,
     decisionStage: "long_silence_timer",
     routeReason: "long_silence",
@@ -492,15 +492,19 @@ async function broadcastClosingFallback(runtime: RuntimeState, reason: "deadline
       : `${leaderNamesEn.slice(0, -1).join(", ")} and ${leaderNamesEn.at(-1)}`;
   const leaderListKo = preference.leaders.map((candidate) => `Candidate ${candidate}`).join("·");
   const preferenceEn = preference.candidate
-    ? `My current preference is Candidate ${preference.candidate}; its overall shared profile currently looks strongest on matches relative to misses.`
+    ? preference.scope === "partial"
+      ? `Among the sufficiently covered candidates so far, my current preference is Candidate ${preference.candidate}; its visible profile currently looks strongest on matches relative to misses.`
+      : `My current preference is Candidate ${preference.candidate}; its overall shared profile currently looks strongest on matches relative to misses.`
     : preference.leaders.length > 1
-      ? `${leaderListEn} currently look even at the top in the overall shared match-and-miss picture, and I would like us to discuss them a little more before separating them.`
-      : "I do not have a current preference yet because not enough has been shared to compare the full field.";
+      ? `${leaderListEn} currently look even at the top ${preference.scope === "partial" ? "among the sufficiently covered candidates so far" : "in the overall shared match-and-miss picture"}, and I would like us to discuss them a little more before separating them.`
+      : "I do not have a current preference yet because not enough has been shared for a grounded comparison.";
   const preferenceKo = preference.candidate
-    ? `현재 제 선호는 Candidate ${preference.candidate}입니다. 공유된 전체 프로필에서 MISS 대비 MATCH가 가장 좋아 보입니다.`
+    ? preference.scope === "partial"
+      ? `현재 충분히 다뤄진 후보들 중 제 선호는 Candidate ${preference.candidate}입니다. 공개된 프로필에서 MISS 대비 MATCH가 가장 좋아 보입니다.`
+      : `현재 제 선호는 Candidate ${preference.candidate}입니다. 공유된 전체 프로필에서 MISS 대비 MATCH가 가장 좋아 보입니다.`
     : preference.leaders.length > 1
-      ? `${leaderListKo}가 공유된 전체 MATCH/MISS 구도에서 현재 공동으로 가장 좋아 보입니다. 우열을 가리기 전에 이 후보들을 좀 더 이야기해 보고 싶습니다.`
-      : "전체 후보를 비교하기에는 아직 공유된 정보가 충분하지 않아 현재 선호 후보는 없습니다.";
+      ? `${leaderListKo}가 ${preference.scope === "partial" ? "현재 충분히 다뤄진 후보들 중" : "공유된 전체 MATCH/MISS 구도에서"} 공동으로 가장 좋아 보입니다. 우열을 가리기 전에 이 후보들을 좀 더 이야기해 보고 싶습니다.`
+      : "근거 있게 비교하기에는 아직 공유된 정보가 충분하지 않아 현재 선호 후보는 없습니다.";
   const handoffEn =
     runtime.conditionCode === "C4"
       ? "Which candidate best fits the full picture for your final decision?"

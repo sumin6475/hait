@@ -13,6 +13,7 @@ import {
   deriveFocusDepthState,
   deriveMainJudgeSignalFromRules,
   formatConfirmedCoverage,
+  formatDeterministicSummary,
   formatLongSilenceContinuity,
   formatPreferenceDecision,
   formatVisibleBoardCoverage,
@@ -28,6 +29,7 @@ import {
 } from "../lib/informationPools.js";
 import { internalMetadataLeak, outputScopeViolation } from "../lib/routeScopedGeneration.js";
 import { routeGenerationLimits } from "../lib/routeTurn.js";
+import { TRAIT_DB } from "../lib/traitData.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 
 const keys = listRoutePromptKeys();
@@ -410,6 +412,7 @@ assert.match(coverage, /Candidate A — 1 matches · 1 misses/);
 assert.match(coverage, /Candidate B — 1 matches · 1 misses/);
 assert.match(coverage, /Still to cover: C, D/);
 assert.equal(preferredCandidateFromVisibleCoverage(revealStats), null);
+assert.equal(decidePreferenceFromVisibleCoverage(revealStats).scope, "none");
 
 const separatedInformationStats = {
   byCandidate: {
@@ -437,13 +440,57 @@ assert.match(visibleBoardCoverage, /Candidate A — 3 matches · 1 misses/);
 assert.match(visibleBoardCoverage, /Candidate B — 2 matches · 1 misses/);
 assert.match(visibleBoardCoverage, /Candidate C — 2 matches · 1 misses/);
 assert.match(visibleBoardCoverage, /Still to cover: D/);
-assert.equal(preferredCandidateFromVisibleCoverage(separatedInformationStats), null);
+const leaderXaiSummary = formatDeterministicSummary(separatedInformationStats, "C2");
+const leaderAciSummary = formatDeterministicSummary(separatedInformationStats, "C4");
+assert.match(leaderXaiSummary, /^Quick check-in\n\nCandidate A/);
+assert.match(leaderXaiSummary, /Candidate A — 3 matches · 1 misses/);
+assert.match(leaderXaiSummary, /Candidate B — 2 matches · 1 misses/);
+assert.match(leaderXaiSummary, /Candidate C — 2 matches · 1 misses/);
+assert.match(leaderXaiSummary, /Still to cover: D/);
+assert.doesNotMatch(leaderXaiSummary, /Candidate D —/);
+assert.doesNotMatch(leaderXaiSummary, /\?/);
+assert.equal((leaderAciSummary.match(/\?/g) ?? []).length, 1);
+assert.equal(
+  leaderAciSummary.slice(0, leaderAciSummary.lastIndexOf("\n\n")),
+  leaderXaiSummary.slice(0, leaderXaiSummary.lastIndexOf("\n\n")),
+);
+// The largest possible visible board is rendered in full without the former
+// structured-output character/token boundary.
+const fullVisibleBoardStats = {
+  byCandidate: Object.fromEntries(
+    ["A", "B", "C", "D"].map((candidate) => [
+      candidate,
+      {
+        revealedIds: TRAIT_DB.filter((trait) => trait.candidate === candidate).map(
+          (trait) => trait.id,
+        ),
+      },
+    ]),
+  ),
+  aiSurfacedIds: [],
+};
+const fullBoardSummary = formatDeterministicSummary(fullVisibleBoardStats, "C2");
+assert.match(fullBoardSummary, /Candidate A — 4 matches · 6 misses/);
+assert.match(fullBoardSummary, /Candidate B — 4 matches · 6 misses/);
+assert.match(fullBoardSummary, /Candidate C — 7 matches · 3 misses/);
+assert.match(fullBoardSummary, /Candidate D — 4 matches · 6 misses/);
+assert.match(fullBoardSummary, /Still to cover: none/);
+assert.ok(fullBoardSummary.length > 800);
+assert.equal(preferredCandidateFromVisibleCoverage(separatedInformationStats), "A");
 assert.equal(
   decidePreferenceFromVisibleCoverage(separatedInformationStats).reason,
-  "insufficient_miss_coverage",
+  "unique_top_ratio",
 );
+assert.equal(decidePreferenceFromVisibleCoverage(separatedInformationStats).scope, "partial");
+assert.deepEqual(
+  decidePreferenceFromVisibleCoverage(separatedInformationStats).comparedCandidates,
+  ["A", "B", "C"],
+);
+assert.match(formatPreferenceDecision(separatedInformationStats), /provisional/i);
+assert.match(formatPreferenceDecision(separatedInformationStats), /sufficiently covered/i);
 
-// No arbitrary minimum trait count remains once every candidate has a visible MISS.
+// One sufficiently covered profile is not a comparison, even if every candidate
+// has at least one visible MATCH and MISS.
 const minimalPreferenceStats = {
   byCandidate: {
     A: { revealedIds: ["A_p1", "A_n1"] },
@@ -453,8 +500,11 @@ const minimalPreferenceStats = {
   },
   aiSurfacedIds: [],
 };
-assert.equal(preferredCandidateFromVisibleCoverage(minimalPreferenceStats), "C");
-assert.equal(decidePreferenceFromVisibleCoverage(minimalPreferenceStats).reason, "unique_top_ratio");
+assert.equal(preferredCandidateFromVisibleCoverage(minimalPreferenceStats), null);
+assert.equal(
+  decidePreferenceFromVisibleCoverage(minimalPreferenceStats).reason,
+  "insufficient_comparable_coverage",
+);
 
 const uniquePreferenceStats = {
   byCandidate: {
@@ -466,6 +516,7 @@ const uniquePreferenceStats = {
   aiSurfacedIds: [],
 };
 assert.equal(preferredCandidateFromVisibleCoverage(uniquePreferenceStats), "C");
+assert.equal(decidePreferenceFromVisibleCoverage(uniquePreferenceStats).scope, "full");
 assert.match(formatPreferenceDecision(uniquePreferenceStats), /CURRENT_PREFERENCE — Candidate C/);
 assert.doesNotMatch(formatPreferenceDecision(uniquePreferenceStats), /\d+ MATCH \/ \d+ MISS/);
 assert.doesNotMatch(formatPreferenceDecision(uniquePreferenceStats), /ratio/i);
@@ -490,7 +541,7 @@ assert.match(
 // Alex disclosures are part of the same visible board used by summary and can change the leader.
 const alexVisiblePreferenceStats = {
   byCandidate: {
-    A: { revealedIds: ["A_p1", "A_n1"] },
+    A: { revealedIds: ["A_p1", "A_p2", "A_n1"] },
     B: { revealedIds: ["B_p1", "B_n1"] },
     C: { revealedIds: ["C_p1", "C_n1"] },
     D: { revealedIds: ["D_p1", "D_n1"] },
@@ -546,8 +597,8 @@ const earlyChoiceContext = buildRouteUserContext({
   language: "en",
   anchorSeq: 1,
 });
-assert.match(earlyChoiceContext.userPrompt, /NO_CURRENT_PREFERENCE/);
-assert.match(earlyChoiceContext.userPrompt, /Do not name a candidate/);
+assert.match(earlyChoiceContext.userPrompt, /CURRENT_PREFERENCE — Candidate A/);
+assert.match(earlyChoiceContext.userPrompt, /provisional/i);
 
 const informedChoiceContext = buildRouteUserContext({
   routeKind: "followup",
@@ -629,6 +680,27 @@ assert.equal(
     scopedInformationContext.outputScopeGuard!,
   ),
   null,
+);
+// A surfaced human point may be acknowledged alongside exactly one new Alex
+// point without triggering repair; only the newly introduced IDs count.
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is very well organized (MATCH), and my notes add that A is unfriendly (MISS).",
+    ["A_p4", "A_n1"],
+    scopedInformationContext.outputScopeGuard!,
+    ["A_p4"],
+  ),
+  null,
+);
+// The relaxation is narrow: two genuinely new traits remain a violation.
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is very well organized, has excellent spatial awareness, and is unfriendly.",
+    ["A_p4", "A_p3", "A_n1"],
+    scopedInformationContext.outputScopeGuard!,
+    ["A_p4"],
+  ),
+  "too_many_traits",
 );
 assert.equal(
   outputScopeViolation(
@@ -795,6 +867,14 @@ assert.equal(
   classifyRequestIntent("What do you have on the table so far for Candidate B?").source,
   "visible_board",
 );
+assert.equal(
+  classifyRequestIntent("Can you list all Candidate B traits we've discussed?").source,
+  "visible_board",
+);
+assert.equal(
+  classifyRequestIntent("What are all the traits we've all mentioned for Candidate B?").source,
+  "visible_board",
+);
 assert.equal(classifyRequestIntent("Alex, who is best?").source, "alex_notes");
 
 // [RequestIntent] 핵심 회귀 케이스 — "what do you have" 같은 표면 문장 없이도,
@@ -871,6 +951,60 @@ assert.equal(peerTableCompleteContext.requestIntent.source, "visible_board");
 assert.match(peerTableCompleteContext.userPrompt, /do not have the full board/i);
 assert.match(peerTableCompleteContext.userPrompt, /not really sure what the whole table looks like/i);
 assert.equal(peerTableCompleteContext.outputScopeGuard, undefined);
+assert.match(peerTableCompleteContext.deterministicResponse!, /my notes have these matches/i);
+assert.match(peerTableCompleteContext.deterministicResponse!, /don't know the full table/i);
+assert.doesNotMatch(peerTableCompleteContext.deterministicResponse!, /\?/);
+
+// Split request: a bare direct address inherits the immediately preceding human
+// fragment, so "all traits we've discussed" is not lost when "Alex?" arrives
+// as a separate message.
+const splitPeerCompleteC1 = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  messages: [
+    {
+      seq: 10,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "No, I mean all Candidate B traits we've discussed.",
+    },
+    { seq: 11, senderRole: "humanY", speaker: "Participant Y", content: "Alex?" },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 11,
+});
+assert.deepEqual(splitPeerCompleteC1.requestIntent, {
+  kind: "complete_single_candidate",
+  candidate: "B",
+  source: "visible_board",
+});
+assert.match(splitPeerCompleteC1.deterministicResponse!, /Candidate B/);
+assert.match(splitPeerCompleteC1.deterministicResponse!, /keeps a cool head/);
+assert.match(splitPeerCompleteC1.deterministicResponse!, /sometimes abusive in tone/);
+assert.equal((splitPeerCompleteC1.deterministicResponse!.match(/\?/g) ?? []).length, 0);
+
+const splitPeerCompleteC3 = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C3",
+  messages: [
+    {
+      seq: 10,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "No, I mean all Candidate B traits we've discussed.",
+    },
+    { seq: 11, senderRole: "humanY", speaker: "Participant Y", content: "Alex?" },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 11,
+});
+assert.equal((splitPeerCompleteC3.deterministicResponse!.match(/\?/g) ?? []).length, 1);
+assert.match(splitPeerCompleteC3.deterministicResponse!, /could you summarize the other traits/i);
+
+// An explicit request for Alex's own notes retains the existing generated path.
+assert.equal(explicitCompleteCandidateContext.deterministicResponse, undefined);
 
 // 리더 + 테이블 전체 → 전체 가시 보드를 갖고 있으므로 그대로 전체 목록 응답.
 const leaderTableCompleteContext = buildRouteUserContext({
@@ -1233,6 +1367,6 @@ assert.equal(routeGenerationLimits("address", { ...completeListIntent, kind: "no
 assert.equal(TRIGGER_CONFIG.ADDRESS_FLOOR_MS, 2_000);
 assert.equal(TRIGGER_CONFIG.FOLLOWUP_FLOOR_MS, 2_000);
 assert.equal(TRIGGER_CONFIG.MAIN_ROUTE_DELAY_MS, 3_000);
-assert.equal(TRIGGER_CONFIG.LONG_SILENCE_SECONDS, 15);
+assert.equal(TRIGGER_CONFIG.LONG_SILENCE_SECONDS, 20);
 assert.equal(TRIGGER_CONFIG.DISCUSSION_DURATION_MS, 30 * 60 * 1_000);
 console.log("intervention-v2 checks passed");

@@ -178,20 +178,48 @@ export function formatVisibleBoardCoverage(revealStats: any): string {
   );
 }
 
+/**
+ * Participant-facing summary with the frozen visual layout rendered entirely
+ * from the visible board. Keeping the factual body out of model generation
+ * prevents omissions, candidate swaps, and token truncation without changing
+ * the established summary shape.
+ */
+export function formatDeterministicSummary(revealStats: any, conditionCode: ConditionCode): string {
+  const surfaced = new Set([...allSurfacedIds(revealStats), ...humanConfirmedIds(revealStats)]);
+  const coverage = formatCoverageFromIds(surfaced);
+  const untouched = CANDIDATES.filter(
+    (candidate) => ![...surfaced].some((id) => TRAIT_BY_ID.get(id)?.candidate === candidate),
+  );
+  const factualBody = coverage.startsWith("No confirmed candidate information")
+    ? `Still to cover: ${CANDIDATES.join(", ")}`
+    : coverage.includes("Still to cover:")
+      ? coverage
+      : `${coverage}\n\nStill to cover: none`;
+  const ending =
+    conditionCode === "C4"
+      ? untouched.length
+        ? `Which of the still-uncovered candidates should the team put on the table next?`
+        : "Which of these candidate differences should we resolve next to move toward a decision?"
+      : untouched.length
+        ? `Remaining coverage: ${untouched.map((candidate) => `Candidate ${candidate}`).join(", ")} ${untouched.length === 1 ? "is" : "are"} not yet on the table; the next step is to add that coverage before deliberating across the full field.`
+        : "Remaining coverage: all finalists now have on-table information; the next step is to deliberate using these visible profiles.";
+
+  return `Quick check-in\n\n${factualBody}\n\n${ending}`;
+}
+
 export interface PreferenceDecision {
   eligible: boolean;
+  scope: "none" | "partial" | "full";
+  comparedCandidates: Cand[];
   leaders: Cand[];
   candidate: Cand | null;
-  reason: "insufficient_miss_coverage" | "top_ratio_tie" | "unique_top_ratio";
+  reason: "insufficient_comparable_coverage" | "top_ratio_tie" | "unique_top_ratio";
   rows: Record<Cand, { matches: number; misses: number; total: number; ratio: number | null }>;
 }
 
 export function decidePreferenceFromVisibleCoverage(revealStats: any): PreferenceDecision {
   // Preference follows the same visible board as summary/closing: human and Alex disclosures.
-  const surfaced = new Set([
-    ...allSurfacedIds(revealStats),
-    ...humanConfirmedIds(revealStats),
-  ]);
+  const surfaced = new Set([...allSurfacedIds(revealStats), ...humanConfirmedIds(revealStats)]);
   const rows = {} as PreferenceDecision["rows"];
 
   for (const candidate of CANDIDATES) {
@@ -208,21 +236,30 @@ export function decidePreferenceFromVisibleCoverage(revealStats: any): Preferenc
     };
   }
 
-  // A zero-MISS denominator means the full field has not been shared enough to compare ratios.
-  const eligible = CANDIDATES.every((candidate) => rows[candidate].misses > 0);
-  if (!eligible) {
+  // Compare only profiles that have enough two-sided information on the visible
+  // board. Hidden Alex notes are never added here. This keeps a zero-MISS or
+  // barely mentioned candidate from winning through missing-data arithmetic,
+  // while an untouched fourth candidate no longer blocks a provisional read of
+  // the profiles the group has actually discussed.
+  const comparedCandidates = CANDIDATES.filter(
+    (candidate) =>
+      rows[candidate].matches > 0 && rows[candidate].misses > 0 && rows[candidate].total >= 3,
+  );
+  if (comparedCandidates.length < 2) {
     return {
       eligible: false,
+      scope: "none",
+      comparedCandidates,
       leaders: [],
       candidate: null,
-      reason: "insufficient_miss_coverage",
+      reason: "insufficient_comparable_coverage",
       rows,
     };
   }
 
   // Compare fractions exactly so floating-point rounding cannot create or hide a tie.
   let leaders: Cand[] = [];
-  for (const candidate of CANDIDATES) {
+  for (const candidate of comparedCandidates) {
     if (!leaders.length) {
       leaders = [candidate];
       continue;
@@ -235,10 +272,20 @@ export function decidePreferenceFromVisibleCoverage(revealStats: any): Preferenc
   }
 
   if (leaders.length > 1) {
-    return { eligible: true, leaders, candidate: null, reason: "top_ratio_tie", rows };
+    return {
+      eligible: true,
+      scope: comparedCandidates.length === CANDIDATES.length ? "full" : "partial",
+      comparedCandidates,
+      leaders,
+      candidate: null,
+      reason: "top_ratio_tie",
+      rows,
+    };
   }
   return {
     eligible: true,
+    scope: comparedCandidates.length === CANDIDATES.length ? "full" : "partial",
+    comparedCandidates,
     leaders,
     candidate: leaders[0]!,
     reason: "unique_top_ratio",
@@ -277,23 +324,34 @@ export function formatPreferenceDecision(revealStats: any): string {
   if (!decision.eligible) {
     return [
       ...header,
-      "State: NO_CURRENT_PREFERENCE — the visible shared picture is not yet sufficient to compare the full field.",
-      "If asked to choose, say briefly that not enough has been shared yet to compare all candidates. Do not name a candidate, expose the missing-data rule, use private notes to force a choice, or list traits.",
+      "State: NO_CURRENT_PREFERENCE — the visible shared picture does not yet contain at least two sufficiently covered MATCH/MISS profiles.",
+      "If asked to choose, say briefly that not enough has been shared yet for a grounded comparison. Do not name a candidate, expose the missing-data rule, use private notes to force a choice, or list traits.",
     ].join("\n");
   }
+  const compared = formatCandidateList(decision.comparedCandidates);
+  const partialQualification =
+    decision.scope === "partial"
+      ? `This is provisional among the sufficiently covered candidates currently on the table (${compared}), not a full-field conclusion.`
+      : null;
   if (decision.leaders.length > 1) {
     const candidates = formatCandidateList(decision.leaders);
     return [
       ...header,
       `State: CURRENT_CO_PREFERENCE — ${candidates}.`,
-      `When the Route Contract permits a preference, name all of ${candidates}. Say they currently look even at the top in the overall shared MATCH/MISS picture and that you would like to discuss them more before separating them. Do not pick one, state numerical evidence, or list traits.`,
-    ].join("\n");
+      partialQualification,
+      `When the Route Contract permits a preference, name all of ${candidates}. ${decision.scope === "partial" ? "Explicitly qualify the read as applying only among the sufficiently covered candidates so far. " : ""}Say they currently look even at the top in the overall shared MATCH/MISS picture and that you would like to discuss them more before separating them. Do not pick one, state numerical evidence, or list traits.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
   return [
     ...header,
     `State: CURRENT_PREFERENCE — Candidate ${decision.candidate}.`,
-    `When the Route Contract permits a preference, name only Candidate ${decision.candidate}. Say its overall shared profile currently looks strongest on MATCHES relative to MISSES. Do not state numerical evidence, enumerate traits, or use one standout trait as the reason.`,
-  ].join("\n");
+    partialQualification,
+    `When the Route Contract permits a preference, name only Candidate ${decision.candidate}. ${decision.scope === "partial" ? "Explicitly say this is the current read among the sufficiently covered candidates so far. " : ""}Say its overall shared profile currently looks strongest on MATCHES relative to MISSES. Do not state numerical evidence, enumerate traits, or use one standout trait as the reason.`,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function compactMessage(content: string, maxChars = 360): string {
@@ -522,13 +580,14 @@ const BROAD_INFORMATION_REQUESTS = [
   /(?:뭐|무엇을?).*(?:가지고|갖고|메모|노트)/,
 ];
 const EXPLICIT_ALL_SCOPE = [
-  /\b(?:all|every|each)\s+(?:of\s+the\s+)?(?:candidates?|finalists?|profiles?)\b/i,
+  /\ball\s+(?:of\s+the\s+)?(?:candidates|finalists|profiles)\b|\b(?:every|each)\s+(?:candidate|finalist|profile)\b/i,
   /\b(?:all|everything|complete|full)\s+(?:of\s+)?(?:your\s+)?notes\b/i,
   /\ball\s+of\s+them\b/i,
   /(?:모든|전체)\s*(?:후보|후보자|프로필|노트|메모)/,
 ];
 const EXPLICIT_COMPLETE_SINGLE = [
   /\b(?:all|every|complete|full)\s+(?:of\s+)?(?:the\s+)?(?:traits?|matches|misses|profiles?|notes?)\b/i,
+  /\ball\s+(?:the\s+)?(?:Candidate\s+)?[ABCD](?:'s|’s)?\s+traits?\b/i,
   /\beverything\s+you\s+(?:have|got|know)\b/i,
   /(?:전부|모두|전체|모든)\s*(?:특성|속성|장단점|매치|미스|프로필|노트|메모)/,
 ];
@@ -571,7 +630,12 @@ export const NO_REQUEST_INTENT: RequestIntent = {
 };
 
 const VISIBLE_BOARD_SCOPE =
-  /\b(?:on the table|so far|at this point|already (?:shared|said|mentioned|discussed)|been (?:said|shared|discussed|covered)|we(?:'ve| have) (?:heard|got|covered)|in the (?:chat|discussion))\b|(?:테이블|지금까지|여태|나온|공유된|말해진|논의된)/i;
+  /\b(?:on the table|so far|at this point|already (?:shared|said|mentioned|discussed)|been (?:said|shared|discussed|covered)|we(?:'ve| have)(?: all)? (?:heard|got|covered|said|shared|mentioned|discussed)|we all (?:heard|covered|said|shared|mentioned|discussed)|(?:our|everyone's|the team'?s|the group'?s) (?:all )?(?:traits?|points?|information|notes?)|in the (?:chat|discussion))\b|(?:테이블|지금까지|여태|나온|공유된|말해진|논의된)/i;
+
+// Keep the inexpensive, deterministic wording matcher while the experiment is
+// frozen. If a future smoke exposes another semantically equivalent whole-board
+// phrasing, replace this source decision with one shared semantic classifier
+// rather than continuing to grow route-specific phrase patches.
 
 export function classifyRequestIntent(content: string | undefined | null): RequestIntent {
   const text = content?.trim() ?? "";
@@ -634,6 +698,84 @@ function peerWholeTableLimitation(language: "en" | "ko", candidate: Cand | null)
       : "If it helps, you may add one single point from your own notes.",
     "Do not say that a rule or your role prevents you from answering.",
   ].join(" ");
+}
+
+function formatAlexCandidateNotes(candidate: Cand): string {
+  const traits = ALEX_Z_IDS.map((id) => TRAIT_BY_ID.get(id)).filter(
+    (trait) => trait?.candidate === candidate,
+  );
+  const matches = traits
+    .filter((trait) => trait?.valence === "pos")
+    .map((trait) => trait!.text)
+    .join("; ");
+  const misses = traits
+    .filter((trait) => trait?.valence === "neg")
+    .map((trait) => trait!.text)
+    .join("; ");
+  return `For Candidate ${candidate}, my notes have these matches: ${matches}. The misses are: ${misses}.`;
+}
+
+function deterministicPeerCompleteResponse(input: {
+  conditionCode: ConditionCode;
+  language: "en" | "ko";
+  intent: RequestIntent;
+  candidate: Cand | null;
+}): string | undefined {
+  if (
+    input.language !== "en" ||
+    (input.conditionCode !== "C1" && input.conditionCode !== "C3") ||
+    input.intent.source !== "visible_board" ||
+    (input.intent.kind !== "complete_single_candidate" &&
+      input.intent.kind !== "complete_all_candidates")
+  ) {
+    return undefined;
+  }
+
+  if (input.intent.kind === "complete_all_candidates" || !input.candidate) {
+    return input.conditionCode === "C1"
+      ? "I only know my own notes, so I don't know the full table across all candidates."
+      : "I only know my own notes, so could you summarize the full table you mean?";
+  }
+
+  const notes = formatAlexCandidateNotes(input.candidate);
+  return input.conditionCode === "C1"
+    ? `${notes} That's everything in my notes for Candidate ${input.candidate}; I don't know the full table, though.`
+    : `${notes} That's everything in my notes for Candidate ${input.candidate}. I only know my own notes, so could you summarize the other traits you mean?`;
+}
+
+const BARE_ALEX_ADDRESS = /^\s*(?:hey\s+)?alex[\s?!.,]*$/i;
+
+function requestBundleForAnchor(
+  window: TranscriptMessage[],
+  anchorSeq: number,
+): { anchor?: TranscriptMessage; content: string } {
+  const anchor = anchorHumanMessage(window, anchorSeq);
+  if (!anchor) return { content: "" };
+  const anchorIndex = window.findIndex((message) => message.seq === anchor.seq);
+  if (anchorIndex < 0) return { anchor, content: anchor.content };
+
+  let start = anchorIndex;
+  if (BARE_ALEX_ADDRESS.test(anchor.content)) {
+    const previous = window[anchorIndex - 1];
+    if (previous && previous.senderRole !== "ai") start = anchorIndex - 1;
+  } else {
+    while (
+      start > 0 &&
+      window[start - 1]!.senderRole !== "ai" &&
+      window[start - 1]!.senderRole === anchor.senderRole
+    ) {
+      start -= 1;
+    }
+  }
+
+  return {
+    anchor,
+    content: window
+      .slice(start, anchorIndex + 1)
+      .filter((message) => message.senderRole !== "ai")
+      .map((message) => message.content)
+      .join("\n"),
+  };
 }
 
 function requestScopeFromIntent(input: {
@@ -720,6 +862,7 @@ export function buildRouteUserContext(input: {
   outputScopeGuard?: RouteOutputScopeGuard;
   focusDepthState: FocusDepthState;
   requestIntent: RequestIntent;
+  deterministicResponse?: string;
 } {
   const window = input.messages.slice(-WINDOWS[input.routeKind]);
   const transcript = window
@@ -779,10 +922,11 @@ export function buildRouteUserContext(input: {
   }
   // The anchor human message is classified exactly once; the same intent
   // drives the focus-control override, the preference cue, and the scope block.
-  const anchor = anchorHumanMessage(window, input.anchorSeq);
+  const requestBundle = requestBundleForAnchor(window, input.anchorSeq);
+  const anchor = requestBundle.anchor;
   const requestIntent =
     input.routeKind === "address" || input.routeKind === "followup"
-      ? classifyRequestIntent(anchor?.content)
+      ? classifyRequestIntent(requestBundle.content)
       : NO_REQUEST_INTENT;
   const focusControlOverridden = requestOverridesFocusControl(
     input.routeKind,
@@ -812,6 +956,20 @@ export function buildRouteUserContext(input: {
     revealStats: input.revealStats,
     language: input.language,
     intent: requestIntent,
+  });
+  const completeRequestCandidate =
+    requestIntent.kind === "complete_single_candidate"
+      ? (requestIntent.candidate ??
+        currentTopicCandidate(
+          window.map((message) => ({ sender: message.speaker, content: message.content })),
+        ) ??
+        lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0))
+      : null;
+  const deterministicResponse = deterministicPeerCompleteResponse({
+    conditionCode: input.conditionCode,
+    language: input.language,
+    intent: requestIntent,
+    candidate: completeRequestCandidate,
   });
   if (requestScope) blocks.push(requestScope.block);
   // [T-C4-019] address/followup had no repeat guard: the same either-or question
@@ -862,5 +1020,6 @@ export function buildRouteUserContext(input: {
     outputScopeGuard,
     focusDepthState,
     requestIntent,
+    deterministicResponse,
   };
 }
