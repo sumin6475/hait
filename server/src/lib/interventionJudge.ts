@@ -16,6 +16,7 @@ const JudgeSchema = z.object({
   evidence: z.enum([
     "relevant_unsurfaced_information",
     "factual_correction",
+    "conversation_grounded_synthesis",
     "social_uptake",
     "none",
   ]),
@@ -28,7 +29,12 @@ Direct address, follow-up replies to Alex, long silence, summary, and closing ha
 
 Choose exactly one decision:
 
-CONTRIBUTE — Alex has one specific, relevant, non-redundant factual contribution or correction that would materially advance the candidate discussion right now.
+CONTRIBUTE — Alex can materially advance the candidate discussion right now through exactly one of these:
+1. One specific, relevant, non-redundant piece of unsurfaced factual information;
+2. A concrete factual correction that should be made now; or
+3. One specific conversation-grounded synthesis: a non-redundant connection, implication, tension, or unresolved distinction derived entirely from points the humans have already stated.
+
+A conversation-grounded synthesis must add relational value between already-spoken human points. It must not introduce a new candidate fact, present an inference as a fact, merely repeat or summarize the conversation, express generic agreement, praise the discussion, redirect the agenda, or ask broadly for more information.
 
 ACKNOWLEDGE — Alex has no substantive information to add, but one brief acknowledgment of the immediately preceding message would be socially useful and would not interrupt the people's exchange. This must not require a question, candidate comparison, new trait, preference, or procedural nudge.
 
@@ -37,12 +43,22 @@ SILENT — Alex should not speak. This is the default and common result.
 A candidate being mentioned, praised, criticized, compared, or preferred is not by itself a reason to contribute. The user message includes three compact server-derived fields: current focus, exchange class, and whether Alex has one unsurfaced private contribution for that focus. Treat them as authoritative.
 
 Decision policy for those fields:
-- For exchange_class=substantive with private_contribution=available, choose CONTRIBUTE unless the recent chat shows that same contribution is already visible.
-- For exchange_class=acknowledgment, choose ACKNOWLEDGE only when it directly takes up Alex's immediately preceding point; otherwise choose SILENT.
-- For exchange_class=preference, procedural, or unclear, choose SILENT unless there is a factual correction that must be made now.
-- When private_contribution=none, do not choose CONTRIBUTE unless correcting a concrete factual error.
+- For exchange_class=substantive with private_contribution=available, choose CONTRIBUTE with evidence=relevant_unsurfaced_information unless the recent chat already contains that contribution.
+- For exchange_class=substantive with private_contribution=none and current_focus=A, B, C, or D, choose CONTRIBUTE with evidence=conversation_grounded_synthesis only when there is one specific connection, implication, tension, or unresolved distinction grounded entirely in the recent human exchange that would materially advance the comparison.
+- Do not choose conversation_grounded_synthesis for a paraphrase, recap, generic agreement, unsupported interpretation, topic change, procedural prompt, or broad request for the humans to provide more information. Otherwise choose SILENT.
+- Choose CONTRIBUTE with evidence=factual_correction only when the recent chat contains a concrete factual error that should be corrected now.
+- For exchange_class=acknowledgment, choose ACKNOWLEDGE with evidence=social_uptake when a brief social response would be useful and non-interruptive.
+- For exchange_class=preference, procedural, or unclear, choose SILENT unless there is a concrete factual correction that must be made now.
+- When current_focus=none and private_contribution=none, do not choose conversation_grounded_synthesis; choose SILENT unless correcting a concrete factual error.
 
-Choose acknowledge sparingly. When uncertain, choose silent. Do not choose mediation or a candidate, and do not write Alex's message.
+Evidence must match the decision:
+- relevant_unsurfaced_information, factual_correction, or conversation_grounded_synthesis → CONTRIBUTE
+- social_uptake → ACKNOWLEDGE
+- none → SILENT
+
+Choose acknowledgment and conversation-grounded synthesis sparingly. When uncertain whether a reaction adds new relational value, choose SILENT.
+
+Do not decide whether Alex should express an allowed contribution as a statement or a question. Do not decide whether Alex should speak as a peer or a leader. Those choices are controlled downstream by the condition-specific route contract. Do not choose mediation or a candidate, and do not write Alex's message.
 
 Output JSON only.`;
 

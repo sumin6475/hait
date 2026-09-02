@@ -79,9 +79,7 @@ function privateContributionFor(focusCandidate: Cand | null, revealStats: any): 
   const surfaced = allSurfacedIds(revealStats);
   return Boolean(
     focusCandidate &&
-      ALEX_Z_IDS.some(
-        (id) => TRAIT_BY_ID.get(id)?.candidate === focusCandidate && !surfaced.has(id),
-      ),
+    ALEX_Z_IDS.some((id) => TRAIT_BY_ID.get(id)?.candidate === focusCandidate && !surfaced.has(id)),
   );
 }
 
@@ -126,7 +124,10 @@ export async function deriveMainJudgeSignal(input: {
     if (llmSignal) {
       return {
         ...llmSignal,
-        privateContributionAvailable: privateContributionFor(llmSignal.focusCandidate, input.revealStats),
+        privateContributionAvailable: privateContributionFor(
+          llmSignal.focusCandidate,
+          input.revealStats,
+        ),
       };
     }
   }
@@ -389,7 +390,11 @@ export function formatLongSilenceContinuity(messages: TranscriptMessage[]): stri
 }
 
 export type FocusDepthBasis =
-  "explicit_human_focus" | "recent_human_topic" | "last_human_discussion" | "comparison" | "none";
+  | "explicit_human_focus"
+  | "recent_human_topic"
+  | "last_human_discussion"
+  | "comparison"
+  | "none";
 
 export interface FocusDepthState {
   candidate: Cand | null;
@@ -570,6 +575,7 @@ export interface RouteOutputScopeGuard {
     | "scopeless_information_request"
     | "focus_depth"
     | "route_single_point"
+    | "conversation_grounded_synthesis"
     | "explicit_complete_request";
 }
 
@@ -827,8 +833,7 @@ function requestScopeFromIntent(input: {
       input.window.map((message) => ({ sender: message.speaker, content: message.content })),
     );
     const focus =
-      transcriptFocus ??
-      lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
+      transcriptFocus ?? lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
     if (!focus) {
       return {
         block:
@@ -855,6 +860,7 @@ export function buildRouteUserContext(input: {
   revealStats: any;
   language: "en" | "ko";
   anchorSeq: number;
+  judgeEvidence?: string | null;
 }): {
   userPrompt: string;
   contextFromSeq: number | null;
@@ -864,7 +870,13 @@ export function buildRouteUserContext(input: {
   requestIntent: RequestIntent;
   deterministicResponse?: string;
 } {
-  const window = input.messages.slice(-WINDOWS[input.routeKind]);
+  const conversationGroundedSynthesis =
+    input.routeKind === "build_on" && input.judgeEvidence === "conversation_grounded_synthesis";
+  // The synthesis judge sees 16 messages. Give the generator the same evidence
+  // window without changing the established context size for ordinary routes.
+  const window = input.messages.slice(
+    -(conversationGroundedSynthesis ? 16 : WINDOWS[input.routeKind]),
+  );
   const transcript = window
     .map(
       (message) =>
@@ -878,6 +890,13 @@ export function buildRouteUserContext(input: {
       ? "Session language: Korean. Return Alex's visible message in natural Korean."
       : "Session language: English. Return Alex's visible message in English.",
   ];
+  if (input.routeKind === "build_on") {
+    blocks.push(
+      conversationGroundedSynthesis
+        ? "Contribution mode (server-derived): CONVERSATION_GROUNDED_SYNTHESIS. Use only points already stated by the humans in the recent conversation; do not introduce a new candidate fact or private note."
+        : "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
+    );
+  }
   const focusDepthState = deriveFocusDepthState({
     routeKind: input.routeKind,
     messages: window,
@@ -1008,8 +1027,10 @@ export function buildRouteUserContext(input: {
     input.routeKind === "build_on" && focusDepthState.candidate
       ? {
           candidate: focusDepthState.candidate,
-          maxTraitIds: 1,
-          reason: "route_single_point",
+          maxTraitIds: conversationGroundedSynthesis ? 0 : 1,
+          reason: conversationGroundedSynthesis
+            ? "conversation_grounded_synthesis"
+            : "route_single_point",
         }
       : undefined;
   const outputScopeGuard = requestScope?.guard ?? routeSinglePointGuard ?? focusGuard;

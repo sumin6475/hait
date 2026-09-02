@@ -17,6 +17,7 @@ import { judgeIntervention, JUDGE_WINDOW_SIZE } from "./interventionJudge.js";
 import {
   detectDirectAddress,
   detectMediationEvidence,
+  evaluateLongSilenceGate,
   resolveRoute,
 } from "./interventionRoutingV2.js";
 import {
@@ -75,6 +76,8 @@ interface RuntimeState {
   mediationLatchedHumanCount?: number;
   buildOnsSinceMediation: number;
   lastBackchannelAt?: number;
+  longSilenceBroadcastCount: number;
+  lastLongSilenceAt?: number;
   activeGenerationId?: string;
   queuedAddress?: { seq: number; evidence: string };
 }
@@ -289,6 +292,10 @@ async function armSummaryIfEligible(runtime: RuntimeState, session: any, docs: a
 
 function scheduleLongSilence(runtime: RuntimeState) {
   clearTimer(runtime.longSilenceTimer);
+  if (runtime.longSilenceBroadcastCount >= TRIGGER_CONFIG.LONG_SILENCE_MAX_BROADCASTS) {
+    runtime.longSilenceTimer = undefined;
+    return;
+  }
   runtime.longSilenceTimer = setTimeout(() => {
     void handleLongSilence(runtime).catch((error) =>
       log.error(`[intervention-v2] long-silence error (${runtime.sessionCode}):`, error),
@@ -349,7 +356,10 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
       mediationEvidence: runtime.mediationEvidence,
       buildOnsSinceMediation: runtime.buildOnsSinceMediation,
       commitGuard: () =>
-        runtime.activeGenerationId === reservation.id && runtime.queuedAddress === undefined,
+        runtime.activeGenerationId === reservation.id &&
+        runtime.queuedAddress === undefined &&
+        (reservation.routeKind !== "long_silence" ||
+          runtime.latestPushSeq === reservation.anchorSeq),
     });
 
     if (!result.ok) {
@@ -370,6 +380,19 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
       await Session.updateOne(
         { _id: runtime.sessionId },
         { $set: { "aiState.lastBackchannelAt": new Date(runtime.lastBackchannelAt) } },
+      );
+    }
+    if (reservation.routeKind === "long_silence") {
+      runtime.longSilenceBroadcastCount += 1;
+      runtime.lastLongSilenceAt = Date.now();
+      await Session.updateOne(
+        { _id: runtime.sessionId },
+        {
+          $set: {
+            "aiState.longSilenceBroadcastCount": runtime.longSilenceBroadcastCount,
+            "aiState.lastLongSilenceAt": new Date(runtime.lastLongSilenceAt),
+          },
+        },
       );
     }
     if (reservation.routeKind === "build_on" && runtime.mediationLatched) {
@@ -463,7 +486,34 @@ async function handleLongSilence(runtime: RuntimeState) {
     );
     return;
   }
-  if (runtime.reservation || runtime.busy || runtime.latestPushSeq > last.seq) return;
+  if (runtime.reservation || runtime.busy) return;
+  const gate = evaluateLongSilenceGate({
+    broadcastCount: runtime.longSilenceBroadcastCount,
+    maxBroadcasts: TRIGGER_CONFIG.LONG_SILENCE_MAX_BROADCASTS,
+    messagesSinceAI: messagesSinceLastAI(docs),
+    minimumHumanMessagesSinceAI: TRIGGER_CONFIG.LONG_SILENCE_MIN_HUMAN_MSGS_SINCE_AI,
+    lastBroadcastAt: runtime.lastLongSilenceAt,
+    minimumIntervalMs: TRIGGER_CONFIG.LONG_SILENCE_MIN_INTERVAL_MS,
+    now: Date.now(),
+    latestPushSeq: runtime.latestPushSeq,
+    anchorSeq: last.seq,
+  });
+  if (!gate.eligible) {
+    log.info(
+      `[intervention-v2] long_silence_skip reason=${gate.reason} anchor=${last.seq} ` +
+        `count=${runtime.longSilenceBroadcastCount} session=${runtime.sessionCode}`,
+    );
+    if (gate.reason === "minimum_interval" && gate.retryAfterMs !== undefined) {
+      runtime.longSilenceTimer = setTimeout(
+        () =>
+          void handleLongSilence(runtime).catch((error) =>
+            log.error(`[intervention-v2] long-silence error (${runtime.sessionCode}):`, error),
+          ),
+        gate.retryAfterMs,
+      );
+    }
+    return;
+  }
   await reserveTurn(runtime, {
     anchorSeq: last.seq,
     routeKind: "long_silence",
@@ -632,6 +682,8 @@ async function initializeRuntime(runtime: RuntimeState) {
   runtime.mediationLatchedHumanCount = state.mediationLatchedHumanCount ?? undefined;
   runtime.buildOnsSinceMediation = state.buildOnsSinceMediation ?? 0;
   runtime.lastBackchannelAt = state.lastBackchannelAt?.getTime?.();
+  runtime.longSilenceBroadcastCount = state.longSilenceBroadcastCount ?? 0;
+  runtime.lastLongSilenceAt = state.lastLongSilenceAt?.getTime?.();
 
   if (state.lifecycle === "muted") return;
   if (state.lifecycle === "closing") {
@@ -712,6 +764,7 @@ export async function startInterventionSession(input: {
       mediationLatched: false,
       mediationEvidence: [],
       buildOnsSinceMediation: 0,
+      longSilenceBroadcastCount: 0,
     };
     runtimes.set(input.sessionCode, runtime);
     runtime.initialized = initializeRuntime(runtime);

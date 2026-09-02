@@ -6,11 +6,11 @@ export const TRIGGER_CONFIG = {
   //마지막 AI 발화 후 N초 경과 시 평가
   TIME_INTERVAL_SECONDS: 90,
 
-  // A long-silence route enters immediately after this quiet period.
-  // If a later smoke again shows a human message landing while generation is
-  // in flight, consider a separate pre-broadcast freshness guard then; this
-  // change intentionally adjusts only the quiet-period threshold.
-  LONG_SILENCE_SECONDS: 20,
+  // Long silence is a restrained backup route, not the primary speaking path.
+  LONG_SILENCE_SECONDS: 60,
+  LONG_SILENCE_MAX_BROADCASTS: 3,
+  LONG_SILENCE_MIN_INTERVAL_MS: 5 * 60 * 1000,
+  LONG_SILENCE_MIN_HUMAN_MSGS_SINCE_AI: 2,
 
   // [Step 37] 단일 빈도 가드 — AI 발화 후 사람 메시지가 N개 오기 전엔 침묵 (호명 제외). 2 = messagesSinceLastAI<2면 침묵.
   COOLDOWN_MIN_MSGS: 2,
@@ -29,8 +29,8 @@ export const TRIGGER_CONFIG = {
   ADDRESS_FLOOR_MS: 2_000,
   FOLLOWUP_FLOOR_MS: 2_000,
   MAIN_ROUTE_DELAY_MS: 3_000,
-  BACKCHANNEL_GAP_MS: 15_000, // backchannel(리라우트) 최소 간격. rate 0.6 목표.
-  BACKCHANNEL_RATE: 0.6,
+  BACKCHANNEL_GAP_MS: 15_000, // 의미 Judge를 통과한 backchannel끼리의 최소 간격.
+  BACKCHANNEL_RATE: 1,
   SUMMARY_MIN_ELAPSED_MS: 10 * 60 * 1000,
   SUMMARY_MIN_HUMAN_MESSAGES: 12,
   SUMMARY_MIN_SURFACED: 8,

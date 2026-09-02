@@ -23,10 +23,7 @@ import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
-import {
-  generateScopedRouteMessage,
-  type OutputRepairAudit,
-} from "./routeScopedGeneration.js";
+import { generateScopedRouteMessage, type OutputRepairAudit } from "./routeScopedGeneration.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -113,6 +110,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     revealStats: (session as any).revealStats,
     language: ((session as any).language ?? "en") as "en" | "ko",
     anchorSeq: input.anchorSeq,
+    judgeEvidence: input.judgeEvidence,
   });
   const previouslySurfacedTraitIds = [
     ...new Set([
@@ -209,7 +207,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   }
   const extractedAiIds = generated.extractedIds;
 
-  if (input.commitGuard && !input.commitGuard()) {
+  const recordSupersededDuringGeneration = async () => {
     await AIIntervention.create({
       sessionId: input.sessionId,
       turnIndex: input.anchorSeq,
@@ -235,6 +233,10 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       repairAudit: generated.repairAudit,
       model: result.model,
     });
+  };
+
+  if (input.commitGuard && !input.commitGuard()) {
+    await recordSupersededDuringGeneration();
     return { ok: false, error: "superseded_during_generation" };
   }
 
@@ -270,6 +272,14 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       });
       return { ok: false, error: "lifecycle_changed_during_generation" };
     }
+  }
+
+  // Close the freshness window after the lifecycle read as well. For the
+  // long-silence route this prevents a newly arrived human message from being
+  // overtaken by a response generated for the prior quiet anchor.
+  if (input.commitGuard && !input.commitGuard()) {
+    await recordSupersededDuringGeneration();
+    return { ok: false, error: "superseded_during_generation" };
   }
 
   const nextSeq = await allocSeq(input.sessionId);

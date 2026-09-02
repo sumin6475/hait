@@ -59,11 +59,43 @@ export interface ResolvedRoute {
     | "mediation";
 }
 
-export function deterministicRateGate(
-  sessionId: string,
-  turnSeq: number,
-  rate: number,
-): boolean {
+export type LongSilenceGateReason =
+  | "eligible"
+  | "session_cap"
+  | "human_cooldown"
+  | "minimum_interval"
+  | "stale_anchor";
+
+export function evaluateLongSilenceGate(input: {
+  broadcastCount: number;
+  maxBroadcasts: number;
+  messagesSinceAI: number;
+  minimumHumanMessagesSinceAI: number;
+  lastBroadcastAt?: number;
+  minimumIntervalMs: number;
+  now: number;
+  latestPushSeq: number;
+  anchorSeq: number;
+}): { eligible: boolean; reason: LongSilenceGateReason; retryAfterMs?: number } {
+  if (input.broadcastCount >= input.maxBroadcasts) {
+    return { eligible: false, reason: "session_cap" };
+  }
+  if (input.messagesSinceAI < input.minimumHumanMessagesSinceAI) {
+    return { eligible: false, reason: "human_cooldown" };
+  }
+  if (input.latestPushSeq !== input.anchorSeq) {
+    return { eligible: false, reason: "stale_anchor" };
+  }
+  if (input.lastBroadcastAt !== undefined) {
+    const retryAfterMs = input.minimumIntervalMs - (input.now - input.lastBroadcastAt);
+    if (retryAfterMs > 0) {
+      return { eligible: false, reason: "minimum_interval", retryAfterMs };
+    }
+  }
+  return { eligible: true, reason: "eligible" };
+}
+
+export function deterministicRateGate(sessionId: string, turnSeq: number, rate: number): boolean {
   if (rate <= 0) return false;
   if (rate >= 1) return true;
   const hex = createHash("sha256").update(`${sessionId}:${turnSeq}:backchannel`).digest("hex");
@@ -90,7 +122,8 @@ export function resolveRoute(ctx: ResolverContext): ResolvedRoute {
   return { routeKind: "build_on", reason: "build_on" };
 }
 
-const CONVERGENCE_RE = /\b(?:let'?s (?:just )?(?:pick|choose|settle)|either [ABCD] or [ABCD]|we(?:'re| are) done|good enough)\b/i;
+const CONVERGENCE_RE =
+  /\b(?:let'?s (?:just )?(?:pick|choose|settle)|either [ABCD] or [ABCD]|we(?:'re| are) done|good enough)\b/i;
 
 export function detectMediationEvidence(
   recentHumanMessages: string[],
@@ -107,7 +140,12 @@ export function detectMediationEvidence(
   if (recent.length >= 4 && candidates.length >= 4 && new Set(candidates).size <= 2) {
     evidence.add("candidate_concentration");
   }
-  const normalized = recent.map((message) => message.toLowerCase().replace(/[^a-z0-9가-힣 ]/g, "").trim());
+  const normalized = recent.map((message) =>
+    message
+      .toLowerCase()
+      .replace(/[^a-z0-9가-힣 ]/g, "")
+      .trim(),
+  );
   if (new Set(normalized.filter(Boolean)).size < normalized.filter(Boolean).length) {
     evidence.add("repetition");
   }

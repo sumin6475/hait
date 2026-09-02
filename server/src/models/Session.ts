@@ -107,6 +107,8 @@ const aiStateSchema = new mongoose.Schema(
     mediationLatchedHumanCount: { type: Number },
     buildOnsSinceMediation: { type: Number, default: 0 },
     lastBackchannelAt: { type: Date },
+    longSilenceBroadcastCount: { type: Number, default: 0 },
+    lastLongSilenceAt: { type: Date },
   },
   { _id: false },
 );
