@@ -163,14 +163,10 @@ export function buildNaturalPrompt(
   const scaffold = (idx >= 0 ? full.slice(0, idx) : full).trimEnd();
   const isLeader = conditionCode === "C2" || conditionCode === "C4";
   // [Tier 0] backchannel은 별도 turn recipe
-  const turn = isOpening
-    ? EXP_OPENING_TURN
-    : isBackchannel
-      ? BACKCHANNEL_TURN
-      : EXP_NATURAL_TURN;
+  const turn = isOpening ? EXP_OPENING_TURN : isBackchannel ? BACKCHANNEL_TURN : EXP_NATURAL_TURN;
   // [Tier 0] backchannel: tally·standing·OUTPUT_DISCIPLINE 완전 제거
-  const tally = (!isOpening && !isBackchannel && tallyText) ? `\n\n${tallyText}` : "";
-  const standing = (isOpening || isBackchannel) ? "" : `\n\n${NATURAL_STANDING_RULE}`;
+  const tally = !isOpening && !isBackchannel && tallyText ? `\n\n${tallyText}` : "";
+  const standing = isOpening || isBackchannel ? "" : `\n\n${NATURAL_STANDING_RULE}`;
   const discipline = isBackchannel ? BACKCHANNEL_DISCIPLINE : OUTPUT_DISCIPLINE;
   return `${scaffold}\n\n# Your Role\n${isLeader ? EXP_LEADER_ROLE : EXP_PEER_ROLE}\n\n${discipline}${tally}${standing}\n\n[This turn] ${turn}`;
 }
@@ -270,6 +266,10 @@ export const LEADER_OPENING =
 // Chair는 "이끌며" 열고 Member는 "인사만" 한다 — 이 차이가 status 조작을 지탱한다.
 // 후보/의제/질문 금지. C1·C3 공통(전략 중립). LLM 호출 아님.
 export const PEER_OPENING = "Hi everyone — I'm Alex, glad to be part of the committee.";
+
+// [Step 49] Peer closing — 하드코딩 고정 문장. Peer 조건(C1·C3)은 closing 프롬프트 레지스트리가 없으므로,
+// 시간 초과/어드민 수동 시 이 상수를 그대로 브로드캐스트한다. LLM 호출 아님.
+export const PEER_CLOSING = "I guess time's up. The final decision is yours — thank you.";
 
 const CLOSING_PROMPTS: Partial<Record<ConditionCode, string>> = {
   // C2 = leader_xai — [Step 44] 고른 board 통합 + 넘기기 (설명·비교형)

@@ -101,6 +101,9 @@ const aiStateSchema = new mongoose.Schema(
     },
     summaryEligibleAt: { type: Date },
     summaryMessageId: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
+    // [LOW-5] closing 발화가 실제로 저장된 Message id — 재시작 시 이중 closing 감지용.
+    // AIIntervention 로그 기록 실패와 무관하게 closing 완료 여부를 판단하는 별도 경로.
+    closingMessageId: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
     mediationLatched: { type: Boolean, default: false },
     mediationEvidence: { type: [String], default: [] },
     mediationLatchedAt: { type: Date },

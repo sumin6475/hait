@@ -3,9 +3,13 @@
   "private": true,
   "scripts": {
     "format": "prettier --write \"client/**/*.{ts,tsx,js,jsx,json,css}\" \"server/**/*.{ts,js,json}\"",
-    "format:check": "prettier --check \"client/**/*.{ts,tsx,js,jsx,json,css}\" \"server/**/*.{ts,js,json}\""
+    "format:check": "prettier --check \"client/**/*.{ts,tsx,js,jsx,json,css}\" \"server/**/*.{ts,js,json}\"",
+    "dev:client": "npm run dev --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\""
   },
   "devDependencies": {
+    "concurrently": "^10.0.5",
     "prettier": "^3.8.3"
   }
 }

@@ -397,40 +397,102 @@ sessionsRouter.patch("/:code/team-decision", async (req, res) => {
       });
     }
 
-    //참가자 조회 + 중복 제출 방지
-    const participant = await Participant.findOne({ sessionId: session._id, participantCode });
-    if (!participant) {
-      return res.status(404).json({ ok: false, error: "Participant not found" });
-    }
-    if (participant.teamDecisionChoice) {
+    //참가자 조회 + 중복 제출 방지 (원자적 claim — 동시 더블클릭 안전)
+    //teamDecisionChoice가 아직 없을 때만 설정 성공. 이미 있으면 null → 409.
+    //(MongoDB에서 { teamDecisionChoice: null }은 필드 부재/명시적 null 모두 매칭)
+    const claimed = await Participant.findOneAndUpdate(
+      { sessionId: session._id, participantCode, teamDecisionChoice: null },
+      { $set: { teamDecisionChoice: decision as Candidate } },
+      { returnDocument: "after" },
+    );
+    if (!claimed) {
+      const exists = await Participant.findOne({ sessionId: session._id, participantCode });
+      if (!exists) {
+        return res.status(404).json({ ok: false, error: "Participant not found" });
+      }
       return res.status(409).json({ ok: false, error: "Team decision already submitted" });
     }
 
-    //1.해당 참가자의 개인 응답 저장
-    participant.teamDecisionChoice = decision as Candidate;
-    await participant.save();
+    // [합의 게이트] 이미 제출된 팀 결정이 있으면 일치 여부 확인.
+    // 불일치 시 claim을 롤백하고 409 반환 → 참가자는 team-decision 페이지에 머물며 재제출.
+    const currentSession = await Session.findOne({ sessionCode: code }).lean();
+    if (!currentSession) {
+      await Participant.updateOne({ _id: claimed._id }, { $unset: { teamDecisionChoice: 1 } });
+      return res.status(500).json({ ok: false, error: "Session disappeared after claim" });
+    }
+    const existingDecisions = currentSession.teamDecision ?? [];
+    if (existingDecisions.length > 0 && existingDecisions[0] !== decision) {
+      await Participant.updateOne({ _id: claimed._id }, { $unset: { teamDecisionChoice: 1 } });
+      return res.status(409).json({
+        ok: false,
+        error: "team_decision_mismatch",
+        message: "Your team submitted different decisions. Please reach a consensus and resubmit.",
+      });
+    }
 
-    //2.Session.teamDecision 배열에 append
-    session.teamDecision = [...(session.teamDecision ?? []), decision as Candidate];
+    // [HIGH-1] Session.teamDecision은 read-modify-write가 아니라 원자적 $push로 append.
+    // 첫 제출이거나 기존 팀 결정과 같은 값일 때만 append하여, 서로 다른 첫 제출이
+    // 동시에 들어오는 경우에도 MongoDB의 단일-document 원자성으로 합의 게이트를 지킨다.
+    const updated = await Session.findOneAndUpdate(
+      {
+        sessionCode: code,
+        status: "in_progress",
+        $or: [{ teamDecision: { $size: 0 } }, { teamDecision: decision as Candidate }],
+      },
+      { $push: { teamDecision: decision as Candidate } },
+      { returnDocument: "after", lean: true },
+    );
+    if (!updated) {
+      await Participant.updateOne(
+        { _id: claimed._id, teamDecisionChoice: decision as Candidate },
+        { $unset: { teamDecisionChoice: 1 } },
+      );
+      const fresh = await Session.findOne({ sessionCode: code }).lean();
+      if (!fresh) {
+        return res.status(500).json({ ok: false, error: "Session disappeared after claim" });
+      }
+      if ((fresh.teamDecision ?? []).some((value) => value !== decision)) {
+        return res.status(409).json({
+          ok: false,
+          error: "team_decision_mismatch",
+          message:
+            "Your team submitted different decisions. Please reach a consensus and resubmit.",
+        });
+      }
+      return res.status(409).json({ ok: false, error: "Team decision already closed" });
+    }
 
-    //3. 전원 제출 완료 시에만 completed 전환
-    const expected = session.conditionCode === "CTRL" ? 3 : 2;
-    const submittedCount = session.teamDecision.length;
+    // 전원 제출 완료 시에만 completed 전환 (조건부 업데이트로 1회만 성공)
+    const expected = updated.conditionCode === "CTRL" ? 3 : 2;
+    const submittedCount = updated.teamDecision.length;
 
     let transitioned = false;
+    let finalStatus: string = updated.status;
+    let finalTeamDecision: Candidate[] = updated.teamDecision;
     if (submittedCount >= expected) {
-      session.status = "completed";
-      session.endedAt = new Date();
       // Step 19: 완료 시점 pooling DV 스냅샷 (분석 편의 — 원천 집합 revealedIds/aiSurfacedIds는 그대로 보존).
-      // fresh read로 async 추출이 적재한 최신 집합을 반영. save()는 수정된 path만 쓰므로
-      // byCandidate/aiSurfacedIds에 대한 동시 $addToSet을 덮어쓰지 않는다.
+      // fresh read로 async 추출이 적재한 최신 집합을 반영.
       const fresh = await Session.findById(session._id).select("revealStats").lean();
-      session.set("revealStats.byProfile", computePoolingDV((fresh as any)?.revealStats));
       // Step 20: Decision Accuracy (팀이 정답 C를 골랐나)
-      session.set("decisionAccuracy", computeDecisionAccuracy(session.teamDecision ?? []));
-      transitioned = true;
+      const decisionAccuracy = computeDecisionAccuracy(updated.teamDecision ?? []);
+      const completedDoc = await Session.findOneAndUpdate(
+        { _id: session._id, status: "in_progress" },
+        {
+          $set: {
+            status: "completed",
+            endedAt: new Date(),
+            "revealStats.byProfile": computePoolingDV((fresh as any)?.revealStats),
+            decisionAccuracy,
+          },
+        },
+        { returnDocument: "after", lean: true },
+      );
+      if (completedDoc) {
+        transitioned = true;
+        finalStatus = "completed";
+        finalTeamDecision = completedDoc.teamDecision;
+      }
     }
-    await session.save();
 
     if (transitioned) {
       console.log(
@@ -442,8 +504,8 @@ sessionsRouter.patch("/:code/team-decision", async (req, res) => {
     res.json({
       ok: true,
       sessionCode: session.sessionCode,
-      teamDecision: session.teamDecision,
-      status: session.status,
+      teamDecision: finalTeamDecision,
+      status: finalStatus,
       submittedCount,
       expected,
     });
@@ -464,7 +526,7 @@ sessionsRouter.patch("/:code/finalize", async (req, res) => {
       return res.status(404).json({ ok: false, error: "Session not found" });
     }
 
-    //이미 data_ready면 그대로 반환
+    //이미 data_ready면 그대로 반환 (멱등)
     if (session.status === "data_ready") {
       return res.json({
         ok: true,
@@ -473,21 +535,31 @@ sessionsRouter.patch("/:code/finalize", async (req, res) => {
       });
     }
 
-    //status 가드 : completed 상태만 허용
-    if (session.status !== "completed") {
-      return res.status(409).json({
-        ok: false,
-        error: `Cannot finalize in status="${session.status}"`,
+    // [HIGH-2] 조건부 업데이트 — 두 참가자가 동시에 finalize해도 completed→data_ready는 1회만 전환.
+    const updated = await Session.findOneAndUpdate(
+      { sessionCode: code, status: "completed" },
+      { $set: { status: "data_ready" } },
+      { returnDocument: "after", lean: true },
+    );
+    if (updated) {
+      return res.json({
+        ok: true,
+        sessionCode: updated.sessionCode,
+        status: updated.status,
       });
     }
 
-    session.status = "data_ready";
-    await session.save();
-
-    res.json({
-      ok: true,
-      sessionCode: session.sessionCode,
-      status: session.status,
+    // 전환 실패 = status가 completed가 아님 (경쟁에서 졌거나 아직 completed 전)
+    const fresh = await Session.findOne({ sessionCode: code }).lean();
+    if (!fresh) {
+      return res.status(404).json({ ok: false, error: "Session not found" });
+    }
+    if (fresh.status === "data_ready") {
+      return res.json({ ok: true, sessionCode: fresh.sessionCode, status: fresh.status });
+    }
+    return res.status(409).json({
+      ok: false,
+      error: `Cannot finalize in status="${fresh.status}"`,
     });
   } catch (error) {
     console.error("[PATCH /api/sessions/:code/finalize]", error);

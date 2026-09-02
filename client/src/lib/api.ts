@@ -226,6 +226,7 @@ export interface SessionExport {
       summaryStatus?: "not_eligible" | "pending" | "generating" | "done";
       summaryEligibleAt?: string;
       summaryMessageId?: string;
+      closingMessageId?: string;
       mediationLatched?: boolean;
       mediationEvidence?: string[];
       buildOnsSinceMediation?: number;

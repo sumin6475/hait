@@ -11,8 +11,10 @@ export const KO_LEADER_OPENING =
   "자, 시작해 볼까요. 네 명의 후보를 함께 살펴볼 텐데, 결정하기 전에 각자 아는 내용을 먼저 풀어놓고 전체 그림을 맞춰봐요.";
 
 // [Step 48] peer 오프닝(LLM 아님, 상수) 한국어판 — 영어 PEER_OPENING과 같은 취지(인사만·비주도).
-export const KO_PEER_OPENING =
-  "안녕하세요, 저는 Alex예요. 함께하게 되어 반가워요.";
+export const KO_PEER_OPENING = "안녕하세요, 저는 Alex예요. 함께하게 되어 반가워요.";
+
+// [Step 49] peer 클로징(하드코딩 상수) 한국어판 — 영어 PEER_CLOSING과 동일 취지.
+export const KO_PEER_CLOSING = "시간이 다 됐네요. 최종 결정은 여러분께 맡길게요. 감사합니다.";
 
 // 세션 언어 조회 — 파일럿 트래픽 기준 가벼움(인덱스 단건). 캐시가 필요하면 Map 추가 가능하나 파일럿엔 불필요.
 export async function getSessionLang(sessionId: string): Promise<"en" | "ko"> {

@@ -33,6 +33,8 @@ import { transcriptLabel } from "./labels.js";
 import { log } from "./log.js";
 import { allocSeq } from "./seq.js";
 import { getRoutePrompt } from "./routePromptRegistry.js";
+import { PEER_CLOSING } from "./prompts.js";
+import { KO_PEER_CLOSING } from "./koPilot.js";
 import { TRAIT_BY_ID } from "./traitData.js";
 import { humanConfirmedIds } from "./informationPools.js";
 
@@ -606,6 +608,70 @@ async function broadcastClosingFallback(runtime: RuntimeState, reason: "deadline
     content: message.content,
     createdAt: (message as any).createdAt.toISOString(),
   });
+  // [LOW-5] fallback closing도 Message 저장을 기록 — 재시작 시 이중 closing 방지.
+  await Session.updateOne(
+    { _id: runtime.sessionId },
+    { $set: { "aiState.closingMessageId": message._id } },
+  );
+}
+
+// [Step 49] Peer 조건은 closing 프롬프트 레지스트리가 없으므로 하드코딩 상수를 그대로 브로드캐스트.
+// 리더의 broadcastClosingFallback과 동일한 저장·로깅·이중 방지 경로를 쓴다 (LLM 호출 없음).
+// 발화 전 짧은 타이핑 인디케이터로 자연스러운 발화감을 준다.
+const PEER_CLOSING_TYPING_MS = 1200;
+async function broadcastPeerClosing(runtime: RuntimeState, reason: "deadline" | "manual") {
+  const owner = `closing:${reason}`;
+  replaceTypingOwners(runtime, owner);
+  try {
+    const [session, docs] = await Promise.all([
+      Session.findById(runtime.sessionId).select("language").lean(),
+      Message.find({ sessionId: runtime.sessionId }).sort({ seq: 1 }).lean(),
+    ]);
+    if (!session) return;
+    const content = (session as any).language === "ko" ? KO_PEER_CLOSING : PEER_CLOSING;
+    await new Promise((resolve) => setTimeout(resolve, PEER_CLOSING_TYPING_MS));
+    const seq = await allocSeq(runtime.sessionId);
+    const message = await Message.create({
+      sessionId: runtime.sessionId,
+      sender: "ai",
+      senderRole: "ai",
+      content,
+      seq,
+      sharedInfoIds: [],
+    });
+    await AIIntervention.create({
+      sessionId: runtime.sessionId,
+      turnIndex: docs.at(-1)?.seq ?? 0,
+      triggerReason: `closing_${reason}_peer_static`,
+      cue: "closing",
+      decision: "speak",
+      generateMessageId: message._id,
+      response: content,
+      routeKind: "closing",
+      source: `closing_${reason}_peer_static`,
+      anchorSeq: docs.at(-1)?.seq ?? 0,
+      decisionStage: "lifecycle",
+      routeReason: "closing",
+      outcome: "broadcast",
+      generationSucceeded: false,
+      interventionSaved: true,
+      broadcastSucceeded: true,
+    });
+    runtime.io.to(runtime.sessionCode).emit("new-message", {
+      seq: message.seq,
+      sender: message.sender,
+      senderRole: message.senderRole,
+      content: message.content,
+      createdAt: (message as any).createdAt.toISOString(),
+    });
+    // [LOW-5] 재시작 시 이중 closing 방지 — closing Message 저장 기록.
+    await Session.updateOne(
+      { _id: runtime.sessionId },
+      { $set: { "aiState.closingMessageId": message._id } },
+    );
+  } finally {
+    emitTyping(runtime, owner, false);
+  }
 }
 
 async function triggerClosing(runtime: RuntimeState, reason: "deadline" | "manual") {
@@ -648,13 +714,24 @@ async function triggerClosing(runtime: RuntimeState, reason: "deadline" | "manua
         decisionStage: "lifecycle",
         routeReason: "closing",
       });
-      if (!result.ok) await broadcastClosingFallback(runtime, reason);
+      if (result.ok && result.messageId) {
+        // [LOW-5] closing Message가 저장되면 즉시 기록 — AIIntervention 로그가 실패해도
+        // 재시작 시 이중 closing으로 이어지지 않도록 하는 독립 경로.
+        await Session.updateOne(
+          { _id: runtime.sessionId },
+          { $set: { "aiState.closingMessageId": result.messageId } },
+        );
+      } else if (!result.ok) {
+        await broadcastClosingFallback(runtime, reason);
+      }
     } finally {
       emitTyping(runtime, owner, false);
     }
   } else {
     await cancelReservation(runtime, `closing_${reason}`);
     replaceTypingOwners(runtime);
+    // [Step 49] Peer 조건은 하드코딩 멘트만 브로드캐스트 — 시간 초과·어드민 수동 동일 경로.
+    await broadcastPeerClosing(runtime, reason);
   }
 
   await Session.updateOne({ _id: runtime.sessionId }, { $set: { "aiState.lifecycle": "muted" } });
@@ -692,7 +769,10 @@ async function initializeRuntime(runtime: RuntimeState) {
       routeKind: "closing",
       decision: "speak",
     });
-    if (alreadyClosed) {
+    // [LOW-5] closing Message가 실제 저장됐으면 AIIntervention 로그 실패와 무관하게 완료로 간주.
+    // 이중 closing 발화 방지.
+    const closingMessageRecorded = Boolean(state.closingMessageId);
+    if (alreadyClosed || closingMessageRecorded) {
       await Session.updateOne(
         { _id: runtime.sessionId },
         { $set: { "aiState.lifecycle": "muted" } },

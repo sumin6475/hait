@@ -30,10 +30,15 @@ const TeamDecision = () => {
       sessionStorage.setItem("teamDecision", selected);
       navigate("/chat/post-survey");
     } catch (error) {
-      //409 (이미 다른 참가자가 제출함)도 같이 처리
       const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes("409")) {
-        //다른 참가자가 먼저 제출 -> 그대로 진행
+      // 합의 게이트: 팀이 서로 다른 결정을 제출 → 에러 표시, 페이지에 머물며 재제출
+      if (msg.includes("team_decision_mismatch")) {
+        setError("Your team submitted different decisions. Please reach a consensus and resubmit.");
+        setSubmitting(false);
+        return;
+      }
+      // 같은 참가자 중복 제출 또는 이미 완료된 세션 → 다음 페이지로 진행
+      if (msg.includes("409") || msg.includes("already")) {
         sessionStorage.setItem("teamDecision", selected);
         await markProgress(participantCode, "teamDecision").catch(() => {});
         navigate("/chat/post-survey");
