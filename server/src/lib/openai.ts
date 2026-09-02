@@ -205,9 +205,10 @@ export async function callAIStructured({
         response.incomplete_details?.reason === "max_output_tokens";
 
       if (attempt === 0) {
-        // truncate면 캡을 크게 — reasoning 모델은 추론 토큰 때문에 더 크게 잡는다
+        // truncate면 캡을 크게 — [T-CAP-001] 비추론 모델은 256으로 고정하던 것을 2배로:
+        // 폴백 캡(600)이 커진 뒤 256으로 되줄이면 재시도가 무의미해진다.
         if (truncated && cap !== null) {
-          cap = isReasoning ? cap + REASONING_TOKEN_HEADROOM * 2 : 256;
+          cap = isReasoning ? cap + REASONING_TOKEN_HEADROOM * 2 : cap * 2;
         }
         continue;
       }
