@@ -2,6 +2,7 @@ import type { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "../sockets/events.js";
 import type {
   ConditionCode,
+  Candidate,
   InterventionDecisionStage,
   MainJudgeDecision,
   PriorityRoute,
@@ -41,11 +42,14 @@ export interface RouteTurnInput {
   priorityEvidence?: string;
   mainJudgeDecision?: MainJudgeDecision | null;
   judgeEvidence?: string | null;
+  selectedTraitId?: string | null;
   decisionStage?: InterventionDecisionStage;
   routeReason?: string;
   mediationLatched?: boolean;
   mediationEvidence?: string[];
   buildOnsSinceMediation?: number;
+  mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons";
+  mediationFocusCandidate?: Candidate | null;
   commitGuard?: () => boolean;
 }
 
@@ -73,7 +77,15 @@ export function routeGenerationLimits(routeKind: RouteKind, requestIntent?: Requ
   ) {
     return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
   }
-  return { maxOutputTokens: 240, maxContentChars: 800, timeoutMs: 30_000 };
+  // [T-CAP-001] Fallback widened to the complete-list tier (600/2_400).
+  // S-C4-001: two turns (#46 full-board recap, #70 comparison blocks) were cut
+  // mid-sentence at exactly 800 chars by the schema maxLength while intent
+  // classification returned "none", so they fell through to this fallback.
+  // Prompts already force 1–2 sentence replies, so normal turns stay short and
+  // the wider cap only protects the rare legitimately long output.
+  // timeoutMs 45s: any turn may now produce ~2_400 chars, which the old 30s
+  // budget risked timing out (= lost turn, same contamination as truncation).
+  return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
 }
 
 export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurnResult> {
@@ -111,6 +123,9 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     language: ((session as any).language ?? "en") as "en" | "ko",
     anchorSeq: input.anchorSeq,
     judgeEvidence: input.judgeEvidence,
+    selectedTraitId: input.routeKind === "build_on" ? input.selectedTraitId : undefined,
+    mediationTrigger: input.mediationTrigger,
+    mediationFocusCandidate: input.mediationFocusCandidate,
   });
   const previouslySurfacedTraitIds = [
     ...new Set([
@@ -145,6 +160,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       priorityEvidence: input.priorityEvidence,
       mainJudgeDecision: input.mainJudgeDecision ?? undefined,
       judgeEvidence: input.judgeEvidence ?? undefined,
+      selectedTraitId: input.selectedTraitId ?? undefined,
+      mediationTrigger: input.mediationTrigger,
       decisionStage: input.decisionStage ?? "system",
       routeReason: input.routeReason,
       outcome: "generation_failed",
@@ -164,6 +181,20 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       error,
     });
   };
+
+  if (input.routeKind === "build_on" && input.judgeEvidence === "relevant_unsurfaced_information") {
+    if (
+      !input.selectedTraitId ||
+      context.outputScopeGuard?.reason !== "selected_note_contribution"
+    ) {
+      await recordGenerationFailure("selected_trait_missing_or_invalid");
+      return { ok: false, error: "selected_trait_missing_or_invalid" };
+    }
+    if (previouslySurfacedTraitIds.includes(input.selectedTraitId)) {
+      await recordGenerationFailure("selected_trait_no_longer_unsurfaced");
+      return { ok: false, error: "selected_trait_no_longer_unsurfaced" };
+    }
+  }
 
   // Summary is a factual board rendering, not a free-form generation task. Use
   // the exact established layout directly so counts, trait lists, and line
@@ -217,6 +248,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       source: input.source,
       reservationId: input.reservationId,
       anchorSeq: input.anchorSeq,
+      selectedTraitId: input.selectedTraitId ?? undefined,
+      mediationTrigger: input.mediationTrigger,
       decisionStage: input.decisionStage ?? "system",
       routeReason: input.routeReason,
       outcome: "cancelled",
@@ -254,6 +287,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         source: input.source,
         reservationId: input.reservationId,
         anchorSeq: input.anchorSeq,
+        selectedTraitId: input.selectedTraitId ?? undefined,
+        mediationTrigger: input.mediationTrigger,
         decisionStage: input.decisionStage ?? "system",
         routeReason: input.routeReason,
         outcome: "cancelled",
@@ -316,6 +351,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       priorityEvidence: input.priorityEvidence,
       mainJudgeDecision: input.mainJudgeDecision ?? undefined,
       judgeEvidence: input.judgeEvidence ?? undefined,
+      selectedTraitId: input.selectedTraitId ?? undefined,
       decisionStage: input.decisionStage ?? "system",
       routeReason: input.routeReason,
       outcome: "broadcast",
@@ -331,6 +367,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       mediationLatched: input.mediationLatched,
       mediationEvidence: input.mediationEvidence,
       buildOnsSinceMediation: input.buildOnsSinceMediation,
+      mediationTrigger: input.mediationTrigger,
       outputScopeCandidate: context.outputScopeGuard?.candidate,
       requestIntentKind: context.requestIntent.kind,
       requestIntentSource: context.requestIntent.source,

@@ -5,6 +5,7 @@ import {
   detectMediationEvidence,
   evaluateLongSilenceGate,
   resolveRoute,
+  sameFocusMediationCadenceEligible,
 } from "../lib/interventionRoutingV2.js";
 import { buildFollowupCandidateTranscript } from "../lib/followupJudge.js";
 import {
@@ -30,6 +31,7 @@ import {
 } from "../lib/informationPools.js";
 import { internalMetadataLeak, outputScopeViolation } from "../lib/routeScopedGeneration.js";
 import { routeGenerationLimits } from "../lib/routeTurn.js";
+import { validateJudgeDecisionSelection } from "../lib/interventionJudge.js";
 import { TRAIT_DB } from "../lib/traitData.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 
@@ -48,6 +50,40 @@ const ordinaryIntervention = new AIIntervention({
 });
 assert.equal(ordinaryIntervention.validateSync(), undefined);
 assert.equal(ordinaryIntervention.toObject().repairAudit, undefined);
+
+assert.deepEqual(
+  validateJudgeDecisionSelection(
+    {
+      decision: "contribute",
+      evidence: "relevant_unsurfaced_information",
+      selectedTraitId: "A_p4",
+    },
+    ["A_p4", "A_n5"],
+  ),
+  {
+    decision: "contribute",
+    evidence: "relevant_unsurfaced_information",
+    selectedTraitId: "A_p4",
+  },
+);
+assert.equal(
+  validateJudgeDecisionSelection(
+    {
+      decision: "contribute",
+      evidence: "relevant_unsurfaced_information",
+      selectedTraitId: "B_p1",
+    },
+    ["A_p4"],
+  ),
+  null,
+);
+assert.deepEqual(
+  validateJudgeDecisionSelection(
+    { decision: "silent", evidence: "none", selectedTraitId: "A_p4" },
+    ["A_p4"],
+  ),
+  { decision: "silent", evidence: "none", selectedTraitId: null },
+);
 
 const repairedIntervention = new AIIntervention({
   sessionId: "64b000000000000000000001",
@@ -180,7 +216,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.6.4");
+    assert.equal(resolvedPrompt.promptVersion, "1.6.5");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -286,6 +322,11 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   assert.match(contract, synthesisContracts[condition]);
   assert.match(contract, /introduce no private note or new candidate fact/i);
 }
+const leaderAciBuildOnContract = getRoutePrompt("C4", "build_on").systemPrompt;
+assert.match(leaderAciBuildOnContract, /one supplied selected trait/i);
+assert.match(leaderAciBuildOnContract, /only candidate trait named anywhere/i);
+assert.match(leaderAciBuildOnContract, /Do not combine it with another trait/i);
+assert.match(leaderAciBuildOnContract, /Do not invent an operational scenario/i);
 
 for (const condition of ["C2", "C4"] as const) {
   const summary = getRoutePrompt(condition, "summary").systemPrompt;
@@ -384,7 +425,7 @@ const baseResolver = {
   conditionCode: "C2" as const,
   priorityRoute: null,
   decision: "contribute" as const,
-  mediation: { latched: false, buildOnsSinceMediation: 0 },
+  mediation: { latched: false, buildOnsSinceMediation: 0, cadenceEligible: false },
   backchannelGapPassed: true,
   sessionId: "session-test",
   turnSeq: 20,
@@ -408,6 +449,9 @@ assert.deepEqual(evaluateLongSilenceGate(longSilenceGateBase), {
   eligible: true,
   reason: "eligible",
 });
+assert.equal(sameFocusMediationCadenceEligible("A", "A"), true);
+assert.equal(sameFocusMediationCadenceEligible("A", "B"), false);
+assert.equal(sameFocusMediationCadenceEligible("A", null), false);
 assert.equal(
   evaluateLongSilenceGate({ ...longSilenceGateBase, broadcastCount: 3 }).reason,
   "session_cap",
@@ -428,15 +472,55 @@ assert.equal(
 assert.equal(
   resolveRoute({
     ...baseResolver,
-    mediation: { latched: true, buildOnsSinceMediation: 2 },
+    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: false },
   }).routeKind,
-  "mediation",
+  "build_on",
+);
+assert.deepEqual(
+  resolveRoute({
+    ...baseResolver,
+    mediation: { latched: false, buildOnsSinceMediation: 2, cadenceEligible: true },
+  }),
+  {
+    routeKind: "mediation",
+    reason: "mediation",
+    mediationTrigger: "cadence_after_two_build_ons",
+  },
+);
+assert.deepEqual(
+  resolveRoute({
+    ...baseResolver,
+    conditionCode: "C4",
+    mediation: { latched: false, buildOnsSinceMediation: 2, cadenceEligible: true },
+  }),
+  {
+    routeKind: "mediation",
+    reason: "mediation",
+    mediationTrigger: "cadence_after_two_build_ons",
+  },
+);
+// Human-led candidate movement satisfies the widening goal; neither leader
+// condition may redirect again just because the old candidate reached the count.
+assert.equal(
+  resolveRoute({
+    ...baseResolver,
+    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: false },
+  }).routeKind,
+  "build_on",
+);
+assert.equal(
+  resolveRoute({
+    ...baseResolver,
+    conditionCode: "C4",
+    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: false },
+  }).routeKind,
+  "build_on",
 );
 assert.equal(
   resolveRoute({
     ...baseResolver,
     conditionCode: "C1",
-    mediation: { latched: true, buildOnsSinceMediation: 2 },
+    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: true },
   }).routeKind,
   "build_on",
 );
@@ -1323,6 +1407,113 @@ assert.deepEqual(buildOnScopeContext.outputScopeGuard, {
 });
 assert.match(buildOnScopeContext.userPrompt, /Contribution mode.*NOTE_CONTRIBUTION/i);
 
+const selectedBuildOnContext = buildRouteUserContext({
+  routeKind: "build_on",
+  conditionCode: "C4",
+  messages: explicitReturnMessages,
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 9,
+  judgeEvidence: "relevant_unsurfaced_information",
+  selectedTraitId: "A_p4",
+});
+const selectedBuildOnSignal = deriveMainJudgeSignalFromRules({
+  messages: explicitReturnMessages,
+  revealStats: focusDepthStats,
+  anchorSeq: 9,
+});
+assert.equal(selectedBuildOnSignal.privateContributionAvailable, true);
+assert.deepEqual(selectedBuildOnSignal.privateContributionIds, ["A_p3", "A_p4", "A_n5", "A_n6"]);
+assert.match(selectedBuildOnContext.userPrompt, /Selected contribution.*very well organized/is);
+assert.match(selectedBuildOnContext.userPrompt, /only candidate trait mentioned anywhere/i);
+assert.match(selectedBuildOnContext.userPrompt, /Do not invent an operational scenario/i);
+assert.deepEqual(selectedBuildOnContext.outputScopeGuard, {
+  candidate: "A",
+  maxTraitIds: 1,
+  allowedTraitIds: ["A_p4"],
+  requiredTraitId: "A_p4",
+  reason: "selected_note_contribution",
+});
+assert.equal(
+  outputScopeViolation(
+    "My notes add that Candidate A is very well organized. How does the team read that point?",
+    ["A_p4"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  null,
+);
+// Conversational uptake remains allowed; the guard restricts candidate-trait
+// content, not a natural agreement/acknowledgment preface.
+assert.equal(
+  outputScopeViolation(
+    "I agree with that point. My notes add that Candidate A is very well organized. How does the team read that point?",
+    ["A_p4"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  null,
+);
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is very well organized; how does that balance A being unfriendly?",
+    ["A_p4", "A_n5"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  "trait_outside_selected_contribution",
+);
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is unfriendly. How does the team read that point?",
+    ["A_n5"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  "trait_outside_selected_contribution",
+);
+assert.equal(
+  outputScopeViolation(
+    "How does the team read Candidate A?",
+    [],
+    selectedBuildOnContext.outputScopeGuard!,
+  ),
+  "selected_trait_missing",
+);
+
+const cadenceMediationContext = buildRouteUserContext({
+  routeKind: "mediation",
+  conditionCode: "C4",
+  messages: explicitReturnMessages,
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 9,
+  mediationTrigger: "cadence_after_two_build_ons",
+  mediationFocusCandidate: "A",
+});
+assert.match(cadenceMediationContext.userPrompt, /cadence after two build-on turns/i);
+assert.match(
+  cadenceMediationContext.userPrompt,
+  /consider a different candidate alongside Candidate A/i,
+);
+assert.match(cadenceMediationContext.userPrompt, /Do not tell the team to abandon Candidate A/i);
+assert.doesNotMatch(cadenceMediationContext.userPrompt, /Selected contribution/);
+
+const c2CadenceMediationContext = buildRouteUserContext({
+  routeKind: "mediation",
+  conditionCode: "C2",
+  messages: explicitReturnMessages,
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 9,
+  mediationTrigger: "cadence_after_two_build_ons",
+  mediationFocusCandidate: "A",
+});
+assert.match(c2CadenceMediationContext.userPrompt, /one brief declarative process statement/i);
+assert.match(c2CadenceMediationContext.userPrompt, /considering a different candidate alongside/i);
+assert.match(c2CadenceMediationContext.userPrompt, /ask no question/i);
+assert.doesNotMatch(c2CadenceMediationContext.userPrompt, /ask exactly one inclusive question/i);
+
 const synthesisBuildOnContext = buildRouteUserContext({
   routeKind: "build_on",
   conditionCode: "C1",
@@ -1447,7 +1638,7 @@ assert.equal(routeGenerationLimits("summary").maxOutputTokens, null);
 assert.equal(routeGenerationLimits("summary").maxContentChars, null);
 assert.equal(routeGenerationLimits("closing").maxOutputTokens, null);
 assert.equal(routeGenerationLimits("closing").maxContentChars, null);
-assert.equal(routeGenerationLimits("build_on").maxOutputTokens, 240);
+assert.equal(routeGenerationLimits("build_on").maxOutputTokens, 600);
 
 // [RequestIntent] 전체 목록 요청은 잘림 없이 넉넉하게 — 파일럿에서 반복되는 요청이라 차단 필수.
 const completeListIntent = {
@@ -1458,10 +1649,10 @@ const completeListIntent = {
 assert.equal(routeGenerationLimits("address", completeListIntent).maxOutputTokens, 600);
 assert.equal(routeGenerationLimits("address", completeListIntent).maxContentChars, 2_400);
 assert.equal(routeGenerationLimits("followup", completeListIntent).maxOutputTokens, 600);
-assert.equal(routeGenerationLimits("address").maxOutputTokens, 240);
+assert.equal(routeGenerationLimits("address").maxOutputTokens, 600);
 assert.equal(
   routeGenerationLimits("address", { ...completeListIntent, kind: "none" }).maxOutputTokens,
-  240,
+  600,
 );
 
 assert.equal(TRIGGER_CONFIG.ADDRESS_FLOOR_MS, 2_000);

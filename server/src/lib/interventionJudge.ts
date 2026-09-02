@@ -3,10 +3,11 @@ import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
 import type { MainJudgeSignal } from "./routeContext.js";
+import { TRAIT_BY_ID } from "./traitData.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 const JUDGE_MODEL = "gpt-4o-mini";
-const JUDGE_MAX_TOKENS = 40; // [Step 37] why 제거로 출력 ~40토큰 — 원복
+const JUDGE_MAX_TOKENS = 64;
 const JUDGE_TIMEOUT_MS = 8_000;
 const JUDGE_WINDOW = 16;
 
@@ -20,8 +21,22 @@ const JudgeSchema = z.object({
     "social_uptake",
     "none",
   ]),
+  selectedTraitId: z.string().nullable(),
 });
 export type JudgeDecision = z.infer<typeof JudgeSchema>;
+
+export function validateJudgeDecisionSelection(
+  decision: JudgeDecision,
+  eligibleTraitIds: readonly string[],
+): JudgeDecision | null {
+  if (decision.evidence === "relevant_unsurfaced_information") {
+    if (!decision.selectedTraitId || !eligibleTraitIds.includes(decision.selectedTraitId)) {
+      return null;
+    }
+    return decision;
+  }
+  return { ...decision, selectedTraitId: null };
+}
 
 const JUDGE_SYSTEM = `You are the intervention judge for a small live team chat with two people and an AI teammate named Alex. The team is comparing candidates in a group decision.
 
@@ -40,7 +55,9 @@ ACKNOWLEDGE — Alex has no substantive information to add, but one brief acknow
 
 SILENT — Alex should not speak. This is the default and common result.
 
-A candidate being mentioned, praised, criticized, compared, or preferred is not by itself a reason to contribute. The user message includes three compact server-derived fields: current focus, exchange class, and whether Alex has one unsurfaced private contribution for that focus. Treat them as authoritative.
+A candidate being mentioned, praised, criticized, compared, or preferred is not by itself a reason to contribute. The user message includes compact server-derived fields for current focus, exchange class, and Alex's eligible unsurfaced private contributions for that focus. Treat them as authoritative.
+
+When eligible unsurfaced private contributions are listed, each has an id and exact trait text. For relevant_unsurfaced_information, select exactly one listed id whose trait directly fits the current human exchange. Do not select a trait merely because it exists. The downstream generator will be restricted to that exact trait.
 
 Decision policy for those fields:
 - For exchange_class=substantive with private_contribution=available, choose CONTRIBUTE with evidence=relevant_unsurfaced_information unless the recent chat already contains that contribution.
@@ -56,6 +73,8 @@ Evidence must match the decision:
 - social_uptake → ACKNOWLEDGE
 - none → SILENT
 
+selectedTraitId must be one eligible listed id only when evidence=relevant_unsurfaced_information. For every other evidence value, selectedTraitId must be null.
+
 Choose acknowledgment and conversation-grounded synthesis sparingly. When uncertain whether a reaction adds new relational value, choose SILENT.
 
 Do not decide whether Alex should express an allowed contribution as a statement or a question. Do not decide whether Alex should speak as a peer or a leader. Those choices are controlled downstream by the condition-specific route contract. Do not choose mediation or a candidate, and do not write Alex's message.
@@ -68,7 +87,13 @@ export async function judgeIntervention(
   signal: MainJudgeSignal,
 ): Promise<JudgeDecision | null> {
   const lines = transcript.map((t) => `${t.speaker}: ${t.content}`).join("\n");
-  const user = `Messages since Alex last spoke: ${msgsSinceAlex}\nCurrent focus: ${signal.focusCandidate ?? "none"}\nExchange class: ${signal.exchangeClass}\nPrivate contribution: ${signal.privateContributionAvailable ? "available" : "none"}\n\nRecent chat:\n${lines}\n\nClassify the intervention level now. Output JSON only.`;
+  const eligibleContributions = signal.privateContributionIds
+    .map((id) => {
+      const trait = TRAIT_BY_ID.get(id);
+      return trait ? `${id} | ${trait.valence === "pos" ? "MATCH" : "MISS"} | ${trait.text}` : null;
+    })
+    .filter((line): line is string => Boolean(line));
+  const user = `Messages since Alex last spoke: ${msgsSinceAlex}\nCurrent focus: ${signal.focusCandidate ?? "none"}\nExchange class: ${signal.exchangeClass}\nPrivate contribution: ${signal.privateContributionAvailable ? "available" : "none"}\nEligible unsurfaced private contributions:\n${eligibleContributions.length ? eligibleContributions.join("\n") : "none"}\n\nRecent chat:\n${lines}\n\nClassify the intervention level now. Output JSON only.`;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), JUDGE_TIMEOUT_MS);
   try {
@@ -92,7 +117,15 @@ export async function judgeIntervention(
       console.error(`[judge] output_parsed null (status=${resp.status})`);
       return null;
     }
-    return p;
+    const validated = validateJudgeDecisionSelection(p, signal.privateContributionIds);
+    if (!validated) {
+      console.error(
+        `[judge] invalid selectedTraitId=${p.selectedTraitId ?? "none"} ` +
+          `eligible=${signal.privateContributionIds.join(",") || "none"}`,
+      );
+      return null;
+    }
+    return validated;
   } catch (err: any) {
     clearTimeout(to);
     // [진단] timeout / 429(rate limit) / 기타 구분 — null이 왜 나는지 한 번 확인용

@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import type { ConditionCode, MainJudgeDecision, PriorityRoute, RouteKind } from "../types.js";
+import type {
+  Candidate,
+  ConditionCode,
+  MainJudgeDecision,
+  PriorityRoute,
+  RouteKind,
+} from "../types.js";
+import { TRIGGER_CONFIG } from "../config/triggers.js";
 
 export interface AddressDetection {
   addressed: boolean;
@@ -34,6 +41,18 @@ export function detectDirectAddress(message: string): AddressDetection {
 export interface MediationStateView {
   latched: boolean;
   buildOnsSinceMediation: number;
+  cadenceEligible: boolean;
+}
+
+export function sameFocusMediationCadenceEligible(
+  buildOnFocusCandidate: Candidate | null | undefined,
+  currentFocusCandidate: Candidate | null | undefined,
+): boolean {
+  return Boolean(
+    buildOnFocusCandidate &&
+    currentFocusCandidate &&
+    buildOnFocusCandidate === currentFocusCandidate,
+  );
 }
 
 export interface ResolverContext {
@@ -49,6 +68,7 @@ export interface ResolverContext {
 
 export interface ResolvedRoute {
   routeKind: RouteKind | null;
+  mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons";
   reason:
     | "priority"
     | "judge_silent"
@@ -115,9 +135,16 @@ export function resolveRoute(ctx: ResolverContext): ResolvedRoute {
     }
     return { routeKind: "backchannel", reason: "backchannel" };
   }
-  const leader = ctx.conditionCode === "C2" || ctx.conditionCode === "C4";
-  if (leader && ctx.mediation.latched && ctx.mediation.buildOnsSinceMediation >= 2) {
-    return { routeKind: "mediation", reason: "mediation" };
+  if (
+    (ctx.conditionCode === "C2" || ctx.conditionCode === "C4") &&
+    ctx.mediation.cadenceEligible &&
+    ctx.mediation.buildOnsSinceMediation >= TRIGGER_CONFIG.MEDIATION_BUILD_ON_THRESHOLD
+  ) {
+    return {
+      routeKind: "mediation",
+      reason: "mediation",
+      mediationTrigger: "cadence_after_two_build_ons",
+    };
   }
   return { routeKind: "build_on", reason: "build_on" };
 }

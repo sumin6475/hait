@@ -3,6 +3,7 @@ import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { candidatesForIds } from "./informationPools.js";
 import type { RouteOutputScopeGuard } from "./routeContext.js";
 import { log } from "./log.js";
+import { TRAIT_BY_ID } from "./traitData.js";
 
 interface GenerationLimits {
   maxOutputTokens: number | null;
@@ -33,6 +34,8 @@ export interface OutputRepairAudit {
     candidate: RouteOutputScopeGuard["candidate"];
     reason: RouteOutputScopeGuard["reason"];
     maxTraitIds?: number;
+    allowedTraitIds?: string[];
+    requiredTraitId?: string;
   };
   attempts: OutputRepairAttemptAudit[];
 }
@@ -108,6 +111,12 @@ export function outputScopeViolation(
   const previouslySurfaced = new Set(previouslySurfacedTraitIds);
   const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
   const restatedIds = extractedIds.length - newlyIntroducedIds.length;
+  if (guard.allowedTraitIds && extractedIds.some((id) => !guard.allowedTraitIds!.includes(id))) {
+    return "trait_outside_selected_contribution";
+  }
+  if (guard.requiredTraitId && !extractedIds.includes(guard.requiredTraitId)) {
+    return "selected_trait_missing";
+  }
   // [T-C4-019] Count labels only in trait-introducing positions: "(MATCH)", "(MISS)",
   // "MATCH —", "MISS:". Bare confirmation vocabulary ("add the next MATCH or MISS",
   // "mark this as a MISS") repeats labels without adding traits and was producing
@@ -115,7 +124,12 @@ export function outputScopeViolation(
   // exactly one trait but carried two label mentions).
   const explicitTraitLabels =
     content.match(/\(\s*(?:MATCH|MISS)\s*\)|\b(?:MATCH|MISS)\s*[—–:]/gi)?.length ?? 0;
-  if (guard.maxTraitIds !== undefined && explicitTraitLabels > guard.maxTraitIds + restatedIds) {
+  const maxExplicitTraitLabels = guard.allowedTraitIds
+    ? guard.allowedTraitIds.length
+    : guard.maxTraitIds !== undefined
+      ? guard.maxTraitIds + restatedIds
+      : undefined;
+  if (maxExplicitTraitLabels !== undefined && explicitTraitLabels > maxExplicitTraitLabels) {
     return "too_many_trait_labels";
   }
   // maxTraitIds limits only information newly introduced by this Alex turn.
@@ -179,6 +193,8 @@ export async function generateScopedRouteMessage(input: {
           candidate: input.guard.candidate,
           reason: input.guard.reason,
           maxTraitIds: input.guard.maxTraitIds,
+          allowedTraitIds: input.guard.allowedTraitIds,
+          requiredTraitId: input.guard.requiredTraitId,
         }
       : undefined,
     attempts: [
@@ -221,7 +237,10 @@ export async function generateScopedRouteMessage(input: {
       scopeViolation && input.guard
         ? [
             `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
-            input.guard.maxTraitIds !== undefined
+            input.guard.requiredTraitId
+              ? `The only candidate trait you may mention is: "${TRAIT_BY_ID.get(input.guard.requiredTraitId)?.text ?? input.guard.requiredTraitId}". Include that exact point and no other candidate trait, even if another trait was already discussed.`
+              : null,
+            input.guard.maxTraitIds !== undefined && !input.guard.requiredTraitId
               ? `Introduce at most ${input.guard.maxTraitIds} new trait${input.guard.maxTraitIds === 1 ? "" : "s"}; you may still acknowledge already-surfaced points.`
               : null,
           ]

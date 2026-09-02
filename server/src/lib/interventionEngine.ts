@@ -19,9 +19,11 @@ import {
   detectMediationEvidence,
   evaluateLongSilenceGate,
   resolveRoute,
+  sameFocusMediationCadenceEligible,
 } from "./interventionRoutingV2.js";
 import {
   decidePreferenceFromVisibleCoverage,
+  deriveFocusDepthState,
   deriveMainJudgeSignal,
   formatVisibleBoardCoverage,
   formatMainJudgeSignal,
@@ -35,7 +37,7 @@ import { allocSeq } from "./seq.js";
 import { getRoutePrompt } from "./routePromptRegistry.js";
 import { PEER_CLOSING } from "./prompts.js";
 import { KO_PEER_CLOSING } from "./koPilot.js";
-import { TRAIT_BY_ID } from "./traitData.js";
+import { TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { humanConfirmedIds } from "./informationPools.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -49,6 +51,9 @@ interface Reservation {
   priorityEvidence?: string;
   mainJudgeDecision: MainJudgeDecision | null;
   judgeEvidence?: string | null;
+  selectedTraitId?: string | null;
+  focusCandidate?: Cand | null;
+  mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons";
   decisionStage: InterventionDecisionStage;
   routeReason?: string;
   floorMs: number;
@@ -77,6 +82,7 @@ interface RuntimeState {
   mediationLatchedAt?: number;
   mediationLatchedHumanCount?: number;
   buildOnsSinceMediation: number;
+  buildOnFocusCandidate?: Cand;
   lastBackchannelAt?: number;
   longSilenceBroadcastCount: number;
   lastLongSilenceAt?: number;
@@ -203,6 +209,8 @@ async function cancelReservation(runtime: RuntimeState, reason: string) {
     anchorSeq: reservation.anchorSeq,
     priorityRoute: reservation.priorityRoute ?? undefined,
     mainJudgeDecision: reservation.mainJudgeDecision ?? undefined,
+    selectedTraitId: reservation.selectedTraitId ?? undefined,
+    mediationTrigger: reservation.mediationTrigger,
     decisionStage: reservation.decisionStage,
     routeReason: reservation.routeReason,
     outcome: "cancelled",
@@ -229,7 +237,8 @@ async function updateMediationState(runtime: RuntimeState, docs: any[]) {
     runtime.mediationEvidence = [];
     runtime.mediationLatchedAt = undefined;
     runtime.mediationLatchedHumanCount = undefined;
-    runtime.buildOnsSinceMediation = 0;
+    // Leader mediation cadence is independent of this short-lived evidence
+    // latch. Keep the evidence for analysis without resetting the cadence.
   }
 
   if (!runtime.mediationLatched) {
@@ -243,7 +252,6 @@ async function updateMediationState(runtime: RuntimeState, docs: any[]) {
       runtime.mediationEvidence = evidence;
       runtime.mediationLatchedAt = now;
       runtime.mediationLatchedHumanCount = count;
-      runtime.buildOnsSinceMediation = 0;
     }
   }
 
@@ -258,7 +266,29 @@ async function updateMediationState(runtime: RuntimeState, docs: any[]) {
           : null,
         "aiState.mediationLatchedHumanCount": runtime.mediationLatchedHumanCount ?? null,
         "aiState.buildOnsSinceMediation": runtime.buildOnsSinceMediation,
+        "aiState.buildOnFocusCandidate": runtime.buildOnFocusCandidate ?? null,
       },
+    },
+  );
+}
+
+async function alignLeaderMediationCadence(runtime: RuntimeState, focusCandidate: Cand | null) {
+  if (
+    !isLeader(runtime.conditionCode) ||
+    runtime.buildOnsSinceMediation === 0 ||
+    sameFocusMediationCadenceEligible(runtime.buildOnFocusCandidate, focusCandidate)
+  ) {
+    return;
+  }
+  // A human-led candidate switch or an explicit cross-candidate comparison
+  // already widened the field. Do not immediately ask them to switch again.
+  runtime.buildOnsSinceMediation = 0;
+  runtime.buildOnFocusCandidate = undefined;
+  await Session.updateOne(
+    { _id: runtime.sessionId },
+    {
+      $set: { "aiState.buildOnsSinceMediation": 0 },
+      $unset: { "aiState.buildOnFocusCandidate": 1 },
     },
   );
 }
@@ -352,8 +382,11 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
       priorityEvidence: reservation.priorityEvidence,
       mainJudgeDecision: reservation.mainJudgeDecision,
       judgeEvidence: reservation.judgeEvidence,
+      selectedTraitId: reservation.selectedTraitId,
       decisionStage: reservation.decisionStage,
       routeReason: reservation.routeReason,
+      mediationTrigger: reservation.mediationTrigger,
+      mediationFocusCandidate: reservation.focusCandidate,
       mediationLatched: runtime.mediationLatched,
       mediationEvidence: runtime.mediationEvidence,
       buildOnsSinceMediation: runtime.buildOnsSinceMediation,
@@ -397,12 +430,24 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
         },
       );
     }
-    if (reservation.routeKind === "build_on" && runtime.mediationLatched) {
-      runtime.buildOnsSinceMediation += 1;
-      await Session.updateOne(
-        { _id: runtime.sessionId },
-        { $set: { "aiState.buildOnsSinceMediation": runtime.buildOnsSinceMediation } },
-      );
+    if (reservation.routeKind === "build_on") {
+      if (isLeader(runtime.conditionCode) && reservation.focusCandidate) {
+        if (runtime.buildOnFocusCandidate === reservation.focusCandidate) {
+          runtime.buildOnsSinceMediation += 1;
+        } else {
+          runtime.buildOnFocusCandidate = reservation.focusCandidate;
+          runtime.buildOnsSinceMediation = 1;
+        }
+        await Session.updateOne(
+          { _id: runtime.sessionId },
+          {
+            $set: {
+              "aiState.buildOnsSinceMediation": runtime.buildOnsSinceMediation,
+              "aiState.buildOnFocusCandidate": runtime.buildOnFocusCandidate,
+            },
+          },
+        );
+      }
     }
     if (reservation.routeKind === "mediation") {
       runtime.mediationLatched = false;
@@ -410,6 +455,7 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
       runtime.mediationLatchedAt = undefined;
       runtime.mediationLatchedHumanCount = undefined;
       runtime.buildOnsSinceMediation = 0;
+      runtime.buildOnFocusCandidate = undefined;
       await Session.updateOne(
         { _id: runtime.sessionId },
         {
@@ -421,19 +467,28 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
           $unset: {
             "aiState.mediationLatchedAt": 1,
             "aiState.mediationLatchedHumanCount": 1,
+            "aiState.buildOnFocusCandidate": 1,
           },
         },
       );
     }
     if (reservation.routeKind === "summary") {
       runtime.summaryStatus = "done";
+      if (isLeader(runtime.conditionCode)) {
+        runtime.buildOnsSinceMediation = 0;
+        runtime.buildOnFocusCandidate = undefined;
+      }
       await Session.updateOne(
         { _id: runtime.sessionId },
         {
           $set: {
             "aiState.summaryStatus": "done",
             "aiState.summaryMessageId": result.messageId,
+            ...(isLeader(runtime.conditionCode) ? { "aiState.buildOnsSinceMediation": 0 } : {}),
           },
+          ...(isLeader(runtime.conditionCode)
+            ? { $unset: { "aiState.buildOnFocusCandidate": 1 } }
+            : {}),
         },
       );
     }
@@ -758,6 +813,7 @@ async function initializeRuntime(runtime: RuntimeState) {
   runtime.mediationLatchedAt = state.mediationLatchedAt?.getTime?.();
   runtime.mediationLatchedHumanCount = state.mediationLatchedHumanCount ?? undefined;
   runtime.buildOnsSinceMediation = state.buildOnsSinceMediation ?? 0;
+  runtime.buildOnFocusCandidate = state.buildOnFocusCandidate ?? undefined;
   runtime.lastBackchannelAt = state.lastBackchannelAt?.getTime?.();
   runtime.longSilenceBroadcastCount = state.longSilenceBroadcastCount ?? 0;
   runtime.lastLongSilenceAt = state.lastLongSilenceAt?.getTime?.();
@@ -790,6 +846,7 @@ async function initializeRuntime(runtime: RuntimeState) {
         "aiState.mediationLatched": runtime.mediationLatched,
         "aiState.mediationEvidence": runtime.mediationEvidence,
         "aiState.buildOnsSinceMediation": runtime.buildOnsSinceMediation,
+        "aiState.buildOnFocusCandidate": runtime.buildOnFocusCandidate ?? null,
       },
     },
   );
@@ -844,6 +901,7 @@ export async function startInterventionSession(input: {
       mediationLatched: false,
       mediationEvidence: [],
       buildOnsSinceMediation: 0,
+      buildOnFocusCandidate: undefined,
       longSilenceBroadcastCount: 0,
     };
     runtimes.set(input.sessionCode, runtime);
@@ -973,6 +1031,18 @@ export async function onHumanMessage(input: {
   });
   // [Step 55] signal LLM 대기 중 새 메시지가 오면 본 judge 호출을 스킵 (기존 stale 가드 패턴)
   if (runtime.latestPushSeq !== input.messageSeq) return;
+  // A direct cross-candidate comparison already performs the widening that
+  // cadence mediation is meant to request. Prefer that deterministic signal
+  // over a stale single-candidate fallback, while keeping pronoun continuity
+  // from the signal judge for ordinary same-candidate discussion.
+  const cadenceFocusState = deriveFocusDepthState({
+    routeKind: "build_on",
+    messages: allTranscript,
+    revealStats: (session as any).revealStats,
+  });
+  const cadenceFocusCandidate =
+    cadenceFocusState.basis === "comparison" ? null : judgeSignal.focusCandidate;
+  await alignLeaderMediationCadence(runtime, cadenceFocusCandidate);
   const decision = await judgeIntervention(
     allTranscript.slice(-JUDGE_WINDOW_SIZE).map(({ speaker, content }) => ({ speaker, content })),
     sinceAI,
@@ -981,7 +1051,8 @@ export async function onHumanMessage(input: {
   if (decision) {
     log.info(
       `[intervention-v2] main_judge anchor=${input.messageSeq} decision=${decision.decision} ` +
-        `evidence=${decision.evidence} msgsSinceAI=${sinceAI} signal="${formatMainJudgeSignal(judgeSignal)}" ` +
+        `evidence=${decision.evidence} selectedTrait=${decision.selectedTraitId ?? "none"} ` +
+        `msgsSinceAI=${sinceAI} signal="${formatMainJudgeSignal(judgeSignal)}" ` +
         `session=${runtime.sessionCode}`,
     );
   }
@@ -1002,6 +1073,9 @@ export async function onHumanMessage(input: {
     mediation: {
       latched: runtime.mediationLatched,
       buildOnsSinceMediation: runtime.buildOnsSinceMediation,
+      cadenceEligible:
+        isLeader(runtime.conditionCode) &&
+        sameFocusMediationCadenceEligible(runtime.buildOnFocusCandidate, cadenceFocusCandidate),
     },
     backchannelGapPassed:
       runtime.lastBackchannelAt === undefined ||
@@ -1027,6 +1101,9 @@ export async function onHumanMessage(input: {
     priorityRoute: null,
     mainJudgeDecision: decision.decision,
     judgeEvidence: decision.evidence,
+    selectedTraitId: decision.selectedTraitId,
+    focusCandidate: cadenceFocusCandidate,
+    mediationTrigger: resolved.mediationTrigger,
     decisionStage: "main_judge",
     routeReason: resolved.reason,
     floorMs: TRIGGER_CONFIG.MAIN_ROUTE_DELAY_MS,

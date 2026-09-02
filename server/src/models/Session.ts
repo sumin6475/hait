@@ -109,6 +109,7 @@ const aiStateSchema = new mongoose.Schema(
     mediationLatchedAt: { type: Date },
     mediationLatchedHumanCount: { type: Number },
     buildOnsSinceMediation: { type: Number, default: 0 },
+    buildOnFocusCandidate: { type: String, enum: ["A", "B", "C", "D"] },
     lastBackchannelAt: { type: Date },
     longSilenceBroadcastCount: { type: Number, default: 0 },
     lastLongSilenceAt: { type: Date },

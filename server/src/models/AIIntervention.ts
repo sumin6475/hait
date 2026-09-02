@@ -28,6 +28,8 @@ const outputRepairGuardSchema = new mongoose.Schema(
     candidate: { type: String, enum: ["A", "B", "C", "D"], required: true },
     reason: { type: String, required: true },
     maxTraitIds: { type: Number },
+    allowedTraitIds: { type: [String], default: undefined },
+    requiredTraitId: { type: String },
   },
   { _id: false },
 );
@@ -131,6 +133,9 @@ const aiInterventionSchema = new mongoose.Schema(
     priorityEvidence: { type: String },
     mainJudgeDecision: { type: String },
     judgeEvidence: { type: String },
+    // Main Judge selection provenance. Cadence mediation can supersede the
+    // build-on route, so this may be recorded even when the trait is not used.
+    selectedTraitId: { type: String },
     // Explicit provenance for separating pre-judge gates, Judge output, and timers.
     decisionStage: { type: String },
     routeReason: { type: String },
@@ -148,6 +153,10 @@ const aiInterventionSchema = new mongoose.Schema(
     mediationLatched: { type: Boolean },
     mediationEvidence: { type: [String], default: undefined },
     buildOnsSinceMediation: { type: Number },
+    mediationTrigger: {
+      type: String,
+      enum: ["evidence_latch", "cadence_after_two_build_ons"],
+    },
     outputScopeCandidate: { type: String },
     outputScopeRepaired: { type: Boolean },
     outputScopeViolation: { type: String },

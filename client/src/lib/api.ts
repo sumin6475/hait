@@ -180,6 +180,7 @@ export interface InterventionLog {
   priorityEvidence?: string | null;
   mainJudgeDecision?: "contribute" | "acknowledge" | "silent" | null;
   judgeEvidence?: string | null;
+  selectedTraitId?: string | null;
   decisionStage?: import("@/types").InterventionDecisionStage | null;
   routeReason?: string | null;
   outcome?: string | null;
@@ -196,6 +197,7 @@ export interface InterventionLog {
   mediationLatched?: boolean | null;
   mediationEvidence?: string[] | null;
   buildOnsSinceMediation?: number | null;
+  mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons" | null;
   focusCandidate?: "A" | "B" | "C" | "D" | null;
   focusBasis?: string | null;
   focusHumanConfirmedCount?: number | null;
@@ -230,6 +232,7 @@ export interface SessionExport {
       mediationLatched?: boolean;
       mediationEvidence?: string[];
       buildOnsSinceMediation?: number;
+      buildOnFocusCandidate?: "A" | "B" | "C" | "D";
       lastBackchannelAt?: string;
     } | null;
   };

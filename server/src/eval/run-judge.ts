@@ -50,12 +50,11 @@ for (const c of doc.cases) {
       focusCandidate: null,
       exchangeClass: "unclear",
       privateContributionAvailable: false,
+      privateContributionIds: [],
     });
     // Keep the historical report shape while the runtime uses the V2 three-way decision.
     results.push(
-      decision
-        ? { speak: decision.decision !== "silent", reason: decision.evidence }
-        : null,
+      decision ? { speak: decision.decision !== "silent", reason: decision.evidence } : null,
     );
   }
 
@@ -69,7 +68,9 @@ for (const c of doc.cases) {
   const pass = matches >= 2;
   if (pass) passed++;
 
-  const got = results.map((d) => (d == null ? "null" : `${d.speak ? "T" : "F"}:${d.reason}`)).join(" ");
+  const got = results
+    .map((d) => (d == null ? "null" : `${d.speak ? "T" : "F"}:${d.reason}`))
+    .join(" ");
   const want = `speak=${c.expect.speak}${c.expect.reason ? ` reason=${c.expect.reason}` : ""}`;
   console.log(`  ${pass ? "PASS" : "FAIL"}  ${c.id.padEnd(3)} ${c.desc}`);
   console.log(`        want ${want} · got [${got}] (${matches}/${RUNS})`);

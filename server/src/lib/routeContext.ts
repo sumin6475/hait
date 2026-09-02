@@ -38,13 +38,14 @@ export function isLeaderCondition(conditionCode: ConditionCode): boolean {
 
 /**
  * Compact, server-derived input for the Main Judge. This intentionally carries
- * only a focus, an exchange class, and private-note availability—not raw tally
- * state or a second interpretation of the conversation.
+ * only a focus, an exchange class, and the eligible unsurfaced Alex-note ids—not
+ * raw tally state or a second interpretation of the conversation.
  */
 export interface MainJudgeSignal {
   focusCandidate: Cand | null;
   exchangeClass: JudgeExchangeClass;
   privateContributionAvailable: boolean;
+  privateContributionIds: string[];
 }
 
 const ACKNOWLEDGMENT_ONLY =
@@ -75,11 +76,11 @@ function classifyJudgeExchange(message?: TranscriptMessage): JudgeExchangeClass 
   return "substantive";
 }
 
-function privateContributionFor(focusCandidate: Cand | null, revealStats: any): boolean {
+function privateContributionIdsFor(focusCandidate: Cand | null, revealStats: any): string[] {
+  if (!focusCandidate) return [];
   const surfaced = allSurfacedIds(revealStats);
-  return Boolean(
-    focusCandidate &&
-    ALEX_Z_IDS.some((id) => TRAIT_BY_ID.get(id)?.candidate === focusCandidate && !surfaced.has(id)),
+  return ALEX_Z_IDS.filter(
+    (id) => TRAIT_BY_ID.get(id)?.candidate === focusCandidate && !surfaced.has(id),
   );
 }
 
@@ -98,10 +99,12 @@ export function deriveMainJudgeSignalFromRules(input: {
   const recentSeqFloor = Math.max(0, input.anchorSeq - 8);
   const focusCandidate =
     topicFromTranscript ?? lastHumanDiscussionCandidate(input.revealStats, recentSeqFloor);
+  const privateContributionIds = privateContributionIdsFor(focusCandidate, input.revealStats);
   return {
     focusCandidate,
     exchangeClass: classifyJudgeExchange(judgeAnchorHumanMessage(input.messages, input.anchorSeq)),
-    privateContributionAvailable: privateContributionFor(focusCandidate, input.revealStats),
+    privateContributionAvailable: privateContributionIds.length > 0,
+    privateContributionIds,
   };
 }
 
@@ -122,12 +125,14 @@ export async function deriveMainJudgeSignal(input: {
       anchorMessage: { speaker: anchor.speaker, content: anchor.content },
     });
     if (llmSignal) {
+      const privateContributionIds = privateContributionIdsFor(
+        llmSignal.focusCandidate,
+        input.revealStats,
+      );
       return {
         ...llmSignal,
-        privateContributionAvailable: privateContributionFor(
-          llmSignal.focusCandidate,
-          input.revealStats,
-        ),
+        privateContributionAvailable: privateContributionIds.length > 0,
+        privateContributionIds,
       };
     }
   }
@@ -571,10 +576,15 @@ export interface RouteOutputScopeGuard {
   // the subject stable; only a route contract or an explicitly scope-less
   // request should mechanically limit how many traits can be answered.
   maxTraitIds?: number;
+  // NOTE_CONTRIBUTION may disclose exactly the Judge-selected note and no
+  // other trait, including traits that were already on the table.
+  allowedTraitIds?: string[];
+  requiredTraitId?: string;
   reason:
     | "scopeless_information_request"
     | "focus_depth"
     | "route_single_point"
+    | "selected_note_contribution"
     | "conversation_grounded_synthesis"
     | "explicit_complete_request";
 }
@@ -861,6 +871,9 @@ export function buildRouteUserContext(input: {
   language: "en" | "ko";
   anchorSeq: number;
   judgeEvidence?: string | null;
+  selectedTraitId?: string | null;
+  mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons" | null;
+  mediationFocusCandidate?: Cand | null;
 }): {
   userPrompt: string;
   contextFromSeq: number | null;
@@ -872,6 +885,10 @@ export function buildRouteUserContext(input: {
 } {
   const conversationGroundedSynthesis =
     input.routeKind === "build_on" && input.judgeEvidence === "conversation_grounded_synthesis";
+  const selectedTrait =
+    input.routeKind === "build_on" && input.judgeEvidence === "relevant_unsurfaced_information"
+      ? TRAIT_BY_ID.get(input.selectedTraitId ?? "")
+      : undefined;
   // The synthesis judge sees 16 messages. Give the generator the same evidence
   // window without changing the established context size for ordinary routes.
   const window = input.messages.slice(
@@ -894,7 +911,32 @@ export function buildRouteUserContext(input: {
     blocks.push(
       conversationGroundedSynthesis
         ? "Contribution mode (server-derived): CONVERSATION_GROUNDED_SYNTHESIS. Use only points already stated by the humans in the recent conversation; do not introduce a new candidate fact or private note."
-        : "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
+        : selectedTrait
+          ? [
+              "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
+              `Selected contribution (mandatory and exclusive): ${selectedTrait.valence === "pos" ? "MATCH" : "MISS"}: ${selectedTrait.text}.`,
+              "This must be the only candidate trait mentioned anywhere in the message, including the question. Refer back to it as 'that point' if needed; do not name, contrast, balance, combine, or imply any other trait.",
+              "Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff that is absent from the recent conversation.",
+            ].join("\n")
+          : "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
+    );
+  }
+  if (
+    input.routeKind === "mediation" &&
+    input.mediationTrigger === "cadence_after_two_build_ons" &&
+    input.mediationFocusCandidate
+  ) {
+    const cadenceInstruction =
+      input.conditionCode === "C4"
+        ? `Add no candidate trait. Briefly keep Candidate ${input.mediationFocusCandidate} in view, then ask exactly one inclusive question that invites the team to consider a different candidate alongside Candidate ${input.mediationFocusCandidate}.`
+        : `Add no candidate trait and ask no question. In one brief declarative process statement, keep Candidate ${input.mediationFocusCandidate} in view while directing attention to considering a different candidate alongside Candidate ${input.mediationFocusCandidate}.`;
+    blocks.push(
+      [
+        "Mediation trigger (server-derived): cadence after two build-on turns.",
+        `The humans are still discussing Candidate ${input.mediationFocusCandidate}.`,
+        cadenceInstruction,
+        `Do not tell the team to abandon Candidate ${input.mediationFocusCandidate}, imply that the candidate is over-discussed, or choose the other candidate for them.`,
+      ].join("\n"),
     );
   }
   const focusDepthState = deriveFocusDepthState({
@@ -1033,7 +1075,17 @@ export function buildRouteUserContext(input: {
             : "route_single_point",
         }
       : undefined;
-  const outputScopeGuard = requestScope?.guard ?? routeSinglePointGuard ?? focusGuard;
+  const selectedContributionGuard: RouteOutputScopeGuard | undefined = selectedTrait
+    ? {
+        candidate: selectedTrait.candidate,
+        maxTraitIds: 1,
+        allowedTraitIds: [selectedTrait.id],
+        requiredTraitId: selectedTrait.id,
+        reason: "selected_note_contribution",
+      }
+    : undefined;
+  const outputScopeGuard =
+    requestScope?.guard ?? selectedContributionGuard ?? routeSinglePointGuard ?? focusGuard;
   return {
     userPrompt: blocks.join("\n\n"),
     contextFromSeq: window[0]?.seq ?? null,
