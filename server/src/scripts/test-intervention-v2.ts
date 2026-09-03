@@ -216,7 +216,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.6.5");
+    assert.equal(resolvedPrompt.promptVersion, "1.6.6");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -285,7 +285,7 @@ const routeContractChecks = {
     address: /Answer the exact question or request first/i,
     followup: /Answer or clarify the exact point on the same thread/i,
     long_silence: /Ask one small, grounded question/i,
-    build_on: /For NOTE_CONTRIBUTION.*ask one small grounded question/is,
+    build_on: /For NOTE_CONTRIBUTION.*ask exactly one alignment question/is,
     backchannel: /backchannel turn, not an inquiry turn/i,
   },
   C4: {
@@ -293,7 +293,7 @@ const routeContractChecks = {
     address: /Answer the exact question or request first/i,
     followup: /Resolve the exact question, challenge, or clarification/i,
     long_silence: /ask at most one short, inclusive, grounded question/i,
-    build_on: /For NOTE_CONTRIBUTION.*ask exactly one grounded question/is,
+    build_on: /For NOTE_CONTRIBUTION.*ask exactly one inclusive team-wide alignment question/is,
     mediation: /reopens the field/i,
     backchannel: /not an inquiry, callout, mediation, or substantive contribution/i,
     summary: /End with exactly one inclusive team-wide question/i,
@@ -313,8 +313,8 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
 const synthesisContracts = {
   C1: /CONVERSATION_GROUNDED_SYNTHESIS.*one short declarative sentence/is,
   C2: /CONVERSATION_GROUNDED_SYNTHESIS.*declarative sentences/is,
-  C3: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one small grounded question/is,
-  C4: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one inclusive, grounded team-wide question/is,
+  C3: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one small clarification question/is,
+  C4: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one inclusive, grounded team-wide clarification question/is,
 } as const;
 for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   const contract = routeContract(condition, "build_on");
@@ -323,10 +323,20 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   assert.match(contract, /introduce no private note or new candidate fact/i);
 }
 const leaderAciBuildOnContract = getRoutePrompt("C4", "build_on").systemPrompt;
+const peerAciBuildOnContract = getRoutePrompt("C3", "build_on").systemPrompt;
+assert.match(peerAciBuildOnContract, /Does that align with what you have\?/i);
+assert.match(peerAciBuildOnContract, /Is that consistent with your notes on this point\?/i);
+assert.match(peerAciBuildOnContract, /Does that match what you have for this same point\?/i);
+assert.match(peerAciBuildOnContract, /one very short neutral uptake phrase/i);
+assert.match(peerAciBuildOnContract, /must not agree with, praise, validate, summarize, or restate/i);
+assert.match(peerAciBuildOnContract, /Never ask how any trait should be weighed/i);
+assert.match(peerAciBuildOnContract, /earlier concerns/i);
 assert.match(leaderAciBuildOnContract, /one supplied selected trait/i);
-assert.match(leaderAciBuildOnContract, /only candidate trait named anywhere/i);
+assert.match(leaderAciBuildOnContract, /only candidate trait named or implied anywhere/i);
 assert.match(leaderAciBuildOnContract, /Do not combine it with another trait/i);
 assert.match(leaderAciBuildOnContract, /Do not invent an operational scenario/i);
+assert.match(leaderAciBuildOnContract, /inclusive team-wide alignment question/i);
+assert.match(leaderAciBuildOnContract, /do not ask the team to weigh or interpret its importance/i);
 
 for (const condition of ["C2", "C4"] as const) {
   const summary = getRoutePrompt(condition, "summary").systemPrompt;
