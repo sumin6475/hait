@@ -126,6 +126,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     selectedTraitId: input.routeKind === "build_on" ? input.selectedTraitId : undefined,
     mediationTrigger: input.mediationTrigger,
     mediationFocusCandidate: input.mediationFocusCandidate,
+    mediationEvidence: input.mediationEvidence,
+    buildOnsSinceMediation: input.buildOnsSinceMediation,
   });
   const previouslySurfacedTraitIds = [
     ...new Set([
@@ -383,6 +385,31 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     log.error("[route-turn] intervention log failed after message save:", error);
   }
 
+  if (!["summary", "closing", "greeting", "backchannel"].includes(input.routeKind)) {
+    try {
+      // A selected note has already passed the exact output guard, so record
+      // its known id directly. Other generated answers are extracted before
+      // broadcast. Either way the next human turn sees a settled ledger.
+      const ids =
+        input.routeKind === "build_on" &&
+        input.judgeEvidence === "relevant_unsurfaced_information" &&
+        input.selectedTraitId
+          ? [input.selectedTraitId]
+          : (extractedAiIds ?? (await extractSurfacedTraits(result.parsed.content)));
+      await Promise.all([
+        updateAiSurfaced(input.sessionId, ids, savedMessage.seq),
+        ids.length
+          ? Message.updateOne(
+              { _id: savedMessage._id },
+              { $addToSet: { sharedInfoIds: { $each: ids } } },
+            )
+          : Promise.resolve(),
+      ]);
+    } catch (error) {
+      log.error("[pooling] AI update error:", error);
+    }
+  }
+
   input.io.to(input.sessionCode).emit("new-message", {
     seq: savedMessage.seq,
     sender: savedMessage.sender,
@@ -390,34 +417,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     content: savedMessage.content,
     createdAt: (savedMessage as any).createdAt.toISOString(),
   });
-
-  if (!["summary", "closing", "greeting", "backchannel"].includes(input.routeKind)) {
-    if (extractedAiIds) {
-      void Promise.all([
-        updateAiSurfaced(input.sessionId, extractedAiIds, savedMessage.seq),
-        extractedAiIds.length
-          ? Message.updateOne(
-              { _id: savedMessage._id },
-              { $addToSet: { sharedInfoIds: { $each: extractedAiIds } } },
-            )
-          : Promise.resolve(),
-      ]).catch((error) => log.error("[pooling] AI update error:", error));
-    } else {
-      void extractSurfacedTraits(result.parsed.content)
-        .then((ids) =>
-          Promise.all([
-            updateAiSurfaced(input.sessionId, ids, savedMessage.seq),
-            ids.length
-              ? Message.updateOne(
-                  { _id: savedMessage._id },
-                  { $addToSet: { sharedInfoIds: { $each: ids } } },
-                )
-              : Promise.resolve(),
-          ]),
-        )
-        .catch((error) => log.error("[pooling] AI extract error:", error));
-    }
-  }
 
   if (!interventionSaved) {
     log.warn(`[route-turn] message broadcast without intervention row (${input.sessionCode})`);

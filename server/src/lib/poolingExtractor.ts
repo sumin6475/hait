@@ -1,25 +1,82 @@
 // poolingExtractor — 사람 메시지가 표면화한 trait id 추출 (Step 14a).
 // interventionJudge 패턴: 자체 OpenAI client + responses.parse + zod, 실패 → [] (조용히 skip).
-// fire-and-forget로 호출됨 → Alex 응답경로를 절대 막지 않는다.
+// 사람 메시지의 ledger 반영이 끝난 뒤에 해당 turn routing을 시작해 stale factual state를 막는다.
 import OpenAI from "openai";
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
 import { TRAIT_DB, TRAIT_BY_ID, type Cand } from "./traitData.js";
-import { log } from "./log.js";
-
-// ── Step 28/C: 과추출 결정적 안전망 ────────────────────────────────
-// 실측 과추출(T-C2-009 seq35 · T-C4-008 seq30·31)은 17~59자 합의 멘트에서 trait 7개 —
-// 정상 공개는 trait 2개에 120자+. 짧은 메시지에 4개+ 는 비현실적 밀도 → 드롭.
-const OVEREXTRACT_MAX_IDS = 4;
-const OVEREXTRACT_MIN_LEN = 70;
 
 const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 const EXTRACT_MODEL = "gpt-4o-mini";
-const EXTRACT_MAX_TOKENS = 150;
+// Evidence-bearing objects are much larger than the former id-only array.
+// Leave room for a participant to state several real traits in one message.
+const EXTRACT_MAX_TOKENS = 800;
 const EXTRACT_TIMEOUT_MS = 8_000;
 
-const ExtractSchema = z.object({ surfaced: z.array(z.string()) });
+const TraitMentionSchema = z.object({
+  traitId: z.string(),
+  evidenceQuote: z.string(),
+  assertionType: z.enum(["asserted", "questioned", "hypothetical", "generic_reference"]),
+  confidence: z.number().min(0).max(1),
+});
+const ExtractSchema = z.object({ mentions: z.array(TraitMentionSchema) });
+export type ExtractedTraitMention = z.infer<typeof TraitMentionSchema>;
+
+const GENERIC_ONLY =
+  /^(?:(?:(?:candidate\s+[a-d]|he|she|they|his|her|their|its|the\s+candidate)(?:['’]s)?\s+))?(?:the\s+)?(?:positive|negative|good|bad)(?:\s+(?:points?|traits?|qualities|sides?|things?))?(?:\s+(?:seem|are|were|look).*)?$/i;
+
+function normalizedEvidence(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[“”‘’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Convert model suggestions into conservative, auditable surface events.
+ * Every accepted id needs an exact source span and an affirmative assertion;
+ * generic sentiment, questions, hypotheticals, and one span reused to reveal a
+ * bundle are rejected before they can contaminate the session ledger.
+ */
+export function validateExtractedTraitMentions(
+  messageText: string,
+  mentions: readonly ExtractedTraitMention[],
+): string[] {
+  const message = normalizedEvidence(messageText);
+  const quoteCounts = new Map<string, number>();
+  for (const mention of mentions) {
+    const quote = normalizedEvidence(mention.evidenceQuote);
+    if (quote) quoteCounts.set(quote, (quoteCounts.get(quote) ?? 0) + 1);
+  }
+
+  const accepted = mentions.filter((mention) => {
+    const trait = TRAIT_BY_ID.get(mention.traitId);
+    const quote = normalizedEvidence(mention.evidenceQuote);
+    if (!trait || mention.assertionType !== "asserted" || mention.confidence < 0.8) return false;
+    if (!quote || !message.includes(quote) || GENERIC_ONLY.test(quote)) return false;
+    if ((quoteCounts.get(quote) ?? 0) > 1) return false;
+    // "responsible for passengers/people" describes situational duty, not the
+    // personality trait "is very responsible" in the candidate database.
+    if (/\bis very responsible\b/i.test(trait.text) && /\bresponsible for\b/i.test(quote)) {
+      return false;
+    }
+    // A general statement that verbal skill matters is not the database MISS
+    // that a specific candidate "is not verbally skillful".
+    if (
+      /\bis not verbally skillful\b/i.test(trait.text) &&
+      !/\b(?:not|isn['’]?t|lack(?:s|ing)?|poor)\b.*\b(?:verbal|communicat|speak|skillful)\b/i.test(
+        quote,
+      )
+    ) {
+      return false;
+    }
+    return true;
+  });
+  return [...new Set(accepted.map((mention) => mention.traitId))];
+}
 
 // TRAIT_DB 압축목록 (후보별 "id: text") — 시스템 프롬프트에 1회 포함, 모듈 로드 시 생성.
 const TRAIT_LIST = (["A", "B", "C", "D"] as Cand[])
@@ -36,7 +93,13 @@ const EXTRACT_SYSTEM = `Below is the full list of known traits of four candidate
 
 ${TRAIT_LIST}
 
-You will be given one chat message from a team discussion about these candidates. Return in "surfaced" the ids of ONLY the traits this message explicitly mentions or asserts about a candidate. Paraphrases count as mentions. Do not guess or extrapolate beyond what is said. If the message denies or disputes a trait ("A is not arrogant"), that trait is NOT surfaced. Ignore opinions, preferences, and judgments that don't state a trait. If nothing matches, return an empty array. A message that only expresses agreement, endorsement, preference, or a decision about a candidate ("I can get behind C", "Locking C", "C it is", "C's really grown on me") states NO traits — return []. Return an id ONLY if that trait's content is itself stated or paraphrased in THIS message; a candidate sounding good or bad is not a trait. A message that only ASKS about a candidate or a trait — a question requesting information ("what do you have on B?", "does anyone have more on B's weak side?") — states NO traits itself; return [] unless the message also states trait content outright. Output JSON only.`;
+You will be given one chat message from a team discussion about these candidates. Identify ONLY candidate traits affirmatively asserted in that message. For each possible item return its traitId, an evidenceQuote copied exactly from the message, assertionType, and confidence.
+
+Use assertionType="asserted" only when the person actually says the candidate has that specific trait. Use "questioned" for a question, "hypothetical" for an if/maybe scenario, and "generic_reference" for phrases such as "positive points", "negative qualities", "their strengths", or a general job criterion. Only asserted items can enter the factual ledger.
+
+Paraphrases count only when the evidence quote itself expresses the specific trait. Do not expand a generic phrase into the person's private list. "I choose Candidate A because his positive points seem more vital" has no trait mentions. "Being responsible for people's lives" does not assert that Candidate D is a very responsible person. "Being skillful is important" is a job criterion, not an assertion that a candidate is or is not verbally skillful. A preference, agreement, comparison, or decision with no specific trait has no mentions. If the message denies or disputes a trait, do not mark it asserted. A request for information has no asserted trait unless the person also states one.
+
+Never invent or paraphrase the evidenceQuote; copy an exact contiguous span from the message. Do not reuse one generic evidence quote for several ids. When uncertain, omit the item. Output JSON only.`;
 
 export async function extractSurfacedTraits(messageText: string): Promise<string[]> {
   const ctrl = new AbortController();
@@ -58,15 +121,7 @@ export async function extractSurfacedTraits(messageText: string): Promise<string
     clearTimeout(to);
     const p = resp.output_parsed;
     if (!p) return [];
-    const ids = p.surfaced.filter((id) => TRAIT_BY_ID.has(id)); // 모델 환각 id 제거
-    // [Step 28-C] 과추출 가드 — 드롭은 warn으로 가시화 (조용한 데이터 손실 방지)
-    if (ids.length >= OVEREXTRACT_MAX_IDS && messageText.length < OVEREXTRACT_MIN_LEN) {
-      log.warn(
-        `[pooling] over-extraction guard dropped ${JSON.stringify(ids)} (len=${messageText.length})`,
-      );
-      return [];
-    }
-    return ids;
+    return validateExtractedTraitMentions(messageText, p.mentions);
   } catch {
     clearTimeout(to);
     return []; // 타임아웃/네트워크/파싱 실패 → skip (다음 메시지에 보정)

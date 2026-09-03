@@ -1,0 +1,114 @@
+flowchart TD
+  A[Human sends message] --> B[Save Message]
+  B --> C[Fire-and-forget trait extraction]
+  B --> D["maybeAITurn(source=push)"]
+
+  P["Pull timer (5s interval)"] --> Q["maybeAITurn(source=pull)"]
+
+  D --> G
+  Q --> G
+
+  G{"closingDone has session?"} -->|yes| Z["Return (AI 영구 침묵)"]
+  G -->|no| LG{"Leader(C2/C4) & within CLOSING_LEAD_MS?"}
+
+  LG -->|yes| LG1["closingDone latch"]
+  LG1 --> LG2["handleAITurn(closing)"]
+  LG2 --> Z
+
+  LG -->|no| CTX["buildSessionContext"]
+
+  CTX --> EX{"Exemption 판단"}
+  EX -->|"last msg addresses Alex"| EX1["exempt=address, floor=7s"]
+  EX -->|"followup gate ON & msgsSinceAI=1 & push/deferred"| EX2["mini followup judge"]
+  EX2 -->|true| EX3["exempt=followup, floor=13s"]
+  EX2 -->|"false/null"| EX4["exempt=none"]
+  EX -->|"pull & msgsSinceAI≥1 & silence≥45s"| EX5["exempt=long_silence, floor=0"]
+  EX -->|none| EX4
+
+  EX1 --> FL
+  EX3 --> FL
+  EX5 --> CD
+  EX4 --> CD
+
+  CD{"exempt=none & messagesSinceLastAI < COOLDOWN_MIN_MSGS?"}
+  CD -->|yes| Z
+  CD -->|no| FL{"floor > 0 & source ≠ deferred?"}
+
+  FL -->|yes| FL1["setTimeout(floorMs) → deferred 재평가"]
+  FL1 --> Z
+  FL -->|no| SCD{"summaryCooldownActive & exempt ≠ address/long_silence?"}
+  SCD -->|yes| Z
+  SCD -->|no| CVG
+
+  CVG{"Leader & exhausted(new trait 0 for K turns) & floorMet?"}
+  CVG -->|yes| CVG1["closingDone latch"]
+  CVG1 --> CVG2["handleAITurn(summary)"]
+  CVG2 --> CVG3["handleAITurn(closing, bypassDoublePost)"]
+  CVG3 --> Z
+
+  CVG -->|no| LS{"Leader? → maybeLeaderSummary"}
+  LS -->|fired| Z
+  LS -->|not fired| SRC{"source?"}
+
+  SRC -->|"pull"| LSIL{"secondsSinceLastMessage ≥ LONG_SILENCE_SECONDS?"}
+  LSIL -->|yes| LSIL1["computeCue"]
+  LSIL1 --> LSIL2["maybeCalloutOverlay(leader-only)"]
+  LSIL2 --> LSIL3["handleAITurn(long-silence)"]
+  LSIL3 --> Z
+  LSIL -->|no| Z
+
+  SRC -->|"push"| JDG["judgeIntervention(window, msgsSinceAI)"]
+
+  JDG --> JDGR{"judge result"}
+  JDGR -->|"null (API 실패)"| FB["evaluateTriggers fallback"]
+  FB -->|"trigger fired"| FB1["handleAITurn(fallback trigger)"]
+  FB1 --> Z
+  FB -->|"no trigger"| Z
+
+  JDGR -->|"speak=false"| NR{"EXP_NATURAL_DIRECTED?"}
+  NR -->|true| NR1["backchannel gap ≥ BACKCHANNEL_GAP_MS?"]
+  NR1 -->|yes| NR2["reroute → speak=true, reason=backchannel, natural=true"]
+  NR1 -->|no| SL["logSilence → stay_silent"]
+  SL --> Z
+  NR -->|false| SL
+  NR2 --> PM
+
+  JDGR -->|"speak=true"| PM{"peer(C1/C3) & reason=mediation?"}
+  PM -->|yes| PM1["reroute → reason=backchannel, natural=true"]
+  PM1 --> CO
+  PM -->|no| CO
+
+  CO["maybeCalloutOverlay(leader-only)"] --> HA["handleAITurn(judge)"]
+
+  HA --> HA1["Anti-double-post guard (last msg = AI?)"]
+  HA1 -->|skip| Z
+  HA1 -->|pass| HA2["Build transcript (label mapping)"]
+  HA2 --> HA3["Compute cue / Determine routeKind"]
+
+  HA3 --> RK{"routeKind"}
+  RK -->|closing| RP1["buildClosingPrompt"]
+  RK -->|summary| RP2["buildSummaryPrompt"]
+  RK -->|natural| RP3["buildNaturalPrompt"]
+  RK -->|task| RP4["buildSystemPromptForTask(cue + tally + depth)"]
+
+  RP1 --> MP
+  RP2 --> MP
+  RP3 --> MP
+  RP4 --> MP
+
+  MP["Appendices: recentSummaryLeader consistency / callout tail / maybeKoLang"]
+  MP --> CALL["callAIStructured"]
+
+  CALL -->|fail| CF{"closing?"}
+  CF -->|yes| CF1["fallback text 저장 + broadcast"]
+  CF1 --> Z
+  CF -->|no| CF2["log stay_silent with error"]
+  CF2 --> Z
+
+  CALL -->|ok| OK1["allocSeq → Message.create(AI)"]
+  OK1 --> OK2["AIIntervention.create(speak)"]
+  OK2 --> OK3["broadcast new-message"]
+  OK3 --> OK4{"summary/closing?"}
+  OK4 -->|no| OK5["extractSurfacedTraits → updateAiSurfaced (fire-and-forget)"]
+  OK4 -->|yes| Z
+  OK5 --> Z

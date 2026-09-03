@@ -18,6 +18,38 @@ import {
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
+interface LedgerTurnReservation {
+  waitForPrior: Promise<void>;
+  release: () => void;
+}
+
+// Socket callbacks from two participants can overlap. Keep chat saves and
+// broadcasts immediate, but serialize ledger commits in callback-arrival order
+// so a later routing decision never observes an unprocessed earlier message.
+const ledgerTails = new Map<string, Promise<void>>();
+
+function reserveLedgerTurn(sessionId: string): LedgerTurnReservation {
+  const prior = ledgerTails.get(sessionId) ?? Promise.resolve();
+  let resolveCurrent!: () => void;
+  const current = new Promise<void>((resolve) => {
+    resolveCurrent = resolve;
+  });
+  const tail = prior.catch(() => undefined).then(() => current);
+  ledgerTails.set(sessionId, tail);
+  let released = false;
+  return {
+    waitForPrior: prior.catch(() => undefined),
+    release: () => {
+      if (released) return;
+      released = true;
+      resolveCurrent();
+      void tail.finally(() => {
+        if (ledgerTails.get(sessionId) === tail) ledgerTails.delete(sessionId);
+      });
+    },
+  };
+}
+
 function presentRoles(io: IO, roomName: string): Set<string> {
   const room = io.sockets.adapter.rooms.get(roomName);
   const roles = new Set<string>();
@@ -198,6 +230,7 @@ export function registerSocketHandlers(io: IO) {
     });
 
     socket.on("send-message", async ({ content }) => {
+      let ledgerTurn: LedgerTurnReservation | undefined;
       try {
         const { sessionCode, sessionId, participantCode, role, conditionCode } = socket.data;
         if (!sessionCode || !sessionId) {
@@ -213,6 +246,7 @@ export function registerSocketHandlers(io: IO) {
           socket.emit("message-failed", { reason: "Message too long (max 2000)" });
           return;
         }
+        if (conditionCode !== "CTRL") ledgerTurn = reserveLedgerTurn(sessionId);
 
         const nextSeq = await allocSeq(sessionId);
         const savedMessage = await Message.create({
@@ -232,26 +266,33 @@ export function registerSocketHandlers(io: IO) {
         });
         log.info(`[socket] message saved: ${sessionCode} seq=${nextSeq} role=${role}`);
 
+        await ledgerTurn?.waitForPrior;
         if (conditionCode !== "CTRL" && trimmed.length >= 15) {
-          void extractSurfacedTraits(trimmed)
-            .then(async (ids) => {
-              const [newCount] = await Promise.all([
-                updateRevealStats(sessionId, ids, nextSeq),
-                ids.length
-                  ? Message.updateOne(
-                      { _id: savedMessage._id },
-                      { $addToSet: { sharedInfoIds: { $each: ids } } },
-                    )
-                  : Promise.resolve(),
-              ]);
-              if (ids.length) {
-                log.info(
-                  `[pooling] surfaced=${ids.length} new=${newCount} role=${role} seq=${nextSeq} session=${sessionCode}`,
-                );
-              }
-            })
-            .catch((error) => log.error("[pooling] extract error:", error));
+          try {
+            // The ledger for this message must be committed before routing and
+            // judging it. The previous fire-and-forget path let the judge read
+            // stale coverage and classify already-spoken traits as unsurfaced.
+            const ids = await extractSurfacedTraits(trimmed);
+            const [newCount] = await Promise.all([
+              updateRevealStats(sessionId, ids, nextSeq),
+              ids.length
+                ? Message.updateOne(
+                    { _id: savedMessage._id },
+                    { $addToSet: { sharedInfoIds: { $each: ids } } },
+                  )
+                : Promise.resolve(),
+            ]);
+            if (ids.length) {
+              log.info(
+                `[pooling] surfaced=${ids.length} new=${newCount} role=${role} seq=${nextSeq} session=${sessionCode}`,
+              );
+            }
+          } catch (error) {
+            log.error("[pooling] extract error:", error);
+          }
         }
+        ledgerTurn?.release();
+        ledgerTurn = undefined;
         if (conditionCode !== "CTRL") {
           void onHumanMessage({ sessionCode, messageSeq: nextSeq, content: trimmed }).catch(
             (error) => log.error("[push-v2] turn error:", error),
@@ -260,6 +301,8 @@ export function registerSocketHandlers(io: IO) {
       } catch (error) {
         log.error("[socket] send-message error:", error);
         socket.emit("message-failed", { reason: "Server error while saving message" });
+      } finally {
+        ledgerTurn?.release();
       }
     });
 

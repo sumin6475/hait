@@ -14,6 +14,8 @@ const requiredCommon = [
   "instructionPriority",
   "internalControlDiscipline",
   "outputDiscipline",
+  "unifiedInteractionPolicy",
+  "buildOnConversationPolicy",
 ];
 for (const key of requiredCommon) {
   if (typeof source.common?.[key] !== "string" || !source.common[key].trim()) {
@@ -29,6 +31,10 @@ for (const [condition, conditionSource] of Object.entries(source.conditions ?? {
   if (!conditionSource.behavioral?.trim()) {
     throw new Error(`Missing behavioral block for ${condition}`);
   }
+  const refinement = source.conditionRefinements?.[condition];
+  if (typeof refinement !== "string" || !refinement.trim()) {
+    throw new Error(`Missing behavioral refinement for ${condition}`);
+  }
   for (const [routeKind, routeContract] of Object.entries(conditionSource.routes ?? {})) {
     if (typeof routeContract !== "string" || !routeContract.trim()) {
       throw new Error(`Empty route contract: ${condition}.${routeKind}`);
@@ -38,12 +44,18 @@ for (const [condition, conditionSource] of Object.entries(source.conditions ?? {
       source.common.taskEnvironment,
       source.common.instructionPriority,
       conditionSource.behavioral,
+      refinement,
+      source.common.buildOnConversationPolicy,
       source.common.internalControlDiscipline,
       source.common.outputDiscipline,
-      routeContract.startsWith("# Route Contract")
-        ? routeContract
-        : `# Route Contract — ${routeKind}\n${routeContract}`,
-    ].join("\n\n");
+      source.common.unifiedInteractionPolicy,
+    ]
+      .map((block) =>
+        block
+          .replaceAll("Route Contract", "Turn Metadata")
+          .replaceAll("route contract", "turn metadata"),
+      )
+      .join("\n\n");
     prompts[promptKey] = {
       condition,
       routeKind,
@@ -67,4 +79,6 @@ writeFileSync(
   )}\n`,
   "utf8",
 );
-console.log(`Compiled ${Object.keys(prompts).length} route prompts into the runtime snapshot.`);
+console.log(
+  `Compiled ${Object.keys(prompts).length} route keys from four unified condition prompts into the runtime snapshot.`,
+);

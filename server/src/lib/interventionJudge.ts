@@ -77,7 +77,7 @@ selectedTraitId must be one eligible listed id only when evidence=relevant_unsur
 
 Choose acknowledgment and conversation-grounded synthesis sparingly. When uncertain whether a reaction adds new relational value, choose SILENT.
 
-Do not decide whether Alex should express an allowed contribution as a statement or a question. Do not decide whether Alex should speak as a peer or a leader. Those choices are controlled downstream by the condition-specific route contract. Do not choose mediation or a candidate, and do not write Alex's message.
+Do not decide whether Alex should express an allowed contribution as a statement or a question. Do not decide whether Alex should speak as a peer or a leader. Those choices are controlled downstream by the condition prompt and Turn Metadata. Do not choose mediation or a candidate, and do not write Alex's message.
 
 Output JSON only.`;
 

@@ -147,7 +147,7 @@ export function formatMainJudgeSignal(signal: MainJudgeSignal): string {
   ].join(" ");
 }
 
-function formatCoverageFromIds(surfaced: Set<string>): string {
+function formatCoverageFromIds(surfaced: Set<string>, includeUntouched = true): string {
   const blocks: string[] = [];
   const untouched: Cand[] = [];
   for (const candidate of CANDIDATES) {
@@ -162,13 +162,13 @@ function formatCoverageFromIds(surfaced: Set<string>): string {
     const misses = traits.filter((trait) => trait?.valence === "neg");
     blocks.push(
       [
-        `Candidate ${candidate} — ${matches.length} matches · ${misses.length} misses`,
+        `Candidate ${candidate} — ${matches.length} ${matches.length === 1 ? "match" : "matches"} · ${misses.length} ${misses.length === 1 ? "miss" : "misses"}`,
         `  Matches: ${matches.map((trait) => trait!.text).join("; ") || "—"}`,
         `  Misses: ${misses.map((trait) => trait!.text).join("; ") || "—"}`,
       ].join("\n"),
     );
   }
-  if (untouched.length) blocks.push(`Still to cover: ${untouched.join(", ")}`);
+  if (includeUntouched && untouched.length) blocks.push(`Still to cover: ${untouched.join(", ")}`);
   return blocks.join("\n\n") || "No confirmed candidate information is on the table yet.";
 }
 
@@ -200,7 +200,7 @@ export function formatDeterministicSummary(revealStats: any, conditionCode: Cond
     ? `Still to cover: ${CANDIDATES.join(", ")}`
     : coverage.includes("Still to cover:")
       ? coverage
-      : `${coverage}\n\nStill to cover: none`;
+      : `${coverage}\n\nAll candidates have at least one confirmed point on the table.`;
   const ending =
     conditionCode === "C4"
       ? untouched.length
@@ -208,7 +208,7 @@ export function formatDeterministicSummary(revealStats: any, conditionCode: Cond
         : "Which of these candidate differences should we resolve next to move toward a decision?"
       : untouched.length
         ? `Remaining coverage: ${untouched.map((candidate) => `Candidate ${candidate}`).join(", ")} ${untouched.length === 1 ? "is" : "are"} not yet on the table; the next step is to add that coverage before deliberating across the full field.`
-        : "Remaining coverage: all finalists now have on-table information; the next step is to deliberate using these visible profiles.";
+        : "All finalists now have some on-table information; the next step is to resolve the most relevant differences in these visible profiles.";
 
   return `Quick check-in\n\n${factualBody}\n\n${ending}`;
 }
@@ -345,7 +345,7 @@ export function formatPreferenceDecision(revealStats: any): string {
       ...header,
       `State: CURRENT_CO_PREFERENCE — ${candidates}.`,
       partialQualification,
-      `When the Route Contract permits a preference, name all of ${candidates}. ${decision.scope === "partial" ? "Explicitly qualify the read as applying only among the sufficiently covered candidates so far. " : ""}Say they currently look even at the top in the overall shared MATCH/MISS picture and that you would like to discuss them more before separating them. Do not pick one, state numerical evidence, or list traits.`,
+      `When the Turn Metadata permits a preference, name all of ${candidates}. ${decision.scope === "partial" ? "Explicitly qualify the read as applying only among the sufficiently covered candidates so far. " : ""}Say they currently look even at the top in the overall shared MATCH/MISS picture and that you would like to discuss them more before separating them. Do not pick one, state numerical evidence, or list traits.`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -354,7 +354,7 @@ export function formatPreferenceDecision(revealStats: any): string {
     ...header,
     `State: CURRENT_PREFERENCE — Candidate ${decision.candidate}.`,
     partialQualification,
-    `When the Route Contract permits a preference, name only Candidate ${decision.candidate}. ${decision.scope === "partial" ? "Explicitly say this is the current read among the sufficiently covered candidates so far. " : ""}Say its overall shared profile currently looks strongest on MATCHES relative to MISSES. Do not state numerical evidence, enumerate traits, or use one standout trait as the reason.`,
+    `When the Turn Metadata permits a preference, name only Candidate ${decision.candidate}. ${decision.scope === "partial" ? "Explicitly say this is the current read among the sufficiently covered candidates so far. " : ""}Say its overall shared profile currently looks strongest on MATCHES relative to MISSES. Do not state numerical evidence, enumerate traits, or use one standout trait as the reason.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -527,7 +527,7 @@ function requestOverridesFocusControl(
 }
 
 // A peer build-on may state a preference only when the discussion is already
-// weighing candidates or a person has just stated one (Route Contract).
+// weighing candidates or a person has just stated one (Turn Metadata).
 const PEER_PREFERENCE_STATEMENT =
   /\b(?:i prefer|i choose|i'?m leaning|my pick|go with|vote for|rather have|best|worst|strongest|weakest)\b/i;
 
@@ -551,7 +551,7 @@ function formatInternalFocusControl(state: FocusDepthState): string | null {
     `Conversational target: Candidate ${state.candidate}.`,
     explicitReturn,
     "Stay naturally on this candidate for this turn and do not redirect to another candidate.",
-    "This controls only the subject. The Route Contract still controls whether to answer, ask, explain, contribute, or remain brief.",
+    "This controls only the subject. The Turn Metadata still controls whether to answer, ask, explain, contribute, or remain brief.",
     "Never mention internal control, focus calculation, depth, thresholds, counts used for routing, or why the target was selected.",
   ].join("\n");
 }
@@ -573,7 +573,7 @@ function formatUnsurfacedNotes(messages: TranscriptMessage[], revealStats: any):
 export interface RouteOutputScopeGuard {
   candidate: Cand;
   // Candidate focus and trait-count limits are independent. A depth lock keeps
-  // the subject stable; only a route contract or an explicitly scope-less
+  // the subject stable; only Turn Metadata or an explicitly scope-less
   // request should mechanically limit how many traits can be answered.
   maxTraitIds?: number;
   // NOTE_CONTRIBUTION may disclose exactly the Judge-selected note and no
@@ -581,6 +581,7 @@ export interface RouteOutputScopeGuard {
   allowedTraitIds?: string[];
   requiredTraitId?: string;
   reason:
+    | "new_information_request"
     | "scopeless_information_request"
     | "focus_depth"
     | "route_single_point"
@@ -594,6 +595,14 @@ const BROAD_INFORMATION_REQUESTS = [
   /\bwhat(?:'s|\s+is)\s+in\s+your\s+notes\b/i,
   /\bshare\s+(?:your\s+notes|what\s+you(?:'ve|\s+have)\s+got)\b/i,
   /(?:뭐|무엇을?).*(?:가지고|갖고|메모|노트)/,
+];
+const NEW_INFORMATION_REQUESTS = [
+  /\b(?:do|did)\s+you\s+have\s+(?:any|some)?\s*(?:new|other|additional|more)?\s*(?:information|info|insight|points?|traits?|notes?)\b/i,
+  /\bis\s+there\s+(?:anything|something)\s+(?:new|else|more|additional)?\s*(?:that\s+)?you\s+(?:have|know|got)\b/i,
+  /\bis\s+there\s+(?:some|any)\s+(?:new|other|additional|more)?\s*(?:information|info|insight|points?|traits?|notes?)\s+(?:that\s+)?you\s+(?:have|know|got).*(?:we|the team)\s+(?:do(?:es)?n['’]?t|haven['’]?t|hasn['’]?t)\s+(?:have|know|got|heard|covered)\b/i,
+  /\b(?:anything|something|what)\s+(?:new|else|more|additional)?\s*(?:that\s+)?(?:we|the team)\s+(?:do(?:es)?n['’]?t|haven['’]?t|hasn['’]?t)\s+(?:have|know|got|heard|covered)\b/i,
+  /\b(?:new|additional)\s+insight\b|\banything\s+else\b/i,
+  /(?:새로운|추가|더).*(?:정보|내용|특성|속성|인사이트)|(?:우리가|팀이).*(?:모르는|없는).*(?:정보|내용)/,
 ];
 const EXPLICIT_ALL_SCOPE = [
   /\ball\s+(?:of\s+the\s+)?(?:candidates|finalists|profiles)\b|\b(?:every|each)\s+(?:candidate|finalist|profile)\b/i,
@@ -624,13 +633,14 @@ function matchesAny(text: string, patterns: RegExp[]): boolean {
 export type RequestIntentKind =
   | "complete_single_candidate" // explicit complete list for one candidate
   | "complete_all_candidates" // all candidates / all notes
+  | "new_information_request" // information Alex has that is not yet visible
   | "scoped_information_request" // broad request with no explicit scope → one trait
   | "preference_request" // who is best / which one / your pick
   | "none";
 
-// Where the answer is expected to come from. A peer holds only its own notes
-// and never a whole-board view; a visible_board request to a peer is answered
-// with a passive limitation instead of an aggregation.
+// Where the participant asked Alex to source the answer. Visible-board reads
+// are exact server state in every condition; private Alex-note reads use only
+// ALEX_Z_IDS. Status manipulation must not change factual answer competence.
 export type RequestSource = "alex_notes" | "visible_board";
 
 export interface RequestIntent {
@@ -680,40 +690,20 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   if (completeMarker) {
     return { kind: "complete_single_candidate", candidate: null, source };
   }
-  // Priority 3 — broad information request with no explicit scope.
+  // Priority 3 — specifically request information that has not appeared yet.
+  if (matchesAny(text, NEW_INFORMATION_REQUESTS)) {
+    return { kind: "new_information_request", candidate: named, source: "alex_notes" };
+  }
+  // Priority 4 — broad information request with no explicit scope.
   if (matchesAny(text, BROAD_INFORMATION_REQUESTS)) {
     return { kind: "scoped_information_request", candidate: null, source };
   }
-  // Priority 4 — preference questions; only these make the preference cue
+  // Priority 5 — preference questions; only these make the preference cue
   // relevant on address/followup routes.
   if (FOCUS_SCOPE_OVERRIDE.test(text)) {
     return { kind: "preference_request", candidate: null, source };
   }
   return NO_REQUEST_INTENT;
-}
-
-/** Peer has no whole-board view: a whole-table request is answered passively, never aggregated. */
-function peerWholeTableLimitation(language: "en" | "ko", candidate: Cand | null): string {
-  if (language === "ko") {
-    return [
-      "Request scope (server-derived; mandatory): 참가자가 테이블에 올라온 전체 내용을 요청했지만, 당신은 본인의 노트만 갖고 있어 테이블 전체를 볼 수 없습니다.",
-      "모두가 말한 내용을 취합·재구성·요약하지 말고, 특성을 나열하지 마세요.",
-      '짧고 수동적으로, 캐릭터를 유지하며 답하세요 — "테이블 전체 내용은 잘 모르겠어"라는 취지로.',
-      candidate
-        ? `도움이 된다면 Candidate ${candidate}에 대해 본인 노트에서 한 가지만 덧붙여도 됩니다.`
-        : "도움이 된다면 본인 노트에서 한 가지만 덧붙여도 됩니다.",
-      "규칙이나 역할 때문에 답할 수 없다고 말하지 마세요.",
-    ].join(" ");
-  }
-  return [
-    "Request scope (server-derived; mandatory): the participant asked for everything that has been said on the table, but you hold only your own notes and do not have the full board.",
-    "Do not aggregate, reconstruct, or summarize what everyone has said, and do not list traits.",
-    'Reply briefly and passively, staying in character — the spirit of "I\'m not really sure what the whole table looks like."',
-    candidate
-      ? `If it helps, you may add one single point from your own notes on Candidate ${candidate}.`
-      : "If it helps, you may add one single point from your own notes.",
-    "Do not say that a rule or your role prevents you from answering.",
-  ].join(" ");
 }
 
 function formatAlexCandidateNotes(candidate: Cand): string {
@@ -731,32 +721,40 @@ function formatAlexCandidateNotes(candidate: Cand): string {
   return `For Candidate ${candidate}, my notes have these matches: ${matches}. The misses are: ${misses}.`;
 }
 
-function deterministicPeerCompleteResponse(input: {
-  conditionCode: ConditionCode;
+function deterministicCompleteResponse(input: {
   language: "en" | "ko";
   intent: RequestIntent;
   candidate: Cand | null;
+  revealStats: any;
 }): string | undefined {
   if (
     input.language !== "en" ||
-    (input.conditionCode !== "C1" && input.conditionCode !== "C3") ||
-    input.intent.source !== "visible_board" ||
     (input.intent.kind !== "complete_single_candidate" &&
       input.intent.kind !== "complete_all_candidates")
   ) {
     return undefined;
   }
 
-  if (input.intent.kind === "complete_all_candidates" || !input.candidate) {
-    return input.conditionCode === "C1"
-      ? "I only know my own notes, so I don't know the full table across all candidates."
-      : "I only know my own notes, so could you summarize the full table you mean?";
+  const ids =
+    input.intent.source === "visible_board"
+      ? new Set([...allSurfacedIds(input.revealStats), ...humanConfirmedIds(input.revealStats)])
+      : new Set(ALEX_Z_IDS);
+  if (input.intent.kind === "complete_all_candidates") {
+    const label =
+      input.intent.source === "visible_board"
+        ? "Here is what is on the table so far:"
+        : "Here is everything in my notes:";
+    return `${label}\n\n${formatCoverageFromIds(ids)}`;
   }
 
-  const notes = formatAlexCandidateNotes(input.candidate);
-  return input.conditionCode === "C1"
-    ? `${notes} That's everything in my notes for Candidate ${input.candidate}; I don't know the full table, though.`
-    : `${notes} That's everything in my notes for Candidate ${input.candidate}. I only know my own notes, so could you summarize the other traits you mean?`;
+  if (!input.candidate) return undefined;
+  if (input.intent.source === "alex_notes") return formatAlexCandidateNotes(input.candidate);
+  const candidateIds = new Set(
+    [...ids].filter((id) => TRAIT_BY_ID.get(id)?.candidate === input.candidate),
+  );
+  return candidateIds.size
+    ? `Here is what is on the table for Candidate ${input.candidate}:\n\n${formatCoverageFromIds(candidateIds, false)}`
+    : `There is no confirmed information on the table yet for Candidate ${input.candidate}.`;
 }
 
 const BARE_ALEX_ADDRESS = /^\s*(?:hey\s+)?alex[\s?!.,]*$/i;
@@ -804,12 +802,8 @@ function requestScopeFromIntent(input: {
 }): { block: string; guard?: RouteOutputScopeGuard } | null {
   if (input.routeKind !== "address" && input.routeKind !== "followup") return null;
   const { intent } = input;
-  const peer = !isLeaderCondition(input.conditionCode);
 
   if (intent.kind === "complete_all_candidates") {
-    if (peer && intent.source === "visible_board") {
-      return { block: peerWholeTableLimitation(input.language, null) };
-    }
     return {
       block:
         "Request scope (server-derived): the participant explicitly requested an all-candidate or all-notes scope. Answer only that explicit scope and remain concise.",
@@ -829,12 +823,50 @@ function requestScopeFromIntent(input: {
           "Request scope (server-derived): this is a complete-list request, but no single candidate can be established from the request or the current discussion. Do not dump notes or expand across candidates; give a brief scope limitation consistent with the condition style.",
       };
     }
-    if (peer && intent.source === "visible_board") {
-      return { block: peerWholeTableLimitation(input.language, focus) };
-    }
     return {
       block: `Request scope (server-derived): the explicit complete-list request applies only to Candidate ${focus}. List every match and every miss you hold for Candidate ${focus}, and do not expand to another candidate.`,
       guard: { candidate: focus, reason: "explicit_complete_request" },
+    };
+  }
+
+  if (intent.kind === "new_information_request") {
+    const transcriptFocus = currentTopicCandidate(
+      input.window.map((message) => ({ sender: message.speaker, content: message.content })),
+    );
+    const focus =
+      intent.candidate ??
+      transcriptFocus ??
+      lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
+    if (!focus) {
+      return {
+        block:
+          "The participant asked for new information, but no single candidate is established. Ask one brief clarification question instead of listing candidates or notes.",
+      };
+    }
+    const surfaced = allSurfacedIds(input.revealStats);
+    const allowedTraitIds = ALEX_Z_IDS.filter(
+      (id) => TRAIT_BY_ID.get(id)?.candidate === focus && !surfaced.has(id),
+    );
+    const allowedFacts = allowedTraitIds
+      .map((id) => TRAIT_BY_ID.get(id))
+      .filter(Boolean)
+      .map(
+        (trait) => `${trait!.valence === "pos" ? "MATCH" : "MISS"} — ${trait!.text} [${trait!.id}]`,
+      );
+    return {
+      block: allowedFacts.length
+        ? [
+            `The participant asked for new information about Candidate ${focus}.`,
+            "Answer directly with at most one of these facts that is not yet visible; do not repeat an already-visible fact:",
+            ...allowedFacts,
+          ].join("\n")
+        : `The participant asked for new information about Candidate ${focus}, but Alex has no additional unsurfaced note for that candidate. Say that directly without repeating the existing list or changing candidates.`,
+      guard: {
+        candidate: focus,
+        maxTraitIds: 1,
+        allowedTraitIds,
+        reason: "new_information_request",
+      },
     };
   }
 
@@ -863,6 +895,29 @@ function requestScopeFromIntent(input: {
   return null;
 }
 
+function routePrimaryGoal(routeKind: RouteKind): string {
+  switch (routeKind) {
+    case "greeting":
+      return "Open the live discussion briefly and naturally in the assigned peer or leader status.";
+    case "address":
+      return "Answer the person's direct question or request first, using only the supplied factual scope.";
+    case "followup":
+      return "Respond directly to the person's reply, challenge, or clarification on the same thread.";
+    case "build_on":
+      return "Engage the latest human point and add exactly the supplied non-redundant contribution in natural conversation.";
+    case "mediation":
+      return "Make the current discussion state clear and give the team one useful direction for what to resolve or cover next.";
+    case "backchannel":
+      return "Give one brief social reaction without adding candidate information or changing the direction.";
+    case "long_silence":
+      return "Re-enter the quiet discussion naturally with one grounded continuation that does not repeat Alex's prior move.";
+    case "summary":
+      return "Present the exact supplied visible-board checkpoint without changing its facts or scope.";
+    case "closing":
+      return "Present the exact final visible board, then express only the supplied preference state and hand the decision to the humans.";
+  }
+}
+
 export function buildRouteUserContext(input: {
   routeKind: RouteKind;
   conditionCode: ConditionCode;
@@ -874,6 +929,8 @@ export function buildRouteUserContext(input: {
   selectedTraitId?: string | null;
   mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons" | null;
   mediationFocusCandidate?: Cand | null;
+  mediationEvidence?: string[];
+  buildOnsSinceMediation?: number;
 }): {
   userPrompt: string;
   contextFromSeq: number | null;
@@ -902,7 +959,9 @@ export function buildRouteUserContext(input: {
     )
     .join("\n");
   const blocks = [
-    `Route: ${input.routeKind}`,
+    "# Turn Metadata",
+    `Route kind: ${input.routeKind}`,
+    `Primary goal: ${routePrimaryGoal(input.routeKind)}`,
     `Anchor message sequence: ${input.anchorSeq}`,
     input.language === "ko"
       ? "Session language: Korean. Return Alex's visible message in natural Korean."
@@ -915,31 +974,35 @@ export function buildRouteUserContext(input: {
         : selectedTrait
           ? [
               "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
-              `Selected contribution (mandatory and exclusive): ${selectedTrait.valence === "pos" ? "MATCH" : "MISS"}: ${selectedTrait.text}.`,
+              `Selected new factual contribution (mandatory): ${selectedTrait.valence === "pos" ? "MATCH" : "MISS"} — ${selectedTrait.text}.`,
               inquiryCondition
-                ? "This must be the only candidate trait named or implied anywhere in the message, including the uptake and question. Refer back to it as 'that point' if needed; do not name, contrast, balance, combine, or imply any other trait."
-                : "This must be the only candidate trait named anywhere in the message. You may refer generically to the latest human reasoning and explain how this selected trait adds to, qualifies, or updates the candidate's overall profile under the equal-weight standard, but do not name or compare another trait.",
-              "Begin with a brief, natural uptake of the latest human point. Do not use mechanical meta-language such as 'Acknowledging that point,' 'Noted,' or 'Taking that in.'",
+                ? "Use this as the only new candidate fact, then ask at most one small alignment question about this contribution. You may refer naturally to an already-spoken human point for coherence, but do not introduce, weigh, or combine another new fact."
+                : "Use this as the only new candidate fact and briefly explain how it adds to or updates the candidate's overall equal-weight profile. You may refer naturally to an already-spoken human point for coherence, but do not introduce another new fact.",
+              "Respond to the substance of the latest human message before or while adding this note. Because this note was not previously on the table, present it as an additional or separate fact; never falsely call the selected note 'that point' as though the person just said it.",
+              "Use complete conversational prose. Do not use mechanical meta-language such as 'Acknowledging that point,' 'Noted,' or 'Taking that in,' and do not emit a bare 'MATCH:' or 'MISS:' record.",
               "Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff that is absent from the recent conversation.",
             ].join("\n")
           : "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
     );
   }
-  if (
-    input.routeKind === "mediation" &&
-    input.mediationTrigger === "cadence_after_two_build_ons" &&
-    input.mediationFocusCandidate
-  ) {
-    const cadenceInstruction =
+  if (input.routeKind === "mediation") {
+    const currentFocus = input.mediationFocusCandidate
+      ? `Current discussion focus: Candidate ${input.mediationFocusCandidate}.`
+      : "Current discussion focus: a cross-candidate comparison or no single candidate.";
+    const conditionMove =
       input.conditionCode === "C4"
-        ? `Add no candidate trait. Briefly keep Candidate ${input.mediationFocusCandidate} in view, then ask exactly one inclusive question that invites the team to consider a different candidate alongside Candidate ${input.mediationFocusCandidate}.`
-        : `Add no candidate trait and ask no question. In one brief declarative process statement, keep Candidate ${input.mediationFocusCandidate} in view while directing attention to considering a different candidate alongside Candidate ${input.mediationFocusCandidate}.`;
+        ? "After briefly making the state clear, ask at most one inclusive, grounded question that lets the team address the most useful unresolved comparison or coverage gap."
+        : "Use one or two concise declarative sentences: make the state clear and state the most useful unresolved comparison or coverage gap to address next. Ask no question.";
     blocks.push(
       [
-        "Mediation trigger (server-derived): cadence after two build-on turns.",
-        `The humans are still discussing Candidate ${input.mediationFocusCandidate}.`,
-        cadenceInstruction,
-        `Do not tell the team to abandon Candidate ${input.mediationFocusCandidate}, imply that the candidate is over-discussed, or choose the other candidate for them.`,
+        `Mediation trigger: ${input.mediationTrigger ?? "process-state evidence"}.`,
+        `Successful leader build-ons since the last mediation: ${input.buildOnsSinceMediation ?? 0}.`,
+        currentFocus,
+        input.mediationEvidence?.length
+          ? `Observed process evidence: ${input.mediationEvidence.join(", ")}.`
+          : "Observed process evidence: cadence checkpoint.",
+        conditionMove,
+        "Add no new candidate trait. Mediation means orienting the team's discussion state and next direction; it does not require conflict, does not require switching candidates, and must not tell the team which candidate to choose.",
       ].join("\n"),
     );
   }
@@ -954,9 +1017,11 @@ export function buildRouteUserContext(input: {
       `Visible on-table coverage (human and Alex disclosures; deduplicated):\n${formatVisibleBoardCoverage(input.revealStats)}`,
     );
   } else if (input.routeKind === "mediation") {
-    // mediation은 leader 전용이라 팀 커버리지가 중재 발화에 필요하다.
+    // Mediation describes the live discussion state, so both human and Alex
+    // disclosures must be visible. Human-only coverage would erase the two
+    // build-ons that triggered this checkpoint.
     blocks.push(
-      `Confirmed on-table coverage (human-grounded; AI-only disclosures excluded):\n${formatConfirmedCoverage(input.revealStats)}`,
+      `Visible on-table coverage (human and Alex disclosures; deduplicated):\n${formatVisibleBoardCoverage(input.revealStats)}`,
     );
   } else if (
     input.routeKind === "long_silence" ||
@@ -1000,7 +1065,7 @@ export function buildRouteUserContext(input: {
   );
   const focusControl = focusControlOverridden ? null : formatInternalFocusControl(focusDepthState);
   if (focusControl) blocks.push(focusControl);
-  // Inject the preference cue only where the Route Contract can actually spend
+  // Inject the preference cue only where the Turn Metadata can actually spend
   // it: closing always; address/followup on explicit preference requests;
   // peer build-on while the discussion is already weighing candidates. A
   // leader build-on must not state a preference, so the cue is noise there.
@@ -1030,11 +1095,11 @@ export function buildRouteUserContext(input: {
         ) ??
         lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0))
       : null;
-  const deterministicResponse = deterministicPeerCompleteResponse({
-    conditionCode: input.conditionCode,
+  const deterministicResponse = deterministicCompleteResponse({
     language: input.language,
     intent: requestIntent,
     candidate: completeRequestCandidate,
+    revealStats: input.revealStats,
   });
   if (requestScope) blocks.push(requestScope.block);
   // [T-C4-019] address/followup had no repeat guard: the same either-or question

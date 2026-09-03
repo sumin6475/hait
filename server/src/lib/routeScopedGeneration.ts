@@ -111,7 +111,27 @@ export function outputScopeViolation(
   const previouslySurfaced = new Set(previouslySurfacedTraitIds);
   const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
   const restatedIds = extractedIds.length - newlyIntroducedIds.length;
-  if (guard.allowedTraitIds && extractedIds.some((id) => !guard.allowedTraitIds!.includes(id))) {
+  // allowedTraitIds constrains facts introduced by this turn. Previously it
+  // also rejected an already-visible trait used in a natural uptake, which
+  // forced build-ons to ignore the sentence they were answering.
+  if (
+    guard.allowedTraitIds &&
+    newlyIntroducedIds.some((id) => !guard.allowedTraitIds!.includes(id))
+  ) {
+    return "trait_outside_selected_contribution";
+  }
+  const restatedOutsideSelection = guard.requiredTraitId
+    ? extractedIds.filter((id) => id !== guard.requiredTraitId && previouslySurfaced.has(id))
+    : [];
+  // Conversational uptake may name an already-visible human point, but a
+  // selected one-fact build-on must not turn that allowance into a weighing or
+  // tradeoff question. This is the C3/C4 framing failure seen in pilot turns.
+  if (
+    restatedOutsideSelection.length > 0 &&
+    /\b(?:weigh(?:ed|ing)?|balanc(?:e|ed|es|ing)|offsets?|outweighs?|trade-?offs?|tolerat(?:e|ed|es|ing)|disqualif(?:y|ied|ies|ying)|more important|less important)\b/i.test(
+      content,
+    )
+  ) {
     return "trait_outside_selected_contribution";
   }
   if (guard.requiredTraitId && !extractedIds.includes(guard.requiredTraitId)) {
@@ -247,7 +267,7 @@ export async function generateScopedRouteMessage(input: {
             .filter(Boolean)
             .join(" ")
         : null,
-      'Preserve the current condition style, conversational subject, and Route Contract. Return only the corrected visible chat message inside the required JSON object: {"content": "<message>"}.',
+      'Preserve the current condition style, conversational subject, and Turn Metadata goal. Return only the corrected visible chat message inside the required JSON object: {"content": "<message>"}.',
     ]
       .filter(Boolean)
       .join(" ");

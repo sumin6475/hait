@@ -1,16 +1,10 @@
 import { createHash } from "node:crypto";
-import type {
-  Candidate,
-  ConditionCode,
-  MainJudgeDecision,
-  PriorityRoute,
-  RouteKind,
-} from "../types.js";
+import type { ConditionCode, MainJudgeDecision, PriorityRoute, RouteKind } from "../types.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 
 export interface AddressDetection {
   addressed: boolean;
-  evidence: "name_prefix" | "name_suffix" | "direct_request" | "none";
+  evidence: "name_prefix" | "name_suffix" | "direct_request" | "group_request" | "none";
 }
 
 const NAME = "(?:alex|알렉스)";
@@ -25,9 +19,11 @@ const SUFFIX = new RegExp(
   "i",
 );
 const DIRECT_REQUEST = new RegExp(
-  `${NAME}[^.!?]{0,80}(?:can you|could you|would you|please|tell|explain|share|answer|what|why|how|which|do you|알려|말해|답해|어떻게|뭐|왜)`,
+  `${NAME}[^.!?]{0,100}(?:can you|could you|would you|please|tell|explain|share|answer|what|why|how|which|do you|is there|are there|have you|your (?:view|take|thoughts?)|알려|말해|답해|어떻게|뭐|왜)`,
   "i",
 );
+const GROUP_REQUEST =
+  /(?:\b(?:both|either|all|the two) of you\b|\byou (?:both|two|all)\b|\b(?:what|how) (?:do|does) (?:everyone|the rest of you)\b|\bdoes (?:everyone|anyone else)\b|(?:두 분|둘 다|두 사람|다들|모두).*(?:생각|의견|동의|어때|어떻게)).*[?？]\s*$/i;
 
 export function detectDirectAddress(message: string): AddressDetection {
   const text = message.trim();
@@ -35,24 +31,27 @@ export function detectDirectAddress(message: string): AddressDetection {
   if (PREFIX.test(text)) return { addressed: true, evidence: "name_prefix" };
   if (SUFFIX.test(text)) return { addressed: true, evidence: "name_suffix" };
   if (DIRECT_REQUEST.test(text)) return { addressed: true, evidence: "direct_request" };
+  if (GROUP_REQUEST.test(text)) return { addressed: true, evidence: "group_request" };
   return { addressed: false, evidence: "none" };
 }
 
 export interface MediationStateView {
   latched: boolean;
   buildOnsSinceMediation: number;
-  cadenceEligible: boolean;
 }
 
-export function sameFocusMediationCadenceEligible(
-  buildOnFocusCandidate: Candidate | null | undefined,
-  currentFocusCandidate: Candidate | null | undefined,
-): boolean {
-  return Boolean(
-    buildOnFocusCandidate &&
-    currentFocusCandidate &&
-    buildOnFocusCandidate === currentFocusCandidate,
-  );
+/**
+ * Global leader cadence reducer. Candidate identity is deliberately absent:
+ * changing focus cannot reset the count. Only a successful mediation clears
+ * it; every other successful route preserves the accumulated debt.
+ */
+export function mediationBuildOnCountAfterSuccessfulRoute(
+  current: number,
+  routeKind: RouteKind,
+): number {
+  if (routeKind === "mediation") return 0;
+  if (routeKind === "build_on") return Math.max(0, Math.trunc(current)) + 1;
+  return Math.max(0, Math.trunc(current));
 }
 
 export interface ResolverContext {
@@ -125,6 +124,16 @@ export function deterministicRateGate(sessionId: string, turnSeq: number, rate: 
 
 export function resolveRoute(ctx: ResolverContext): ResolvedRoute {
   if (ctx.priorityRoute) return { routeKind: ctx.priorityRoute, reason: "priority" };
+  if (
+    (ctx.conditionCode === "C2" || ctx.conditionCode === "C4") &&
+    ctx.mediation.buildOnsSinceMediation >= TRIGGER_CONFIG.MEDIATION_BUILD_ON_THRESHOLD
+  ) {
+    return {
+      routeKind: "mediation",
+      reason: "mediation",
+      mediationTrigger: ctx.mediation.latched ? "evidence_latch" : "cadence_after_two_build_ons",
+    };
+  }
   if (!ctx.decision || ctx.decision === "silent") {
     return { routeKind: null, reason: "judge_silent" };
   }
@@ -134,17 +143,6 @@ export function resolveRoute(ctx: ResolverContext): ResolvedRoute {
       return { routeKind: null, reason: "backchannel_rate" };
     }
     return { routeKind: "backchannel", reason: "backchannel" };
-  }
-  if (
-    (ctx.conditionCode === "C2" || ctx.conditionCode === "C4") &&
-    ctx.mediation.cadenceEligible &&
-    ctx.mediation.buildOnsSinceMediation >= TRIGGER_CONFIG.MEDIATION_BUILD_ON_THRESHOLD
-  ) {
-    return {
-      routeKind: "mediation",
-      reason: "mediation",
-      mediationTrigger: "cadence_after_two_build_ons",
-    };
   }
   return { routeKind: "build_on", reason: "build_on" };
 }

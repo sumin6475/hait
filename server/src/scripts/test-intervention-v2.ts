@@ -4,8 +4,8 @@ import {
   detectDirectAddress,
   detectMediationEvidence,
   evaluateLongSilenceGate,
+  mediationBuildOnCountAfterSuccessfulRoute,
   resolveRoute,
-  sameFocusMediationCadenceEligible,
 } from "../lib/interventionRoutingV2.js";
 import { buildFollowupCandidateTranscript } from "../lib/followupJudge.js";
 import {
@@ -30,6 +30,7 @@ import {
   lastHumanDiscussionCandidate,
 } from "../lib/informationPools.js";
 import { internalMetadataLeak, outputScopeViolation } from "../lib/routeScopedGeneration.js";
+import { validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
 import { routeGenerationLimits } from "../lib/routeTurn.js";
 import { validateJudgeDecisionSelection } from "../lib/interventionJudge.js";
 import { TRAIT_DB } from "../lib/traitData.js";
@@ -147,13 +148,21 @@ assert.match(peerAci, /inquiry-based/i);
 assert.match(leaderAci, /discussion leader/i);
 assert.match(leaderAci, /team-wide perspective/i);
 assert.match(leaderAci, /inclusive process stewardship/i);
-assert.match(getRoutePrompt("C1", "long_silence").systemPrompt, /first-person peer voice/i);
-assert.match(
-  getRoutePrompt("C3", "long_silence").systemPrompt,
-  /tied to Alex's own immediate point/i,
-);
-assert.match(getRoutePrompt("C2", "long_silence").systemPrompt, /confirmed coverage/i);
-assert.match(getRoutePrompt("C4", "mediation").systemPrompt, /under-covered/i);
+for (const condition of ["C1", "C2", "C3", "C4"] as const) {
+  const conditionKeys = keys.filter((key) => key.startsWith(`${condition}.`));
+  const prompts = conditionKeys.map((key) => {
+    const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
+    return getRoutePrompt(condition, routeKind);
+  });
+  assert.equal(new Set(prompts.map((prompt) => prompt.systemPrompt)).size, 1);
+  assert.equal(new Set(prompts.map((prompt) => prompt.promptHash)).size, 1);
+  assert.equal(new Set(prompts.map((prompt) => prompt.promptKey)).size, conditionKeys.length);
+  assert.match(prompts[0]!.systemPrompt, /# Unified Interaction Policy/i);
+  assert.match(prompts[0]!.systemPrompt, /runtime Turn Metadata identifies the immediate goal/i);
+  assert.match(prompts[0]!.systemPrompt, /Conversational competence takes precedence/i);
+  assert.match(prompts[0]!.systemPrompt, /ordinary first-person language/i);
+  assert.doesNotMatch(prompts[0]!.systemPrompt, /# Route Contract —/i);
+}
 
 const conditionMarkers = {
   C1: [
@@ -216,7 +225,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.6.7");
+    assert.equal(resolvedPrompt.promptVersion, "1.7.0");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -227,7 +236,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
     assert.match(conditionPrompt, /\[[^\]]+\]/);
     const examplesBlock = conditionPrompt
       .split("## General style examples")[1]!
-      .split("The current Route Contract")[0]!;
+      .split("The current Turn Metadata")[0]!;
     assert.equal(examplesBlock.match(/^\d\. /gm)?.length, 3);
     assert.doesNotMatch(examplesBlock, /Candidate [ABCD]\b/);
     assert.match(conditionPrompt, /A scope-less request such as “what do you have\?”/i);
@@ -246,153 +255,42 @@ for (const condition of ["C1", "C2"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const xaiPrompt = getRoutePrompt(condition, routeKind).systemPrompt;
-    assert.match(xaiPrompt, /Do not ask a question/i);
-    assert.match(xaiPrompt, /end with a question mark/i);
-    assert.match(xaiPrompt, /request information/i);
-  }
-}
-
-function routeContract(
-  condition: "C1" | "C2" | "C3" | "C4",
-  routeKind: Parameters<typeof getRoutePrompt>[1],
-) {
-  const prompt = getRoutePrompt(condition, routeKind).systemPrompt;
-  return prompt.slice(prompt.lastIndexOf("# Route Contract"));
-}
-
-const routeContractChecks = {
-  C1: {
-    greeting: /short, warm greeting as an equal peer/i,
-    address: /Direct-response override.*neutral, helpful AI teammate/is,
-    followup: /Direct-response override.*neutral, helpful AI teammate/is,
-    long_silence: /one short declarative sentence/i,
-    build_on: /For NOTE_CONTRIBUTION.*selected trait.*short explanatory clause/is,
-    backchannel: /backchannel turn, not a substantive contribution/i,
-  },
-  C2: {
-    greeting: /Open the discussion briefly as its leader/i,
-    address: /Direct-response override.*neutral, helpful AI teammate/is,
-    followup: /Direct-response override.*neutral, helpful AI teammate/is,
-    long_silence: /one short declarative sentence/i,
-    build_on: /For NOTE_CONTRIBUTION.*selected trait.*short explanatory clause/is,
-    mediation: /Make one process intervention/i,
-    backchannel: /not a leadership intervention or substantive contribution/i,
-    summary: /Create a readable checkpoint/i,
-    closing: /Give a readable final board recap/i,
-  },
-  C3: {
-    greeting: /short, warm greeting as an equal peer/i,
-    address: /Direct-response override.*neutral, helpful AI teammate/is,
-    followup: /Direct-response override.*neutral, helpful AI teammate/is,
-    long_silence: /Ask one small, grounded question/i,
-    build_on: /For NOTE_CONTRIBUTION.*ask exactly one alignment question/is,
-    backchannel: /backchannel turn, not an inquiry turn/i,
-  },
-  C4: {
-    greeting: /ask exactly one inclusive team-wide question/i,
-    address: /Direct-response override.*neutral, helpful AI teammate/is,
-    followup: /Direct-response override.*neutral, helpful AI teammate/is,
-    long_silence: /ask at most one short, inclusive, grounded question/i,
-    build_on: /For NOTE_CONTRIBUTION.*ask exactly one inclusive team-wide alignment question/is,
-    mediation: /reopens the field/i,
-    backchannel: /not an inquiry, callout, mediation, or substantive contribution/i,
-    summary: /End with exactly one inclusive team-wide question/i,
-    closing: /End with exactly one broad question/i,
-  },
-} as const;
-
-for (const condition of ["C1", "C2", "C3", "C4"] as const) {
-  for (const [routeKind, check] of Object.entries(routeContractChecks[condition])) {
-    assert.match(
-      routeContract(condition, routeKind as Parameters<typeof getRoutePrompt>[1]),
-      check,
-    );
-  }
-}
-
-for (const routeKind of ["address", "followup"] as const) {
-  const neutralDirectResponse = routeContract("C1", routeKind);
-  for (const condition of ["C2", "C3", "C4"] as const) {
-    assert.equal(routeContract(condition, routeKind), neutralDirectResponse);
+    assert.match(xaiPrompt, /Direct questions.*normal direct answers/i);
+    assert.match(xaiPrompt, /explanatory manipulation visible on discretionary contributions/i);
   }
 }
 
 for (const condition of ["C1", "C2", "C3", "C4"] as const) {
-  const contract = routeContract(condition, "build_on");
-  assert.match(contract, /Always begin by naturally taking up the substance/i);
-  assert.match(contract, /Acknowledging that point/i);
-  assert.match(contract, /without automatically agreeing|without agreeing/i);
+  const unified = getRoutePrompt(condition, "build_on").systemPrompt;
+  assert.match(unified, /one conversational policy for every route/i);
+  assert.match(unified, /Respond to the meaning of the latest message/i);
+  assert.match(unified, /Every build_on turn begins by naturally responding/i);
+  assert.match(
+    unified,
+    /address and followup turns, answer the actual question.*first and directly/is,
+  );
+  assert.match(unified, /On build_on turns, engage the latest human reasoning/i);
+  assert.match(unified, /separate fact rather than the same fact/i);
+  assert.match(unified, /On mediation turns, briefly state where the discussion stands/i);
+  assert.match(unified, /Mediation is process guidance, not a forced candidate switch/i);
+  assert.match(unified, /On backchannel turns, react briefly without adding facts/i);
+  assert.match(unified, /ordinary first-person language/i);
+  assert.match(unified, /Never emit database-like labels/i);
+  assert.match(unified, /Internal preference cue, treat it as mandatory and authoritative/i);
+  assert.match(unified, /request for Alex's choice is not a request for the full list/i);
 }
 
-const synthesisContracts = {
-  C1: /CONVERSATION_GROUNDED_SYNTHESIS.*natural declarative sentences/is,
-  C2: /CONVERSATION_GROUNDED_SYNTHESIS.*natural declarative sentences/is,
-  C3: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one small clarification question/is,
-  C4: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one inclusive, grounded team-wide clarification question/is,
-} as const;
-for (const condition of ["C1", "C2", "C3", "C4"] as const) {
-  const contract = routeContract(condition, "build_on");
-  assert.match(contract, /Follow the supplied Contribution mode exactly/i);
-  assert.match(contract, synthesisContracts[condition]);
-  assert.match(contract, /introduce no private note or new candidate fact/i);
-}
-const leaderAciBuildOnContract = getRoutePrompt("C4", "build_on").systemPrompt;
-const peerAciBuildOnContract = getRoutePrompt("C3", "build_on").systemPrompt;
-assert.match(peerAciBuildOnContract, /Does that align with what you have\?/i);
-assert.match(peerAciBuildOnContract, /Is that consistent with your notes on this point\?/i);
-assert.match(peerAciBuildOnContract, /Does that match what you have for this same point\?/i);
-assert.match(peerAciBuildOnContract, /one very short neutral phrase or clause/i);
-assert.match(
-  peerAciBuildOnContract,
-  /without agreeing with, praising, validating, summarizing, or restating/i,
-);
-assert.match(peerAciBuildOnContract, /Never ask how any trait should be weighed/i);
-assert.match(peerAciBuildOnContract, /earlier concerns/i);
-assert.match(leaderAciBuildOnContract, /one supplied selected trait/i);
-assert.match(leaderAciBuildOnContract, /only candidate trait named or implied anywhere/i);
-assert.match(leaderAciBuildOnContract, /Do not combine it with another trait/i);
-assert.match(leaderAciBuildOnContract, /Do not invent an operational scenario/i);
-assert.match(leaderAciBuildOnContract, /inclusive team-wide alignment question/i);
-assert.match(leaderAciBuildOnContract, /do not ask the team to weigh or interpret its importance/i);
-
-for (const condition of ["C2", "C4"] as const) {
-  const summary = getRoutePrompt(condition, "summary").systemPrompt;
-  assert.match(summary, /Candidate A — N matches · N misses/);
-  assert.match(summary, /blank lines between candidates/i);
-  assert.match(summary, /displayed counts must exactly equal the listed traits/i);
-  assert.match(summary, /visible on-table coverage/i);
-  assert.match(summary, /human and Alex disclosures/i);
-  const closing = getRoutePrompt(condition, "closing").systemPrompt;
-  assert.match(closing, /visible on-table coverage/i);
-  assert.match(closing, /human and Alex disclosures/i);
-  assert.match(closing, /personal preference/i);
-  assert.match(closing, /obey the supplied Internal preference cue exactly/i);
-  assert.match(closing, /CURRENT_CO_PREFERENCE/);
-  assert.doesNotMatch(closing, /My current read is Candidate C/);
-}
-
-const leaderLongSilence = getRoutePrompt("C2", "long_silence").systemPrompt;
-assert.match(leaderLongSilence, /trait-record discrepancy/i);
-assert.match(leaderLongSilence, /no-new-evidence/i);
-assert.match(leaderLongSilence, /one short declarative sentence/i);
-assert.match(leaderLongSilence, /Do not ask any question/i);
-assert.match(
-  leaderLongSilence,
-  /request that someone read, confirm, compare, or provide information/i,
-);
-for (const condition of ["C1", "C2", "C3", "C4"] as const) {
-  for (const routeKind of ["address", "followup"] as const) {
-    const choicePrompt = getRoutePrompt(condition, routeKind).systemPrompt;
-    assert.match(choicePrompt, /obey the supplied Internal preference cue exactly/i);
-    assert.match(choicePrompt, /one short overall-profile reason/i);
-    assert.match(choicePrompt, /CURRENT_CO_PREFERENCE/);
-    assert.match(choicePrompt, /A request for a choice is not a request for a trait list/i);
-  }
-}
-assert.match(peerXai, /may state your own personal preference/i);
-assert.match(peerAci, /may state your own personal preference/i);
-assert.match(leaderXai, /leader's preference is reserved/i);
-assert.match(leaderAci, /leader's preference is reserved/i);
+// Inquiry wording remains a condition manipulation, not a route-level sentence
+// template. These three equivalent forms may rotate on C3 build-ons.
+assert.match(peerAci, /Does that align with what you have\?/i);
+assert.match(peerAci, /Is that consistent with your notes on this point\?/i);
+assert.match(peerAci, /Does that match what you have for this same point\?/i);
+assert.match(peerAci, /Never ask how a trait should be weighed/i);
+assert.match(leaderAci, /Do not ask merely to display inquiry style/i);
+assert.match(peerXai, /equal-peer build-on route may state a personal preference/i);
+assert.match(peerAci, /equal-peer build-on route may state a personal preference/i);
+assert.match(leaderXai, /leader build-on route must not state a preference/i);
+assert.match(leaderAci, /leader build-on route must not state a preference/i);
 
 assert.deepEqual(detectDirectAddress("Alex, what do you think about Candidate B?"), {
   addressed: true,
@@ -409,6 +307,138 @@ assert.equal(detectDirectAddress("Alex said Candidate B has another miss.").addr
 assert.equal(
   detectDirectAddress("I agree with Candidate A. Alex, what do you think?").addressed,
   true,
+);
+assert.deepEqual(detectDirectAddress("Is this what the two of you are feeling also?"), {
+  addressed: true,
+  evidence: "group_request",
+});
+assert.equal(
+  detectDirectAddress(
+    "I'm wondering, Alex, is there some information you have about Candidate C that we don't have?",
+  ).addressed,
+  true,
+);
+
+// Trait pooling accepts only a specific affirmative source span. Generic
+// preference language, questions, and contextual responsibility cannot create
+// false surfaced traits.
+assert.deepEqual(
+  validateExtractedTraitMentions("I chose Candidate A because his positive points seem vital.", [
+    {
+      traitId: "A_p1",
+      evidenceQuote: "positive points",
+      assertionType: "asserted",
+      confidence: 0.99,
+    },
+    {
+      traitId: "A_p2",
+      evidenceQuote: "positive points",
+      assertionType: "asserted",
+      confidence: 0.99,
+    },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("I chose Candidate A because his positive points seem vital.", [
+    {
+      traitId: "A_p1",
+      evidenceQuote: "his positive points seem vital",
+      assertionType: "asserted",
+      confidence: 0.99,
+    },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("A pilot is responsible for people's lives.", [
+    {
+      traitId: "D_p4",
+      evidenceQuote: "responsible for people's lives",
+      assertionType: "asserted",
+      confidence: 0.98,
+    },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("Is Candidate B considered arrogant?", [
+    {
+      traitId: "B_n5",
+      evidenceQuote: "Candidate B considered arrogant",
+      assertionType: "questioned",
+      confidence: 0.97,
+    },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("Candidate B is sometimes abusive in tone.", [
+    {
+      traitId: "B_n6",
+      evidenceQuote: "sometimes abusive in tone",
+      assertionType: "asserted",
+      confidence: 0.98,
+    },
+  ]),
+  ["B_n6"],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("Candidate B seems difficult.", [
+    {
+      traitId: "B_n6",
+      evidenceQuote: "sometimes abusive in tone",
+      assertionType: "asserted",
+      confidence: 0.98,
+    },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "Being skillful is the most important thing for a pilot, so I would eliminate Candidate C.",
+    [
+      {
+        traitId: "C_n1",
+        evidenceQuote: "Being skillful is the most important thing for a pilot",
+        assertionType: "asserted",
+        confidence: 0.96,
+      },
+    ],
+  ),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "B keeps a cool head, is reliable, arrogant, and sometimes abusive in tone.",
+    [
+      {
+        traitId: "B_p1",
+        evidenceQuote: "keeps a cool head",
+        assertionType: "asserted",
+        confidence: 0.98,
+      },
+      {
+        traitId: "B_p2",
+        evidenceQuote: "is reliable",
+        assertionType: "asserted",
+        confidence: 0.96,
+      },
+      {
+        traitId: "B_n5",
+        evidenceQuote: "arrogant",
+        assertionType: "asserted",
+        confidence: 0.97,
+      },
+      {
+        traitId: "B_n6",
+        evidenceQuote: "sometimes abusive in tone",
+        assertionType: "asserted",
+        confidence: 0.99,
+      },
+    ],
+  ),
+  ["B_p1", "B_p2", "B_n5", "B_n6"],
 );
 
 const splitFollowup = buildFollowupCandidateTranscript([
@@ -452,12 +482,25 @@ const baseResolver = {
   conditionCode: "C2" as const,
   priorityRoute: null,
   decision: "contribute" as const,
-  mediation: { latched: false, buildOnsSinceMediation: 0, cadenceEligible: false },
+  mediation: { latched: false, buildOnsSinceMediation: 0 },
   backchannelGapPassed: true,
   sessionId: "session-test",
   turnSeq: 20,
   backchannelRate: 1,
 };
+let crossCandidateCadence = 0;
+crossCandidateCadence = mediationBuildOnCountAfterSuccessfulRoute(
+  crossCandidateCadence,
+  "build_on",
+); // build-on about Candidate A
+crossCandidateCadence = mediationBuildOnCountAfterSuccessfulRoute(crossCandidateCadence, "summary"); // summary does not reset the debt
+crossCandidateCadence = mediationBuildOnCountAfterSuccessfulRoute(
+  crossCandidateCadence,
+  "build_on",
+); // build-on about Candidate B still reaches two
+assert.equal(crossCandidateCadence, 2);
+assert.equal(mediationBuildOnCountAfterSuccessfulRoute(crossCandidateCadence, "address"), 2);
+assert.equal(mediationBuildOnCountAfterSuccessfulRoute(crossCandidateCadence, "mediation"), 0);
 assert.equal(resolveRoute({ ...baseResolver, priorityRoute: "address" }).routeKind, "address");
 assert.equal(resolveRoute({ ...baseResolver, decision: "silent" }).routeKind, null);
 assert.equal(resolveRoute({ ...baseResolver, decision: "acknowledge" }).routeKind, "backchannel");
@@ -476,9 +519,6 @@ assert.deepEqual(evaluateLongSilenceGate(longSilenceGateBase), {
   eligible: true,
   reason: "eligible",
 });
-assert.equal(sameFocusMediationCadenceEligible("A", "A"), true);
-assert.equal(sameFocusMediationCadenceEligible("A", "B"), false);
-assert.equal(sameFocusMediationCadenceEligible("A", null), false);
 assert.equal(
   evaluateLongSilenceGate({ ...longSilenceGateBase, broadcastCount: 3 }).reason,
   "session_cap",
@@ -496,17 +536,20 @@ assert.equal(
   evaluateLongSilenceGate({ ...longSilenceGateBase, latestPushSeq: 21 }).reason,
   "stale_anchor",
 );
+// Evidence informs the mediation message but never fires it before two
+// successful leader build-ons.
 assert.equal(
   resolveRoute({
     ...baseResolver,
-    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: false },
+    mediation: { latched: true, buildOnsSinceMediation: 1 },
   }).routeKind,
   "build_on",
 );
 assert.deepEqual(
   resolveRoute({
     ...baseResolver,
-    mediation: { latched: false, buildOnsSinceMediation: 2, cadenceEligible: true },
+    decision: null,
+    mediation: { latched: false, buildOnsSinceMediation: 2 },
   }),
   {
     routeKind: "mediation",
@@ -518,7 +561,7 @@ assert.deepEqual(
   resolveRoute({
     ...baseResolver,
     conditionCode: "C4",
-    mediation: { latched: false, buildOnsSinceMediation: 2, cadenceEligible: true },
+    mediation: { latched: false, buildOnsSinceMediation: 2 },
   }),
   {
     routeKind: "mediation",
@@ -526,28 +569,32 @@ assert.deepEqual(
     mediationTrigger: "cadence_after_two_build_ons",
   },
 );
-// Human-led candidate movement satisfies the widening goal; neither leader
-// condition may redirect again just because the old candidate reached the count.
-assert.equal(
+// A latched process signal changes the mediation explanation, not its cadence.
+assert.deepEqual(
   resolveRoute({
     ...baseResolver,
-    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: false },
-  }).routeKind,
-  "build_on",
+    mediation: { latched: true, buildOnsSinceMediation: 2 },
+  }),
+  {
+    routeKind: "mediation",
+    reason: "mediation",
+    mediationTrigger: "evidence_latch",
+  },
 );
+// Direct answers defer—but do not erase—mediation debt.
 assert.equal(
   resolveRoute({
     ...baseResolver,
-    conditionCode: "C4",
-    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: false },
+    priorityRoute: "address",
+    mediation: { latched: true, buildOnsSinceMediation: 2 },
   }).routeKind,
-  "build_on",
+  "address",
 );
 assert.equal(
   resolveRoute({
     ...baseResolver,
     conditionCode: "C1",
-    mediation: { latched: true, buildOnsSinceMediation: 2, cadenceEligible: true },
+    mediation: { latched: true, buildOnsSinceMediation: 2 },
   }).routeKind,
   "build_on",
 );
@@ -571,8 +618,8 @@ const revealStats = {
   aiSurfacedIds: ["A_p1"],
 };
 const coverage = formatConfirmedCoverage(revealStats);
-assert.match(coverage, /Candidate A — 1 matches · 1 misses/);
-assert.match(coverage, /Candidate B — 1 matches · 1 misses/);
+assert.match(coverage, /Candidate A — 1 match · 1 miss/);
+assert.match(coverage, /Candidate B — 1 match · 1 miss/);
 assert.match(coverage, /Still to cover: C, D/);
 assert.equal(preferredCandidateFromVisibleCoverage(revealStats), null);
 assert.equal(decidePreferenceFromVisibleCoverage(revealStats).scope, "none");
@@ -594,21 +641,21 @@ assert.equal(aiSurfacedIds(separatedInformationStats).size, 9);
 assert.equal(allSurfacedIds(separatedInformationStats).size, 10);
 assert.equal(lastHumanDiscussionCandidate(separatedInformationStats, 1), "A");
 const humanGroundedCoverage = formatConfirmedCoverage(separatedInformationStats);
-assert.match(humanGroundedCoverage, /Candidate A — 1 matches · 0 misses/);
+assert.match(humanGroundedCoverage, /Candidate A — 1 match · 0 misses/);
 assert.match(humanGroundedCoverage, /Still to cover: B, C, D/);
 assert.doesNotMatch(humanGroundedCoverage, /Candidate B —/);
 assert.doesNotMatch(humanGroundedCoverage, /Candidate C —/);
 const visibleBoardCoverage = formatVisibleBoardCoverage(separatedInformationStats);
-assert.match(visibleBoardCoverage, /Candidate A — 3 matches · 1 misses/);
-assert.match(visibleBoardCoverage, /Candidate B — 2 matches · 1 misses/);
-assert.match(visibleBoardCoverage, /Candidate C — 2 matches · 1 misses/);
+assert.match(visibleBoardCoverage, /Candidate A — 3 matches · 1 miss/);
+assert.match(visibleBoardCoverage, /Candidate B — 2 matches · 1 miss/);
+assert.match(visibleBoardCoverage, /Candidate C — 2 matches · 1 miss/);
 assert.match(visibleBoardCoverage, /Still to cover: D/);
 const leaderXaiSummary = formatDeterministicSummary(separatedInformationStats, "C2");
 const leaderAciSummary = formatDeterministicSummary(separatedInformationStats, "C4");
 assert.match(leaderXaiSummary, /^Quick check-in\n\nCandidate A/);
-assert.match(leaderXaiSummary, /Candidate A — 3 matches · 1 misses/);
-assert.match(leaderXaiSummary, /Candidate B — 2 matches · 1 misses/);
-assert.match(leaderXaiSummary, /Candidate C — 2 matches · 1 misses/);
+assert.match(leaderXaiSummary, /Candidate A — 3 matches · 1 miss/);
+assert.match(leaderXaiSummary, /Candidate B — 2 matches · 1 miss/);
+assert.match(leaderXaiSummary, /Candidate C — 2 matches · 1 miss/);
 assert.match(leaderXaiSummary, /Still to cover: D/);
 assert.doesNotMatch(leaderXaiSummary, /Candidate D —/);
 assert.doesNotMatch(leaderXaiSummary, /\?/);
@@ -637,7 +684,7 @@ assert.match(fullBoardSummary, /Candidate A — 4 matches · 6 misses/);
 assert.match(fullBoardSummary, /Candidate B — 4 matches · 6 misses/);
 assert.match(fullBoardSummary, /Candidate C — 7 matches · 3 misses/);
 assert.match(fullBoardSummary, /Candidate D — 4 matches · 6 misses/);
-assert.match(fullBoardSummary, /Still to cover: none/);
+assert.match(fullBoardSummary, /All candidates have at least one confirmed point on the table/);
 assert.ok(fullBoardSummary.length > 800);
 assert.equal(preferredCandidateFromVisibleCoverage(separatedInformationStats), "A");
 assert.equal(
@@ -1036,6 +1083,35 @@ assert.equal(
   "visible_board",
 );
 assert.equal(classifyRequestIntent("Alex, who is best?").source, "alex_notes");
+const explicitNewInformationRequest =
+  "I'm wondering, Alex, is there some information you have about Candidate C that we don't have?";
+assert.deepEqual(classifyRequestIntent(explicitNewInformationRequest), {
+  kind: "new_information_request",
+  candidate: "C",
+  source: "alex_notes",
+});
+const exhaustedNewInformationContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 10,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: explicitNewInformationRequest,
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 10,
+});
+assert.match(exhaustedNewInformationContext.userPrompt, /Answer directly with at most one/i);
+assert.deepEqual(exhaustedNewInformationContext.outputScopeGuard, {
+  candidate: "C",
+  maxTraitIds: 1,
+  allowedTraitIds: ["C_p7", "C_n2", "C_n3"],
+  reason: "new_information_request",
+});
 
 // [RequestIntent] 핵심 회귀 케이스 — "what do you have" 같은 표면 문장 없이도,
 // 그리고 대화 포커스가 다른 후보여도, 명시된 후보 B의 전체 목록 요청으로 확정된다.
@@ -1091,7 +1167,8 @@ assert.equal(
 );
 
 // [RequestIntent] edge 1/2 — "테이블에 나온 전체" 요청과 "알렉스가 가진 전체" 요청 구분.
-// 피어 + 테이블 전체 → 취합 없이 수동적 한계 진술.
+// Every condition answers the exact visible board; status never removes normal
+// AI answer competence.
 const peerTableCompleteContext = buildRouteUserContext({
   routeKind: "address",
   conditionCode: "C1",
@@ -1108,14 +1185,14 @@ const peerTableCompleteContext = buildRouteUserContext({
   anchorSeq: 9,
 });
 assert.equal(peerTableCompleteContext.requestIntent.source, "visible_board");
-assert.match(peerTableCompleteContext.userPrompt, /do not have the full board/i);
-assert.match(
-  peerTableCompleteContext.userPrompt,
-  /not really sure what the whole table looks like/i,
-);
-assert.equal(peerTableCompleteContext.outputScopeGuard, undefined);
-assert.match(peerTableCompleteContext.deterministicResponse!, /my notes have these matches/i);
-assert.match(peerTableCompleteContext.deterministicResponse!, /don't know the full table/i);
+assert.doesNotMatch(peerTableCompleteContext.userPrompt, /do not have the full board/i);
+assert.deepEqual(peerTableCompleteContext.outputScopeGuard, {
+  candidate: "B",
+  reason: "explicit_complete_request",
+});
+assert.match(peerTableCompleteContext.deterministicResponse!, /on the table for Candidate B/i);
+assert.match(peerTableCompleteContext.deterministicResponse!, /keeps a cool head/i);
+assert.doesNotMatch(peerTableCompleteContext.deterministicResponse!, /Still to cover/i);
 assert.doesNotMatch(peerTableCompleteContext.deterministicResponse!, /\?/);
 
 // Split request: a bare direct address inherits the immediately preceding human
@@ -1144,7 +1221,8 @@ assert.deepEqual(splitPeerCompleteC1.requestIntent, {
 });
 assert.match(splitPeerCompleteC1.deterministicResponse!, /Candidate B/);
 assert.match(splitPeerCompleteC1.deterministicResponse!, /keeps a cool head/);
-assert.match(splitPeerCompleteC1.deterministicResponse!, /sometimes abusive in tone/);
+assert.match(splitPeerCompleteC1.deterministicResponse!, /considered arrogant/);
+assert.doesNotMatch(splitPeerCompleteC1.deterministicResponse!, /sometimes abusive in tone/);
 assert.equal((splitPeerCompleteC1.deterministicResponse!.match(/\?/g) ?? []).length, 0);
 
 const splitPeerCompleteC3 = buildRouteUserContext({
@@ -1163,11 +1241,14 @@ const splitPeerCompleteC3 = buildRouteUserContext({
   language: "en",
   anchorSeq: 11,
 });
-assert.equal((splitPeerCompleteC3.deterministicResponse!.match(/\?/g) ?? []).length, 1);
-assert.match(splitPeerCompleteC3.deterministicResponse!, /could you summarize the other traits/i);
+assert.equal((splitPeerCompleteC3.deterministicResponse!.match(/\?/g) ?? []).length, 0);
+assert.match(splitPeerCompleteC3.deterministicResponse!, /considered arrogant/i);
 
-// An explicit request for Alex's own notes retains the existing generated path.
-assert.equal(explicitCompleteCandidateContext.deterministicResponse, undefined);
+// An explicit request for Alex's own notes is exact and deterministic too.
+assert.match(
+  explicitCompleteCandidateContext.deterministicResponse!,
+  /my notes have these matches/i,
+);
 
 // 리더 + 테이블 전체 → 전체 가시 보드를 갖고 있으므로 그대로 전체 목록 응답.
 const leaderTableCompleteContext = buildRouteUserContext({
@@ -1188,7 +1269,7 @@ const leaderTableCompleteContext = buildRouteUserContext({
 assert.match(leaderTableCompleteContext.userPrompt, /applies only to Candidate B/);
 assert.doesNotMatch(leaderTableCompleteContext.userPrompt, /do not have the full board/i);
 
-// 한국어 세션의 피어 테이블 전체 요청 — 수동적 한계 문구가 한국어로 주입된다.
+// 한국어 세션의 피어 테이블 전체 요청도 factual scope를 축소하지 않는다.
 const koPeerTableCompleteContext = buildRouteUserContext({
   routeKind: "address",
   conditionCode: "C3",
@@ -1206,7 +1287,11 @@ const koPeerTableCompleteContext = buildRouteUserContext({
 });
 assert.equal(koPeerTableCompleteContext.requestIntent.kind, "complete_single_candidate");
 assert.equal(koPeerTableCompleteContext.requestIntent.source, "visible_board");
-assert.match(koPeerTableCompleteContext.userPrompt, /테이블 전체 내용은 잘 모르겠어/);
+assert.match(
+  koPeerTableCompleteContext.userPrompt,
+  /Candidate B.*List every match and every miss/is,
+);
+assert.doesNotMatch(koPeerTableCompleteContext.userPrompt, /테이블 전체 내용은 잘 모르겠어/);
 
 // [RequestIntent] 선호 cue 주입 게이트 — 선호를 말할 수 있는 턴에만 주입된다.
 // address + 선호 미질문 → 미주입.
@@ -1451,8 +1536,17 @@ const selectedBuildOnSignal = deriveMainJudgeSignalFromRules({
 });
 assert.equal(selectedBuildOnSignal.privateContributionAvailable, true);
 assert.deepEqual(selectedBuildOnSignal.privateContributionIds, ["A_p3", "A_p4", "A_n5", "A_n6"]);
-assert.match(selectedBuildOnContext.userPrompt, /Selected contribution.*very well organized/is);
-assert.match(selectedBuildOnContext.userPrompt, /only candidate trait named or implied anywhere/i);
+assert.match(selectedBuildOnContext.userPrompt, /Route kind: build_on/i);
+assert.match(
+  selectedBuildOnContext.userPrompt,
+  /Selected new factual contribution.*very well organized/is,
+);
+assert.match(selectedBuildOnContext.userPrompt, /additional or separate fact/i);
+assert.match(
+  selectedBuildOnContext.userPrompt,
+  /never falsely call the selected note 'that point'/i,
+);
+assert.match(selectedBuildOnContext.userPrompt, /complete conversational prose/i);
 assert.match(selectedBuildOnContext.userPrompt, /Do not invent an operational scenario/i);
 assert.deepEqual(selectedBuildOnContext.outputScopeGuard, {
   candidate: "A",
@@ -1472,9 +1566,14 @@ const selectedXaiBuildOnContext = buildRouteUserContext({
   judgeEvidence: "relevant_unsurfaced_information",
   selectedTraitId: "A_p4",
 });
-assert.match(selectedXaiBuildOnContext.userPrompt, /refer generically to the latest human reasoning/i);
-assert.match(selectedXaiBuildOnContext.userPrompt, /adds to, qualifies, or updates.*overall profile/is);
-assert.doesNotMatch(selectedXaiBuildOnContext.userPrompt, /only candidate trait named or implied/i);
+assert.match(
+  selectedXaiBuildOnContext.userPrompt,
+  /adds to or updates.*overall equal-weight profile/is,
+);
+assert.match(
+  selectedXaiBuildOnContext.userPrompt,
+  /Respond to the substance of the latest human message/i,
+);
 assert.deepEqual(selectedXaiBuildOnContext.outputScopeGuard, {
   candidate: "A",
   maxTraitIds: 1,
@@ -1518,7 +1617,7 @@ assert.equal(
     selectedBuildOnContext.outputScopeGuard!,
     ["A_n5"],
   ),
-  "trait_outside_selected_contribution",
+  "selected_trait_missing",
 );
 assert.equal(
   outputScopeViolation(
@@ -1538,13 +1637,16 @@ const cadenceMediationContext = buildRouteUserContext({
   anchorSeq: 9,
   mediationTrigger: "cadence_after_two_build_ons",
   mediationFocusCandidate: "A",
+  buildOnsSinceMediation: 2,
 });
-assert.match(cadenceMediationContext.userPrompt, /cadence after two build-on turns/i);
+assert.match(cadenceMediationContext.userPrompt, /Route kind: mediation/i);
+assert.match(cadenceMediationContext.userPrompt, /Successful leader build-ons.*2/i);
+assert.match(cadenceMediationContext.userPrompt, /Visible on-table coverage/);
 assert.match(
   cadenceMediationContext.userPrompt,
-  /consider a different candidate alongside Candidate A/i,
+  /state clear.*most useful unresolved comparison or coverage gap/is,
 );
-assert.match(cadenceMediationContext.userPrompt, /Do not tell the team to abandon Candidate A/i);
+assert.match(cadenceMediationContext.userPrompt, /does not require switching candidates/i);
 assert.doesNotMatch(cadenceMediationContext.userPrompt, /Selected contribution/);
 
 const c2CadenceMediationContext = buildRouteUserContext({
@@ -1556,11 +1658,15 @@ const c2CadenceMediationContext = buildRouteUserContext({
   anchorSeq: 9,
   mediationTrigger: "cadence_after_two_build_ons",
   mediationFocusCandidate: "A",
+  buildOnsSinceMediation: 2,
 });
-assert.match(c2CadenceMediationContext.userPrompt, /one brief declarative process statement/i);
-assert.match(c2CadenceMediationContext.userPrompt, /considering a different candidate alongside/i);
+assert.match(c2CadenceMediationContext.userPrompt, /one or two concise declarative sentences/i);
+assert.match(
+  c2CadenceMediationContext.userPrompt,
+  /most useful unresolved comparison or coverage gap/i,
+);
 assert.match(c2CadenceMediationContext.userPrompt, /ask no question/i);
-assert.doesNotMatch(c2CadenceMediationContext.userPrompt, /ask exactly one inclusive question/i);
+assert.doesNotMatch(c2CadenceMediationContext.userPrompt, /ask at most one inclusive/i);
 
 const synthesisBuildOnContext = buildRouteUserContext({
   routeKind: "build_on",
