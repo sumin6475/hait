@@ -216,7 +216,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.6.6");
+    assert.equal(resolvedPrompt.promptVersion, "1.6.7");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -263,18 +263,18 @@ function routeContract(
 const routeContractChecks = {
   C1: {
     greeting: /short, warm greeting as an equal peer/i,
-    address: /Answer the exact request first/i,
-    followup: /same thread/i,
+    address: /Direct-response override.*neutral, helpful AI teammate/is,
+    followup: /Direct-response override.*neutral, helpful AI teammate/is,
     long_silence: /one short declarative sentence/i,
-    build_on: /For NOTE_CONTRIBUTION.*add exactly one relevant trait or factual contrast/is,
+    build_on: /For NOTE_CONTRIBUTION.*selected trait.*short explanatory clause/is,
     backchannel: /backchannel turn, not a substantive contribution/i,
   },
   C2: {
     greeting: /Open the discussion briefly as its leader/i,
-    address: /Answer the exact request first/i,
-    followup: /same thread/i,
+    address: /Direct-response override.*neutral, helpful AI teammate/is,
+    followup: /Direct-response override.*neutral, helpful AI teammate/is,
     long_silence: /one short declarative sentence/i,
-    build_on: /For NOTE_CONTRIBUTION.*add exactly one relevant trait or factual contrast/is,
+    build_on: /For NOTE_CONTRIBUTION.*selected trait.*short explanatory clause/is,
     mediation: /Make one process intervention/i,
     backchannel: /not a leadership intervention or substantive contribution/i,
     summary: /Create a readable checkpoint/i,
@@ -282,16 +282,16 @@ const routeContractChecks = {
   },
   C3: {
     greeting: /short, warm greeting as an equal peer/i,
-    address: /Answer the exact question or request first/i,
-    followup: /Answer or clarify the exact point on the same thread/i,
+    address: /Direct-response override.*neutral, helpful AI teammate/is,
+    followup: /Direct-response override.*neutral, helpful AI teammate/is,
     long_silence: /Ask one small, grounded question/i,
     build_on: /For NOTE_CONTRIBUTION.*ask exactly one alignment question/is,
     backchannel: /backchannel turn, not an inquiry turn/i,
   },
   C4: {
     greeting: /ask exactly one inclusive team-wide question/i,
-    address: /Answer the exact question or request first/i,
-    followup: /Resolve the exact question, challenge, or clarification/i,
+    address: /Direct-response override.*neutral, helpful AI teammate/is,
+    followup: /Direct-response override.*neutral, helpful AI teammate/is,
     long_silence: /ask at most one short, inclusive, grounded question/i,
     build_on: /For NOTE_CONTRIBUTION.*ask exactly one inclusive team-wide alignment question/is,
     mediation: /reopens the field/i,
@@ -310,9 +310,23 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   }
 }
 
+for (const routeKind of ["address", "followup"] as const) {
+  const neutralDirectResponse = routeContract("C1", routeKind);
+  for (const condition of ["C2", "C3", "C4"] as const) {
+    assert.equal(routeContract(condition, routeKind), neutralDirectResponse);
+  }
+}
+
+for (const condition of ["C1", "C2", "C3", "C4"] as const) {
+  const contract = routeContract(condition, "build_on");
+  assert.match(contract, /Always begin by naturally taking up the substance/i);
+  assert.match(contract, /Acknowledging that point/i);
+  assert.match(contract, /without automatically agreeing|without agreeing/i);
+}
+
 const synthesisContracts = {
-  C1: /CONVERSATION_GROUNDED_SYNTHESIS.*one short declarative sentence/is,
-  C2: /CONVERSATION_GROUNDED_SYNTHESIS.*declarative sentences/is,
+  C1: /CONVERSATION_GROUNDED_SYNTHESIS.*natural declarative sentences/is,
+  C2: /CONVERSATION_GROUNDED_SYNTHESIS.*natural declarative sentences/is,
   C3: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one small clarification question/is,
   C4: /CONVERSATION_GROUNDED_SYNTHESIS.*ask exactly one inclusive, grounded team-wide clarification question/is,
 } as const;
@@ -327,8 +341,11 @@ const peerAciBuildOnContract = getRoutePrompt("C3", "build_on").systemPrompt;
 assert.match(peerAciBuildOnContract, /Does that align with what you have\?/i);
 assert.match(peerAciBuildOnContract, /Is that consistent with your notes on this point\?/i);
 assert.match(peerAciBuildOnContract, /Does that match what you have for this same point\?/i);
-assert.match(peerAciBuildOnContract, /one very short neutral uptake phrase/i);
-assert.match(peerAciBuildOnContract, /must not agree with, praise, validate, summarize, or restate/i);
+assert.match(peerAciBuildOnContract, /one very short neutral phrase or clause/i);
+assert.match(
+  peerAciBuildOnContract,
+  /without agreeing with, praising, validating, summarizing, or restating/i,
+);
 assert.match(peerAciBuildOnContract, /Never ask how any trait should be weighed/i);
 assert.match(peerAciBuildOnContract, /earlier concerns/i);
 assert.match(leaderAciBuildOnContract, /one supplied selected trait/i);
@@ -369,7 +386,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
     assert.match(choicePrompt, /obey the supplied Internal preference cue exactly/i);
     assert.match(choicePrompt, /one short overall-profile reason/i);
     assert.match(choicePrompt, /CURRENT_CO_PREFERENCE/);
-    assert.match(choicePrompt, /never a request for a trait list/i);
+    assert.match(choicePrompt, /A request for a choice is not a request for a trait list/i);
   }
 }
 assert.match(peerXai, /may state your own personal preference/i);
@@ -1435,9 +1452,30 @@ const selectedBuildOnSignal = deriveMainJudgeSignalFromRules({
 assert.equal(selectedBuildOnSignal.privateContributionAvailable, true);
 assert.deepEqual(selectedBuildOnSignal.privateContributionIds, ["A_p3", "A_p4", "A_n5", "A_n6"]);
 assert.match(selectedBuildOnContext.userPrompt, /Selected contribution.*very well organized/is);
-assert.match(selectedBuildOnContext.userPrompt, /only candidate trait mentioned anywhere/i);
+assert.match(selectedBuildOnContext.userPrompt, /only candidate trait named or implied anywhere/i);
 assert.match(selectedBuildOnContext.userPrompt, /Do not invent an operational scenario/i);
 assert.deepEqual(selectedBuildOnContext.outputScopeGuard, {
+  candidate: "A",
+  maxTraitIds: 1,
+  allowedTraitIds: ["A_p4"],
+  requiredTraitId: "A_p4",
+  reason: "selected_note_contribution",
+});
+
+const selectedXaiBuildOnContext = buildRouteUserContext({
+  routeKind: "build_on",
+  conditionCode: "C2",
+  messages: explicitReturnMessages,
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 9,
+  judgeEvidence: "relevant_unsurfaced_information",
+  selectedTraitId: "A_p4",
+});
+assert.match(selectedXaiBuildOnContext.userPrompt, /refer generically to the latest human reasoning/i);
+assert.match(selectedXaiBuildOnContext.userPrompt, /adds to, qualifies, or updates.*overall profile/is);
+assert.doesNotMatch(selectedXaiBuildOnContext.userPrompt, /only candidate trait named or implied/i);
+assert.deepEqual(selectedXaiBuildOnContext.outputScopeGuard, {
   candidate: "A",
   maxTraitIds: 1,
   allowedTraitIds: ["A_p4"],

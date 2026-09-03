@@ -889,6 +889,7 @@ export function buildRouteUserContext(input: {
     input.routeKind === "build_on" && input.judgeEvidence === "relevant_unsurfaced_information"
       ? TRAIT_BY_ID.get(input.selectedTraitId ?? "")
       : undefined;
+  const inquiryCondition = input.conditionCode === "C3" || input.conditionCode === "C4";
   // The synthesis judge sees 16 messages. Give the generator the same evidence
   // window without changing the established context size for ordinary routes.
   const window = input.messages.slice(
@@ -915,7 +916,10 @@ export function buildRouteUserContext(input: {
           ? [
               "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
               `Selected contribution (mandatory and exclusive): ${selectedTrait.valence === "pos" ? "MATCH" : "MISS"}: ${selectedTrait.text}.`,
-              "This must be the only candidate trait mentioned anywhere in the message, including the question. Refer back to it as 'that point' if needed; do not name, contrast, balance, combine, or imply any other trait.",
+              inquiryCondition
+                ? "This must be the only candidate trait named or implied anywhere in the message, including the uptake and question. Refer back to it as 'that point' if needed; do not name, contrast, balance, combine, or imply any other trait."
+                : "This must be the only candidate trait named anywhere in the message. You may refer generically to the latest human reasoning and explain how this selected trait adds to, qualifies, or updates the candidate's overall profile under the equal-weight standard, but do not name or compare another trait.",
+              "Begin with a brief, natural uptake of the latest human point. Do not use mechanical meta-language such as 'Acknowledging that point,' 'Noted,' or 'Taking that in.'",
               "Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff that is absent from the recent conversation.",
             ].join("\n")
           : "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
