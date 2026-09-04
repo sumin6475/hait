@@ -243,7 +243,9 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     ? "server-deterministic-greeting"
     : summaryContent
       ? "server-deterministic-summary"
-      : "server-deterministic-peer-complete";
+      : context.requestIntent.kind === "known_count_request"
+        ? "server-deterministic-known-count"
+        : "server-deterministic-peer-complete";
   const generated = deterministicContent
     ? {
         result: {

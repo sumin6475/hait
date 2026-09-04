@@ -1151,6 +1151,27 @@ assert.equal(
 );
 assert.equal(classifyRequestIntent("Alex, who is best?").kind, "preference_request");
 assert.equal(classifyRequestIntent("Which one would you pick?").kind, "preference_request");
+assert.deepEqual(classifyRequestIntent("Alex, why do you think Candidate D is best?"), {
+  kind: "preference_reason_request",
+  candidate: "D",
+  source: "known_profile",
+});
+assert.deepEqual(classifyRequestIntent("Alex, 왜 너는 D가 맞다고 생각해?"), {
+  kind: "preference_reason_request",
+  candidate: "D",
+  source: "known_profile",
+});
+assert.deepEqual(classifyRequestIntent("How many D's matches are you reading?"), {
+  kind: "known_count_request",
+  candidate: "D",
+  source: "known_profile",
+  countKind: "matches",
+});
+assert.deepEqual(classifyRequestIntent("Do you have any new insight?"), {
+  kind: "insight_request",
+  candidate: null,
+  source: "known_profile",
+});
 assert.equal(
   classifyRequestIntent("Candidate A has a good overview of complex contexts.").kind,
   "none",
@@ -1175,7 +1196,43 @@ assert.deepEqual(classifyRequestIntent(explicitNewInformationRequest), {
   candidate: "C",
   source: "alex_notes",
 });
-const exhaustedNewInformationContext = buildRouteUserContext({
+assert.deepEqual(
+  classifyRequestIntent(
+    "I would still choose Candidate B, but is there information that either of you have that I don't have that could change my mind?",
+  ),
+  {
+    kind: "new_information_request",
+    candidate: "B",
+    source: "alex_notes",
+  },
+);
+const lateNewInformationContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 39,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content:
+        "I would still choose Candidate B, but is there information that either of you have that I don't have that could change my mind?",
+    },
+  ],
+  revealStats: tC2030PreferenceStats,
+  language: "en",
+  anchorSeq: 39,
+});
+assert.match(lateNewInformationContext.userPrompt, /Still-unshared facts in Alex's own notes/i);
+assert.match(lateNewInformationContext.userPrompt, /good at multitasking/i);
+assert.match(lateNewInformationContext.userPrompt, /considered arrogant/i);
+assert.match(lateNewInformationContext.userPrompt, /abusive in tone/i);
+assert.deepEqual(lateNewInformationContext.outputScopeGuard, {
+  candidate: "B",
+  maxTraitIds: 3,
+  allowedTraitIds: ["B_p4", "B_n5", "B_n6"],
+  reason: "new_information_request",
+});
+const expandedNewInformationContext = buildRouteUserContext({
   routeKind: "address",
   conditionCode: "C2",
   messages: [
@@ -1190,13 +1247,77 @@ const exhaustedNewInformationContext = buildRouteUserContext({
   language: "en",
   anchorSeq: 10,
 });
-assert.match(exhaustedNewInformationContext.userPrompt, /Answer directly with at most one/i);
-assert.deepEqual(exhaustedNewInformationContext.outputScopeGuard, {
+assert.match(expandedNewInformationContext.userPrompt, /Question mode.*NEW_INFORMATION/i);
+assert.match(expandedNewInformationContext.userPrompt, /Already visible to the team/i);
+assert.match(expandedNewInformationContext.userPrompt, /disclose every still-unshared fact/i);
+assert.doesNotMatch(expandedNewInformationContext.userPrompt, /at most one of these facts/i);
+assert.deepEqual(expandedNewInformationContext.outputScopeGuard, {
   candidate: "C",
-  maxTraitIds: 1,
+  maxTraitIds: 3,
   allowedTraitIds: ["C_p7", "C_n2", "C_n3"],
   reason: "new_information_request",
 });
+
+const preferenceReasonContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 35,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "Alex, why do you think Candidate D is best?",
+    },
+  ],
+  revealStats: tC2030PreferenceStats,
+  language: "en",
+  anchorSeq: 35,
+});
+assert.match(preferenceReasonContext.userPrompt, /Question mode.*PREFERENCE_REASON/i);
+assert.match(preferenceReasonContext.userPrompt, /CURRENT_PREFERENCE — Candidate D/);
+assert.match(preferenceReasonContext.userPrompt, /complete own notes.*team.*shared/i);
+assert.doesNotMatch(preferenceReasonContext.userPrompt, /Conversational target/);
+
+const knownCountContext = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 37,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "How many D's matches are you reading?",
+    },
+  ],
+  revealStats: tC2030PreferenceStats,
+  language: "en",
+  anchorSeq: 37,
+});
+assert.equal(knownCountContext.requestIntent.kind, "known_count_request");
+assert.equal(
+  knownCountContext.deterministicResponse,
+  "Combining my complete notes with what the team has shared, I know 4 matches for Candidate D.",
+);
+
+const insightQuestionContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 14,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "Alex, do you have any new insight?",
+    },
+  ],
+  revealStats: tC2030PreferenceStats,
+  language: "en",
+  anchorSeq: 14,
+});
+assert.match(insightQuestionContext.userPrompt, /Question mode.*INSIGHT/i);
+assert.match(insightQuestionContext.userPrompt, /not another isolated trait/i);
+assert.match(insightQuestionContext.userPrompt, /CURRENT_PREFERENCE — Candidate D/);
+assert.match(insightQuestionContext.userPrompt, /Known profile standing for reasoning only/i);
 
 // [RequestIntent] 핵심 회귀 케이스 — "what do you have" 같은 표면 문장 없이도,
 // 그리고 대화 포커스가 다른 후보여도, 명시된 후보 B의 전체 목록 요청으로 확정된다.

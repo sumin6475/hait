@@ -184,6 +184,15 @@ export function formatVisibleBoardCoverage(revealStats: any): string {
   );
 }
 
+/** Everything Alex can use for a personal read: complete Z notes plus shared facts. */
+export function knownTraitIds(revealStats: any): Set<string> {
+  return new Set([
+    ...ALEX_Z_IDS,
+    ...allSurfacedIds(revealStats),
+    ...humanConfirmedIds(revealStats),
+  ]);
+}
+
 /**
  * Participant-facing summary with the frozen visual layout rendered entirely
  * from the visible board. Keeping the factual body out of model generation
@@ -226,11 +235,7 @@ export interface PreferenceDecision {
 export function decidePreferenceFromKnownCoverage(revealStats: any): PreferenceDecision {
   // Alex's preference uses everything Alex can legitimately know: the complete
   // Z profile plus every trait that has entered the shared conversation.
-  const surfaced = new Set([
-    ...ALEX_Z_IDS,
-    ...allSurfacedIds(revealStats),
-    ...humanConfirmedIds(revealStats),
-  ]);
+  const surfaced = knownTraitIds(revealStats);
   const rows = {} as PreferenceDecision["rows"];
 
   for (const candidate of CANDIDATES) {
@@ -536,6 +541,14 @@ function requestOverridesFocusControl(
   if (intent.kind === "complete_all_candidates" || intent.kind === "complete_single_candidate") {
     return true;
   }
+  if (
+    intent.kind === "preference_request" ||
+    intent.kind === "preference_reason_request" ||
+    intent.kind === "known_count_request" ||
+    intent.kind === "insight_request"
+  ) {
+    return true;
+  }
   return FOCUS_SCOPE_OVERRIDE.test(anchor.content) || candidateMentions(anchor.content).size > 1;
 }
 
@@ -617,6 +630,7 @@ const NEW_INFORMATION_REQUESTS = [
   /\bis\s+there\s+(?:anything|something)\s+(?:new|else|more|additional)?\s*(?:that\s+)?you\s+(?:have|know|got)\b/i,
   /\bis\s+there\s+(?:some|any)\s+(?:new|other|additional|more)?\s*(?:information|info|insight|points?|traits?|notes?)\s+(?:that\s+)?you\s+(?:have|know|got).*(?:we|the team)\s+(?:do(?:es)?n['’]?t|haven['’]?t|hasn['’]?t)\s+(?:have|know|got|heard|covered)\b/i,
   /\b(?:anything|something|what)\s+(?:new|else|more|additional)?\s*(?:that\s+)?(?:we|the team)\s+(?:do(?:es)?n['’]?t|haven['’]?t|hasn['’]?t)\s+(?:have|know|got|heard|covered)\b/i,
+  /\bis\s+there\b.{0,80}\b(?:information|info|traits?|notes?)\b.{0,80}\b(?:i|we|the team)\s+(?:do(?:es)?n['’]?t|haven['’]?t|hasn['’]?t)\s+(?:have|know|got|heard|covered)\b/i,
   /\b(?:new|additional)\s+insight\b|\banything\s+else\b/i,
   /(?:새로운|추가|더).*(?:정보|내용|특성|속성|인사이트)|(?:우리가|팀이).*(?:모르는|없는).*(?:정보|내용)/,
 ];
@@ -650,19 +664,24 @@ export type RequestIntentKind =
   | "complete_single_candidate" // explicit complete list for one candidate
   | "complete_all_candidates" // all candidates / all notes
   | "new_information_request" // information Alex has that is not yet visible
+  | "insight_request" // analysis from Alex's complete known profile
   | "scoped_information_request" // broad request with no explicit scope → one trait
   | "preference_request" // who is best / which one / your pick
+  | "preference_reason_request" // why Alex holds the current preference
+  | "known_count_request" // exact MATCH/MISS count in Alex's known profile
   | "none";
 
 // Where the participant asked Alex to source the answer. Visible-board reads
 // are exact server state in every condition; private Alex-note reads use only
 // ALEX_Z_IDS. Status manipulation must not change factual answer competence.
-export type RequestSource = "alex_notes" | "visible_board";
+export type RequestSource = "alex_notes" | "visible_board" | "known_profile";
+export type RequestCountKind = "matches" | "misses" | "all";
 
 export interface RequestIntent {
   kind: RequestIntentKind;
   candidate: Cand | null;
   source: RequestSource;
+  countKind?: RequestCountKind;
 }
 
 export const NO_REQUEST_INTENT: RequestIntent = {
@@ -673,6 +692,33 @@ export const NO_REQUEST_INTENT: RequestIntent = {
 
 const VISIBLE_BOARD_SCOPE =
   /\b(?:on the table|so far|at this point|already (?:shared|said|mentioned|discussed)|been (?:said|shared|discussed|covered)|we(?:'ve| have)(?: all)? (?:heard|got|covered|said|shared|mentioned|discussed)|we all (?:heard|covered|said|shared|mentioned|discussed)|(?:our|everyone's|the team'?s|the group'?s) (?:all )?(?:traits?|points?|information|notes?)|in the (?:chat|discussion))\b|(?:테이블|지금까지|여태|나온|공유된|말해진|논의된)/i;
+
+const PREFERENCE_REASON_REQUESTS = [
+  /\bwhy\b.{0,80}\b(?:best|pick(?:ed)?|cho(?:ose|se|sen)|prefer(?:ence|red)?|choice)\b/i,
+  /\bwhy\b.{0,80}\b(?:think|believe|consider)\b.{0,80}\b(?:right|best|strongest|winner|fit)\b/i,
+  /\b(?:reason|basis)\b.{0,80}\b(?:best|pick|choice|preference)\b/i,
+  /(?:왜|이유|근거).*(?:최고|선택|골랐|선호|맞다고\s*생각|낫다고\s*생각|좋다고\s*생각)/,
+];
+const KNOWN_COUNT_REQUESTS = [
+  /\bhow many\b.{0,80}\b(?:matches?|misses?|traits?|points?)\b/i,
+  /\b(?:matches?|misses?|traits?|points?)\b.{0,80}\bhow many\b/i,
+  /(?:매치|미스|긍정|부정|특성|속성).*(?:몇\s*개|얼마나)|(?:몇\s*개|얼마나).*(?:매치|미스|긍정|부정|특성|속성)/,
+];
+const INSIGHT_REQUESTS = [
+  /\b(?:new|other|additional|more)\s+(?:insight|analysis)\b/i,
+  /\b(?:any|some)\s+(?:insight|analysis)\b/i,
+  /(?:새로운|추가|다른|더).*(?:인사이트|통찰|분석)|(?:인사이트|통찰|분석).*(?:있|해|말)/,
+];
+const MATCH_COUNT_MARKER = /\bmatches?\b|(?:매치|긍정)/i;
+const MISS_COUNT_MARKER = /\bmisses?\b|(?:미스|부정)/i;
+
+function requestCountKind(text: string): RequestCountKind {
+  const asksMatches = MATCH_COUNT_MARKER.test(text);
+  const asksMisses = MISS_COUNT_MARKER.test(text);
+  if (asksMatches && !asksMisses) return "matches";
+  if (asksMisses && !asksMatches) return "misses";
+  return "all";
+}
 
 // Keep the inexpensive, deterministic wording matcher while the experiment is
 // frozen. If a future smoke exposes another semantically equivalent whole-board
@@ -706,15 +752,31 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   if (completeMarker) {
     return { kind: "complete_single_candidate", candidate: null, source };
   }
-  // Priority 3 — specifically request information that has not appeared yet.
+  // Priority 3 — exact questions about Alex's current preference and known profile.
+  if (matchesAny(text, PREFERENCE_REASON_REQUESTS)) {
+    return { kind: "preference_reason_request", candidate: named, source: "known_profile" };
+  }
+  if (matchesAny(text, KNOWN_COUNT_REQUESTS)) {
+    return {
+      kind: "known_count_request",
+      candidate: named,
+      source: "known_profile",
+      countKind: requestCountKind(text),
+    };
+  }
+  // Priority 4 — an insight asks for synthesis, not another isolated trait.
+  if (matchesAny(text, INSIGHT_REQUESTS)) {
+    return { kind: "insight_request", candidate: named, source: "known_profile" };
+  }
+  // Priority 5 — specifically request information that has not appeared yet.
   if (matchesAny(text, NEW_INFORMATION_REQUESTS)) {
     return { kind: "new_information_request", candidate: named, source: "alex_notes" };
   }
-  // Priority 4 — broad information request with no explicit scope.
+  // Priority 6 — broad information request with no explicit scope.
   if (matchesAny(text, BROAD_INFORMATION_REQUESTS)) {
     return { kind: "scoped_information_request", candidate: null, source };
   }
-  // Priority 5 — preference questions; only these make the preference cue
+  // Priority 7 — preference questions; only these make the preference cue
   // relevant on address/followup routes.
   if (FOCUS_SCOPE_OVERRIDE.test(text)) {
     return { kind: "preference_request", candidate: null, source };
@@ -771,6 +833,40 @@ function deterministicCompleteResponse(input: {
   return candidateIds.size
     ? `Here is what is on the table for Candidate ${input.candidate}:\n\n${formatCoverageFromIds(candidateIds, false)}`
     : `There is no confirmed information on the table yet for Candidate ${input.candidate}.`;
+}
+
+function deterministicKnownCountResponse(input: {
+  language: "en" | "ko";
+  intent: RequestIntent;
+  candidate: Cand | null;
+  revealStats: any;
+}): string | undefined {
+  if (input.intent.kind !== "known_count_request" || !input.candidate) return undefined;
+  const traits = [...knownTraitIds(input.revealStats)]
+    .map((id) => TRAIT_BY_ID.get(id))
+    .filter((trait) => trait?.candidate === input.candidate);
+  const matches = traits.filter((trait) => trait?.valence === "pos").length;
+  const misses = traits.filter((trait) => trait?.valence === "neg").length;
+  const source =
+    input.language === "ko"
+      ? "제 전체 노트와 팀이 공유한 정보를 합치면"
+      : "Combining my complete notes with what the team has shared";
+  if (input.language === "ko") {
+    if (input.intent.countKind === "matches") {
+      return `${source} Candidate ${input.candidate}의 MATCH는 ${matches}개입니다.`;
+    }
+    if (input.intent.countKind === "misses") {
+      return `${source} Candidate ${input.candidate}의 MISS는 ${misses}개입니다.`;
+    }
+    return `${source} Candidate ${input.candidate}는 MATCH ${matches}개, MISS ${misses}개입니다.`;
+  }
+  if (input.intent.countKind === "matches") {
+    return `${source}, I know ${matches} matches for Candidate ${input.candidate}.`;
+  }
+  if (input.intent.countKind === "misses") {
+    return `${source}, I know ${misses} misses for Candidate ${input.candidate}.`;
+  }
+  return `${source}, I know ${matches} matches and ${misses} misses for Candidate ${input.candidate}.`;
 }
 
 const BARE_ALEX_ADDRESS = /^\s*(?:hey\s+)?alex[\s?!.,]*$/i;
@@ -845,6 +941,36 @@ function requestScopeFromIntent(input: {
     };
   }
 
+  if (intent.kind === "preference_reason_request") {
+    return {
+      block:
+        "Question mode (server-derived): PREFERENCE_REASON. Answer why Alex holds the current preference. Explain that the read comes from combining Alex's complete own notes with everything the team has shared and treating every MATCH/MISS criterion equally. Use the supplied preference outcome; do not substitute a visible-only profile, a single decisive trait, or another question. If the candidate named by the participant is not the supplied current preference, correct that premise briefly.",
+    };
+  }
+
+  if (intent.kind === "known_count_request") {
+    return {
+      block:
+        "Question mode (server-derived): KNOWN_PROFILE_COUNT. Answer the exact requested MATCH/MISS count from Alex's complete own notes combined with everything shared by the team. This is not a visible-only count.",
+    };
+  }
+
+  if (intent.kind === "insight_request") {
+    const decision = decidePreferenceFromKnownCoverage(input.revealStats);
+    const rows = CANDIDATES.map((candidate) => {
+      const row = decision.rows[candidate];
+      return `${candidate}: ${row.matches} MATCH / ${row.misses} MISS`;
+    }).join(" · ");
+    return {
+      block: [
+        "Question mode (server-derived): INSIGHT.",
+        "The participant asked for an insight or analysis, not another isolated trait.",
+        "Answer with one concise, useful comparison or conclusion for the task of choosing the best candidate, based on Alex's complete own notes plus everything shared by the team. Treat every criterion equally and use the supplied preference outcome; do not invent a new criterion or merely recite one trait.",
+        `Known profile standing for reasoning only: ${rows}. Do not recite these counts unless explicitly asked.`,
+      ].join("\n"),
+    };
+  }
+
   if (intent.kind === "new_information_request") {
     const transcriptFocus = currentTopicCandidate(
       input.window.map((message) => ({ sender: message.speaker, content: message.content })),
@@ -859,10 +985,17 @@ function requestScopeFromIntent(input: {
           "The participant asked for new information, but no single candidate is established. Ask one brief clarification question instead of listing candidates or notes.",
       };
     }
-    const surfaced = allSurfacedIds(input.revealStats);
+    const surfaced = new Set([
+      ...allSurfacedIds(input.revealStats),
+      ...humanConfirmedIds(input.revealStats),
+    ]);
     const allowedTraitIds = ALEX_Z_IDS.filter(
       (id) => TRAIT_BY_ID.get(id)?.candidate === focus && !surfaced.has(id),
     );
+    const visibleFacts = [...surfaced]
+      .map((id) => TRAIT_BY_ID.get(id))
+      .filter((trait) => trait?.candidate === focus)
+      .map((trait) => `${trait!.valence === "pos" ? "MATCH" : "MISS"} — ${trait!.text}`);
     const allowedFacts = allowedTraitIds
       .map((id) => TRAIT_BY_ID.get(id))
       .filter(Boolean)
@@ -872,14 +1005,16 @@ function requestScopeFromIntent(input: {
     return {
       block: allowedFacts.length
         ? [
-            `The participant asked for new information about Candidate ${focus}.`,
-            "Answer directly with at most one of these facts that is not yet visible; do not repeat an already-visible fact:",
+            `Question mode (server-derived): NEW_INFORMATION for Candidate ${focus}.`,
+            `Already visible to the team:\n${visibleFacts.length ? visibleFacts.join("\n") : "none"}`,
+            "Still-unshared facts in Alex's own notes:",
             ...allowedFacts,
+            "Answer directly by briefly grounding the reply in what is already shared, then disclose every still-unshared fact listed above. This explicit new-information question overrides the ordinary one-trait limit. Clearly separate existing shared information from Alex's additional information; do not claim Alex only knows the confirmed board.",
           ].join("\n")
-        : `The participant asked for new information about Candidate ${focus}, but Alex has no additional unsurfaced note for that candidate. Say that directly without repeating the existing list or changing candidates.`,
+        : `Question mode (server-derived): NEW_INFORMATION for Candidate ${focus}. Alex has no still-unshared fact in its own notes for that candidate beyond the visible team information. Say that directly and do not claim Alex lacks its complete own notes.`,
       guard: {
         candidate: focus,
-        maxTraitIds: 1,
+        maxTraitIds: allowedTraitIds.length,
         allowedTraitIds,
         reason: "new_information_request",
       },
@@ -1089,7 +1224,9 @@ export function buildRouteUserContext(input: {
   const preferenceCueWanted =
     input.routeKind === "closing" ||
     ((input.routeKind === "address" || input.routeKind === "followup") &&
-      requestIntent.kind === "preference_request") ||
+      ["preference_request", "preference_reason_request", "insight_request"].includes(
+        requestIntent.kind,
+      )) ||
     (input.routeKind === "build_on" &&
       !isLeaderCondition(input.conditionCode) &&
       peerBuildOnPreferenceRelevant(anchor));
@@ -1104,20 +1241,27 @@ export function buildRouteUserContext(input: {
     language: input.language,
     intent: requestIntent,
   });
+  const resolvedRequestCandidate =
+    requestIntent.candidate ??
+    currentTopicCandidate(
+      window.map((message) => ({ sender: message.speaker, content: message.content })),
+    ) ??
+    lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0);
   const completeRequestCandidate =
-    requestIntent.kind === "complete_single_candidate"
-      ? (requestIntent.candidate ??
-        currentTopicCandidate(
-          window.map((message) => ({ sender: message.speaker, content: message.content })),
-        ) ??
-        lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0))
-      : null;
-  const deterministicResponse = deterministicCompleteResponse({
-    language: input.language,
-    intent: requestIntent,
-    candidate: completeRequestCandidate,
-    revealStats: input.revealStats,
-  });
+    requestIntent.kind === "complete_single_candidate" ? resolvedRequestCandidate : null;
+  const deterministicResponse =
+    deterministicCompleteResponse({
+      language: input.language,
+      intent: requestIntent,
+      candidate: completeRequestCandidate,
+      revealStats: input.revealStats,
+    }) ??
+    deterministicKnownCountResponse({
+      language: input.language,
+      intent: requestIntent,
+      candidate: resolvedRequestCandidate,
+      revealStats: input.revealStats,
+    });
   if (requestScope) blocks.push(requestScope.block);
   // [T-C4-019] address/followup had no repeat guard: the same either-or question
   // was broadcast three times in a row (seq 36/39/41). build_on already says

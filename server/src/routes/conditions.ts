@@ -108,17 +108,21 @@ conditionsRouter.post("/test-chat", requireAdmin, async (req, res) => {
       language: "en",
       anchorSeq: messages.at(-1)?.seq ?? 0,
     });
+    const deterministicModel =
+      context.requestIntent.kind === "known_count_request"
+        ? "server-deterministic-known-count"
+        : "server-deterministic-peer-complete";
     const generated = context.deterministicResponse
       ? {
           result: {
             ok: true as const,
             parsed: { content: context.deterministicResponse },
-            requestId: "server-deterministic-peer-complete",
+            requestId: deterministicModel,
             latencyMs: 0,
             inputTokens: 0,
             outputTokens: 0,
             systemFingerprint: null,
-            model: "server-deterministic-peer-complete",
+            model: deterministicModel,
           },
         }
       : await generateScopedRouteMessage({
