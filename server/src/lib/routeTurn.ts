@@ -17,6 +17,7 @@ import {
   buildRouteUserContext,
   formatDeterministicSummary,
   type RequestIntent,
+  type RouteOutputScopeGuard,
   type TranscriptMessage,
 } from "./routeContext.js";
 import { transcriptLabel } from "./labels.js";
@@ -90,6 +91,17 @@ export function routeGenerationLimits(routeKind: RouteKind, requestIntent?: Requ
   return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
 }
 
+/**
+ * Direct answers keep their prompt-level factual scope, but are not rewritten
+ * by candidate/trait extraction. Contribution routes retain their hard guard.
+ */
+export function routeGenerationGuard(
+  routeKind: RouteKind,
+  guard: RouteOutputScopeGuard | undefined,
+): RouteOutputScopeGuard | undefined {
+  return routeKind === "address" || routeKind === "followup" ? undefined : guard;
+}
+
 export function deterministicGreetingContent(
   conditionCode: ConditionCode,
   language: "en" | "ko",
@@ -146,13 +158,14 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       ...docs.flatMap((message: any) => message.sharedInfoIds ?? []),
     ]),
   ];
+  const generationGuard = routeGenerationGuard(input.routeKind, context.outputScopeGuard);
   const focusDepthAudit = {
     focusCandidate: context.focusDepthState.candidate ?? undefined,
     focusBasis: context.focusDepthState.basis,
     focusHumanConfirmedCount: context.focusDepthState.humanConfirmedCount,
     focusDepthThreshold: context.focusDepthState.threshold,
     focusDirective: context.focusDepthState.directive,
-    focusGuarded: context.outputScopeGuard?.reason === "focus_depth",
+    focusGuarded: generationGuard?.reason === "focus_depth",
   };
 
   const recordGenerationFailure = async (
@@ -248,7 +261,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         systemPrompt: prompt.systemPrompt,
         userPrompt: context.userPrompt,
         limits: routeGenerationLimits(input.routeKind, context.requestIntent),
-        guard: context.outputScopeGuard,
+        guard: generationGuard,
         previouslySurfacedTraitIds,
         logContext:
           `stage=${input.decisionStage ?? "system"} route=${input.routeKind} ` +
@@ -391,7 +404,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       mediationEvidence: input.mediationEvidence,
       buildOnsSinceMediation: input.buildOnsSinceMediation,
       mediationTrigger: input.mediationTrigger,
-      outputScopeCandidate: context.outputScopeGuard?.candidate,
+      outputScopeCandidate: generationGuard?.candidate,
       requestIntentKind: context.requestIntent.kind,
       requestIntentSource: context.requestIntent.source,
       outputScopeRepaired: Boolean(generated.scopeRepair),

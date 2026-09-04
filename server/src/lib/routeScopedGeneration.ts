@@ -25,6 +25,7 @@ export interface OutputRepairAttemptAudit {
   systemFingerprint?: string | null;
   extractedTraitIds?: string[];
   violations?: string[];
+  softViolations?: string[];
   error?: string;
 }
 
@@ -46,6 +47,7 @@ function successfulAttemptAudit(input: {
   result: SuccessfulStructuredResult;
   extractedTraitIds?: string[];
   violations?: string[];
+  softViolations?: string[];
 }): OutputRepairAttemptAudit {
   return {
     stage: input.stage,
@@ -59,6 +61,7 @@ function successfulAttemptAudit(input: {
     systemFingerprint: input.result.systemFingerprint,
     extractedTraitIds: input.extractedTraitIds,
     violations: input.violations,
+    softViolations: input.softViolations,
   };
 }
 
@@ -83,23 +86,26 @@ const INTERNAL_METADATA_PATTERNS = [
   /\bfocus (?:directive|calculation)\b/i,
   /\bhuman[- ]confirmed (?:trait )?count\b/i,
   /\brouting count\b/i,
+  /\bexplicit[_ -]human[_ -]focus\b/i,
+  /\bconversational target:\s*Candidate\b/i,
+];
+
+const SOFT_METADATA_PATTERNS = [
   /\b(?:your|my|the) (?:prompt|instructions?|rules?|policy|system message)\b/i,
   /\b(?:prompt|instruction|policy|scope) (?:scope|limits?|restriction|prevents?|allows?)\b/i,
   /\b(?:cannot|can['’]?t|unable to) (?:share|reveal|follow|answer).{0,48}\b(?:prompt|instructions?|rules?|policy|scope)\b/i,
-  /\bexplicit[_ -]human[_ -]focus\b/i,
-  /\bconversational target:\s*Candidate\b/i,
-  // [T-C4-019] Alex's notes are "my notes"/"what I've got" only — "shared profile"
-  // is an internal-sounding term (observed live in T-C4-019 seq 8 and repair drafts).
-  /\bshared profile\b/i,
-  // [T-C4-019] reasoning residue about the address clarification rule leaked into a
-  // visible message: "... (No clarification needed otherwise.)" (T-C4-019 seq 26).
-  /\bclarification needed\b/i,
 ];
 
 export function internalMetadataLeak(content: string): string | null {
   return INTERNAL_METADATA_PATTERNS.some((pattern) => pattern.test(content))
     ? "internal_metadata_leak"
     : null;
+}
+
+export function internalMetadataSoftViolations(content: string): string[] {
+  return SOFT_METADATA_PATTERNS.some((pattern) => pattern.test(content))
+    ? ["metadata_reference"]
+    : [];
 }
 
 export function outputScopeViolation(
@@ -110,65 +116,76 @@ export function outputScopeViolation(
 ): string | null {
   const previouslySurfaced = new Set(previouslySurfacedTraitIds);
   const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
-  const restatedIds = extractedIds.length - newlyIntroducedIds.length;
-  // allowedTraitIds constrains facts introduced by this turn. Previously it
-  // also rejected an already-visible trait used in a natural uptake, which
-  // forced build-ons to ignore the sentence they were answering.
+  // Hard scope checks are factual only. Already-visible human traits may be
+  // referenced naturally; only facts newly introduced by this Alex turn are
+  // constrained.
   if (
     guard.allowedTraitIds &&
     newlyIntroducedIds.some((id) => !guard.allowedTraitIds!.includes(id))
   ) {
     return "trait_outside_selected_contribution";
   }
-  const restatedOutsideSelection = guard.requiredTraitId
-    ? extractedIds.filter((id) => id !== guard.requiredTraitId && previouslySurfaced.has(id))
-    : [];
-  // Conversational uptake may name an already-visible human point, but a
-  // selected one-fact build-on must not turn that allowance into a weighing or
-  // tradeoff question. This is the C3/C4 framing failure seen in pilot turns.
-  if (
-    restatedOutsideSelection.length > 0 &&
-    /\b(?:weigh(?:ed|ing)?|balanc(?:e|ed|es|ing)|offsets?|outweighs?|trade-?offs?|tolerat(?:e|ed|es|ing)|disqualif(?:y|ied|ies|ying)|more important|less important)\b/i.test(
-      content,
-    )
-  ) {
-    return "trait_outside_selected_contribution";
-  }
   if (guard.requiredTraitId && !extractedIds.includes(guard.requiredTraitId)) {
     return "selected_trait_missing";
   }
-  // [T-C4-019] Count labels only in trait-introducing positions: "(MATCH)", "(MISS)",
-  // "MATCH —", "MISS:". Bare confirmation vocabulary ("add the next MATCH or MISS",
-  // "mark this as a MISS") repeats labels without adding traits and was producing
-  // false too_many_trait_labels repairs (T-C4-019 anchors 7 and 16 each disclosed
-  // exactly one trait but carried two label mentions).
-  const explicitTraitLabels =
-    content.match(/\(\s*(?:MATCH|MISS)\s*\)|\b(?:MATCH|MISS)\s*[—–:]/gi)?.length ?? 0;
-  const maxExplicitTraitLabels = guard.allowedTraitIds
-    ? guard.allowedTraitIds.length
-    : guard.maxTraitIds !== undefined
-      ? guard.maxTraitIds + restatedIds
-      : undefined;
-  if (maxExplicitTraitLabels !== undefined && explicitTraitLabels > maxExplicitTraitLabels) {
-    return "too_many_trait_labels";
-  }
-  // maxTraitIds limits only information newly introduced by this Alex turn.
-  // A natural acknowledgement of an already surfaced human point must not turn
-  // "uptake + one new point" into a two-trait repair. Candidate scope below is
-  // intentionally still checked across every mentioned trait.
   if (guard.maxTraitIds !== undefined && newlyIntroducedIds.length > guard.maxTraitIds) {
-    return "too_many_traits";
+    return guard.reason === "mediation_no_new_traits"
+      ? "new_trait_in_mediation"
+      : "too_many_traits";
   }
-  const traitCandidates = candidatesForIds(extractedIds);
-  if ([...traitCandidates].some((candidate) => candidate !== guard.candidate)) {
+  const traitCandidates = candidatesForIds(newlyIntroducedIds);
+  if (
+    guard.candidate &&
+    [...traitCandidates].some((candidate) => candidate !== guard.candidate)
+  ) {
     return "trait_outside_current_candidate";
   }
+  const factOnlyBuildOnGuard = [
+    "route_single_point",
+    "selected_note_contribution",
+    "conversation_grounded_synthesis",
+  ].includes(guard.reason);
   const labels = explicitCandidateLabels(content);
-  if ([...labels].some((candidate) => candidate !== guard.candidate)) {
+  if (
+    guard.candidate &&
+    !factOnlyBuildOnGuard &&
+    [...labels].some((candidate) => candidate !== guard.candidate)
+  ) {
     return "candidate_outside_current_focus";
   }
   return null;
 }
+
+/**
+ * Non-factual output-shape signals remain observable, but never trigger a
+ * rewrite. They are intentionally separate from outputScopeViolation so
+ * wording cannot suppress a factually valid turn.
+ */
+export function outputScopeSoftViolations(
+  content: string,
+  extractedIds: string[],
+  guard: RouteOutputScopeGuard,
+  previouslySurfacedTraitIds: readonly string[] = [],
+): string[] {
+  const violations: string[] = [];
+  const previouslySurfaced = new Set(previouslySurfacedTraitIds);
+  const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
+  const restatedIds = extractedIds.length - newlyIntroducedIds.length;
+  const explicitTraitLabels =
+    content.match(/\(\s*(?:MATCH|MISS)\s*\)|\b(?:MATCH|MISS)\s*[—–:]/gi)?.length ?? 0;
+  const maxExplicitTraitLabels =
+    guard.maxTraitIds !== undefined ? guard.maxTraitIds + restatedIds : undefined;
+  if (maxExplicitTraitLabels !== undefined && explicitTraitLabels > maxExplicitTraitLabels) {
+    violations.push("too_many_trait_labels");
+  }
+  const labels = explicitCandidateLabels(content);
+  if (guard.candidate && [...labels].some((candidate) => candidate !== guard.candidate)) {
+    violations.push("candidate_outside_current_focus");
+  }
+  return violations;
+}
+
+export const MAX_REPAIR_ATTEMPTS = 1;
 
 export async function generateScopedRouteMessage(input: {
   systemPrompt: string;
@@ -180,7 +197,7 @@ export async function generateScopedRouteMessage(input: {
 }): Promise<{
   result: AIStructuredResult;
   extractedIds?: string[];
-  scopeRepair?: { violation: string; candidate: string };
+  scopeRepair?: { violation: string; candidate?: string };
   internalMetadataRepair?: { violation: string };
   repairAudit?: OutputRepairAudit;
 }> {
@@ -201,7 +218,45 @@ export async function generateScopedRouteMessage(input: {
         input.previouslySurfacedTraitIds,
       )
     : null;
-  if (!metadataViolation && !scopeViolation) return { result, extractedIds };
+  let softViolations = [
+    ...internalMetadataSoftViolations(result.parsed.content),
+    ...(input.guard
+      ? outputScopeSoftViolations(
+          result.parsed.content,
+          extractedIds ?? [],
+          input.guard,
+          input.previouslySurfacedTraitIds,
+        )
+      : []),
+  ];
+  if (!metadataViolation && !scopeViolation) {
+    if (!softViolations.length) return { result, extractedIds };
+    return {
+      result,
+      extractedIds,
+      repairAudit: {
+        version: 1,
+        guard: input.guard
+          ? {
+              candidate: input.guard.candidate,
+              reason: input.guard.reason,
+              maxTraitIds: input.guard.maxTraitIds,
+              allowedTraitIds: input.guard.allowedTraitIds,
+              requiredTraitId: input.guard.requiredTraitId,
+            }
+          : undefined,
+        attempts: [
+          successfulAttemptAudit({
+            stage: "initial",
+            outcome: "accepted",
+            result,
+            extractedTraitIds: extractedIds,
+            softViolations,
+          }),
+        ],
+      },
+    };
+  }
 
   const initialViolations = [metadataViolation, scopeViolation].filter((value): value is string =>
     Boolean(value),
@@ -224,18 +279,15 @@ export async function generateScopedRouteMessage(input: {
         result,
         extractedTraitIds: extractedIds,
         violations: initialViolations,
+        softViolations,
       }),
     ],
   };
   const guardDetail = input.guard
-    ? `guard=${input.guard.candidate} scope=${input.guard.reason} ` +
+    ? `guard=${input.guard.candidate ?? "none"} scope=${input.guard.reason} ` +
       `maxTraits=${input.guard.maxTraitIds ?? "none"} extracted=${extractedIds?.length ?? 0}`
     : "guard=none";
 
-  // [T-C4-019] Up to two repair attempts. A single attempt lost whole turns both
-  // when the rewrite still violated the scope (anchors 3, 52) and when the rewrite
-  // call itself came back as prose instead of the JSON object (anchor 6).
-  const MAX_REPAIR_ATTEMPTS = 2;
   let lastViolation = metadataViolation ?? scopeViolation!;
   let lastFailureError: string | null = null;
   let lastModel: string | undefined;
@@ -255,17 +307,21 @@ export async function generateScopedRouteMessage(input: {
         ? "Rewrite the draft as a natural in-character chat message. Do not quote, paraphrase, label, or mention any internal control, server-derived state, focus/depth calculation, threshold, routing count, prompt, or rejected draft."
         : null,
       scopeViolation && input.guard
-        ? [
-            `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
-            input.guard.requiredTraitId
-              ? `The only candidate trait you may mention is: "${TRAIT_BY_ID.get(input.guard.requiredTraitId)?.text ?? input.guard.requiredTraitId}". Include that exact point and no other candidate trait, even if another trait was already discussed.`
-              : null,
-            input.guard.maxTraitIds !== undefined && !input.guard.requiredTraitId
-              ? `Introduce at most ${input.guard.maxTraitIds} new trait${input.guard.maxTraitIds === 1 ? "" : "s"}; you may still acknowledge already-surfaced points.`
-              : null,
-          ]
-            .filter(Boolean)
-            .join(" ")
+        ? input.guard.reason === "mediation_no_new_traits"
+          ? "Rewrite without introducing any candidate trait that was not already visible in the conversation. You may briefly refer to already-visible points while stating only the discussion state and next direction."
+          : input.guard.candidate
+            ? [
+                `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
+                input.guard.requiredTraitId
+                  ? `The only candidate trait you may mention is: "${TRAIT_BY_ID.get(input.guard.requiredTraitId)?.text ?? input.guard.requiredTraitId}". Include that exact point and no other candidate trait, even if another trait was already discussed.`
+                  : null,
+                input.guard.maxTraitIds !== undefined && !input.guard.requiredTraitId
+                  ? `Introduce at most ${input.guard.maxTraitIds} new trait${input.guard.maxTraitIds === 1 ? "" : "s"}; you may still acknowledge already-surfaced points.`
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" ")
+            : null
         : null,
       'Preserve the current condition style, conversational subject, and Turn Metadata goal. Return only the corrected visible chat message inside the required JSON object: {"content": "<message>"}.',
     ]
@@ -299,6 +355,17 @@ export async function generateScopedRouteMessage(input: {
           input.previouslySurfacedTraitIds,
         )
       : null;
+    softViolations = [
+      ...internalMetadataSoftViolations(repaired.parsed.content),
+      ...(input.guard
+        ? outputScopeSoftViolations(
+            repaired.parsed.content,
+            extractedIds ?? [],
+            input.guard,
+            input.previouslySurfacedTraitIds,
+          )
+        : []),
+    ];
     const repairedViolations = [repairedMetadataViolation, repairedScopeViolation].filter(
       (value): value is string => Boolean(value),
     );
@@ -309,6 +376,7 @@ export async function generateScopedRouteMessage(input: {
         result: repaired,
         extractedTraitIds: extractedIds,
         violations: repairedViolations,
+        softViolations,
       }),
     );
     if (!repairedViolations.length) {
@@ -318,7 +386,10 @@ export async function generateScopedRouteMessage(input: {
         extractedIds,
         scopeRepair:
           scopeViolation && input.guard
-            ? { violation: scopeViolation, candidate: input.guard.candidate }
+            ? {
+                violation: scopeViolation,
+                ...(input.guard.candidate ? { candidate: input.guard.candidate } : {}),
+              }
             : undefined,
         internalMetadataRepair: metadataViolation ? { violation: metadataViolation } : undefined,
         repairAudit,

@@ -11,7 +11,7 @@ import { buildFollowupCandidateTranscript } from "../lib/followupJudge.js";
 import {
   buildRouteUserContext,
   classifyRequestIntent,
-  decidePreferenceFromVisibleCoverage,
+  decidePreferenceFromKnownCoverage,
   deriveFocusDepthState,
   deriveMainJudgeSignalFromRules,
   formatConfirmedCoverage,
@@ -19,7 +19,7 @@ import {
   formatLongSilenceContinuity,
   formatPreferenceDecision,
   formatVisibleBoardCoverage,
-  preferredCandidateFromVisibleCoverage,
+  preferredCandidateFromKnownCoverage,
 } from "../lib/routeContext.js";
 import { getRoutePrompt, listRoutePromptKeys } from "../lib/routePromptRegistry.js";
 import {
@@ -29,9 +29,19 @@ import {
   humanSurfacedIds,
   lastHumanDiscussionCandidate,
 } from "../lib/informationPools.js";
-import { internalMetadataLeak, outputScopeViolation } from "../lib/routeScopedGeneration.js";
+import {
+  internalMetadataLeak,
+  internalMetadataSoftViolations,
+  MAX_REPAIR_ATTEMPTS,
+  outputScopeSoftViolations,
+  outputScopeViolation,
+} from "../lib/routeScopedGeneration.js";
 import { validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
-import { deterministicGreetingContent, routeGenerationLimits } from "../lib/routeTurn.js";
+import {
+  deterministicGreetingContent,
+  routeGenerationGuard,
+  routeGenerationLimits,
+} from "../lib/routeTurn.js";
 import { validateJudgeDecisionSelection } from "../lib/interventionJudge.js";
 import { TRAIT_DB } from "../lib/traitData.js";
 import { AIIntervention } from "../models/AIIntervention.js";
@@ -128,6 +138,7 @@ const repairedIntervention = new AIIntervention({
         model: "test-model",
         extractedTraitIds: ["A_p1", "A_p2"],
         violations: ["too_many_traits"],
+        softViolations: ["too_many_trait_labels"],
       },
       {
         stage: "repair",
@@ -146,6 +157,7 @@ const storedRepairAudit = repairedIntervention.toObject().repairAudit!;
 assert.equal(storedRepairAudit.attempts.length, 2);
 assert.equal(storedRepairAudit.attempts[0]!.content, "Candidate A has two MATCH traits.");
 assert.deepEqual(storedRepairAudit.attempts[0]!.violations, ["too_many_traits"]);
+assert.deepEqual(storedRepairAudit.attempts[0]!.softViolations, ["too_many_trait_labels"]);
 assert.equal(storedRepairAudit.attempts[1]!.outcome, "accepted");
 assert.equal(
   keys.some((key) => key === "C1.summary.v1"),
@@ -654,8 +666,9 @@ const coverage = formatConfirmedCoverage(revealStats);
 assert.match(coverage, /Candidate A — 1 match · 1 miss/);
 assert.match(coverage, /Candidate B — 1 match · 1 miss/);
 assert.match(coverage, /Still to cover: C, D/);
-assert.equal(preferredCandidateFromVisibleCoverage(revealStats), null);
-assert.equal(decidePreferenceFromVisibleCoverage(revealStats).scope, "none");
+assert.equal(preferredCandidateFromKnownCoverage(revealStats), null);
+assert.equal(decidePreferenceFromKnownCoverage(revealStats).scope, "full");
+assert.deepEqual(decidePreferenceFromKnownCoverage(revealStats).leaders, ["A", "B", "D"]);
 
 const separatedInformationStats = {
   byCandidate: {
@@ -719,21 +732,21 @@ assert.match(fullBoardSummary, /Candidate C — 7 matches · 3 misses/);
 assert.match(fullBoardSummary, /Candidate D — 4 matches · 6 misses/);
 assert.match(fullBoardSummary, /All candidates have at least one confirmed point on the table/);
 assert.ok(fullBoardSummary.length > 800);
-assert.equal(preferredCandidateFromVisibleCoverage(separatedInformationStats), "A");
+assert.equal(preferredCandidateFromKnownCoverage(separatedInformationStats), null);
 assert.equal(
-  decidePreferenceFromVisibleCoverage(separatedInformationStats).reason,
-  "unique_top_ratio",
+  decidePreferenceFromKnownCoverage(separatedInformationStats).reason,
+  "top_ratio_tie",
 );
-assert.equal(decidePreferenceFromVisibleCoverage(separatedInformationStats).scope, "partial");
+assert.equal(decidePreferenceFromKnownCoverage(separatedInformationStats).scope, "full");
 assert.deepEqual(
-  decidePreferenceFromVisibleCoverage(separatedInformationStats).comparedCandidates,
-  ["A", "B", "C"],
+  decidePreferenceFromKnownCoverage(separatedInformationStats).comparedCandidates,
+  ["A", "B", "C", "D"],
 );
-assert.match(formatPreferenceDecision(separatedInformationStats), /provisional/i);
-assert.match(formatPreferenceDecision(separatedInformationStats), /sufficiently covered/i);
+assert.match(formatPreferenceDecision(separatedInformationStats), /CURRENT_CO_PREFERENCE/i);
+assert.match(formatPreferenceDecision(separatedInformationStats), /own notes.*team.*shared/i);
 
-// One sufficiently covered profile is not a comparison, even if every candidate
-// has at least one visible MATCH and MISS.
+// Alex's own Z-profile participates even when the shared board alone would
+// leave only one deeply covered candidate.
 const minimalPreferenceStats = {
   byCandidate: {
     A: { revealedIds: ["A_p1", "A_n1"] },
@@ -743,10 +756,10 @@ const minimalPreferenceStats = {
   },
   aiSurfacedIds: [],
 };
-assert.equal(preferredCandidateFromVisibleCoverage(minimalPreferenceStats), null);
+assert.equal(preferredCandidateFromKnownCoverage(minimalPreferenceStats), "C");
 assert.equal(
-  decidePreferenceFromVisibleCoverage(minimalPreferenceStats).reason,
-  "insufficient_comparable_coverage",
+  decidePreferenceFromKnownCoverage(minimalPreferenceStats).reason,
+  "unique_top_ratio",
 );
 
 const uniquePreferenceStats = {
@@ -758,8 +771,8 @@ const uniquePreferenceStats = {
   },
   aiSurfacedIds: [],
 };
-assert.equal(preferredCandidateFromVisibleCoverage(uniquePreferenceStats), "C");
-assert.equal(decidePreferenceFromVisibleCoverage(uniquePreferenceStats).scope, "full");
+assert.equal(preferredCandidateFromKnownCoverage(uniquePreferenceStats), "C");
+assert.equal(decidePreferenceFromKnownCoverage(uniquePreferenceStats).scope, "full");
 assert.match(formatPreferenceDecision(uniquePreferenceStats), /CURRENT_PREFERENCE — Candidate C/);
 assert.doesNotMatch(formatPreferenceDecision(uniquePreferenceStats), /\d+ MATCH \/ \d+ MISS/);
 assert.doesNotMatch(formatPreferenceDecision(uniquePreferenceStats), /ratio/i);
@@ -773,15 +786,15 @@ const tiedPreferenceStats = {
   },
   aiSurfacedIds: [],
 };
-assert.equal(preferredCandidateFromVisibleCoverage(tiedPreferenceStats), null);
-assert.deepEqual(decidePreferenceFromVisibleCoverage(tiedPreferenceStats).leaders, ["A", "C"]);
-assert.equal(decidePreferenceFromVisibleCoverage(tiedPreferenceStats).reason, "top_ratio_tie");
+assert.equal(preferredCandidateFromKnownCoverage(tiedPreferenceStats), "C");
+assert.deepEqual(decidePreferenceFromKnownCoverage(tiedPreferenceStats).leaders, ["C"]);
+assert.equal(decidePreferenceFromKnownCoverage(tiedPreferenceStats).reason, "unique_top_ratio");
 assert.match(
   formatPreferenceDecision(tiedPreferenceStats),
-  /CURRENT_CO_PREFERENCE — Candidate A and Candidate C/,
+  /CURRENT_PREFERENCE — Candidate C/,
 );
 
-// Alex disclosures are part of the same visible board used by summary and can change the leader.
+// Human and Alex disclosures extend the complete Z-profile used for preference.
 const alexVisiblePreferenceStats = {
   byCandidate: {
     A: { revealedIds: ["A_p1", "A_p2", "A_n1"] },
@@ -791,8 +804,26 @@ const alexVisiblePreferenceStats = {
   },
   aiSurfacedIds: ["C_p2", "C_p3"],
 };
-assert.equal(preferredCandidateFromVisibleCoverage(alexVisiblePreferenceStats), "C");
-assert.equal(decidePreferenceFromVisibleCoverage(alexVisiblePreferenceStats).rows.C.matches, 3);
+assert.equal(preferredCandidateFromKnownCoverage(alexVisiblePreferenceStats), "C");
+assert.equal(decidePreferenceFromKnownCoverage(alexVisiblePreferenceStats).rows.C.matches, 5);
+
+// T-C2-030 late-board state: Alex's complete Z notes plus the humans' disclosed
+// misses make D the unique current preference. All four D matches are known to
+// Alex even though only two had been spoken aloud by Alex at that point.
+const tC2030PreferenceStats = {
+  byCandidate: {
+    A: { revealedIds: ["A_p1", "A_p4", "A_n1", "A_n4"] },
+    B: { revealedIds: ["B_p1", "B_p2", "B_n3", "B_n4"] },
+    C: { revealedIds: ["C_n2", "C_n3"] },
+    D: { revealedIds: ["D_n4", "D_n5"] },
+  },
+  aiSurfacedIds: ["B_p3", "C_p1", "C_p6", "C_p7", "D_p3", "D_p4", "A_p2"],
+};
+const tC2030Preference = decidePreferenceFromKnownCoverage(tC2030PreferenceStats);
+assert.equal(tC2030Preference.candidate, "D");
+assert.equal(tC2030Preference.rows.D.matches, 4);
+assert.equal(tC2030Preference.rows.D.misses, 3);
+assert.match(formatPreferenceDecision(tC2030PreferenceStats), /own notes.*team.*shared/i);
 
 const messages = Array.from({ length: 45 }, (_, index) => ({
   seq: index + 1,
@@ -840,8 +871,8 @@ const earlyChoiceContext = buildRouteUserContext({
   language: "en",
   anchorSeq: 1,
 });
-assert.match(earlyChoiceContext.userPrompt, /CURRENT_PREFERENCE — Candidate A/);
-assert.match(earlyChoiceContext.userPrompt, /provisional/i);
+assert.match(earlyChoiceContext.userPrompt, /CURRENT_CO_PREFERENCE/);
+assert.match(earlyChoiceContext.userPrompt, /Candidate A, Candidate B and Candidate D/);
 
 const informedChoiceContext = buildRouteUserContext({
   routeKind: "followup",
@@ -859,7 +890,7 @@ const informedChoiceContext = buildRouteUserContext({
   anchorSeq: 1,
 });
 assert.match(informedChoiceContext.userPrompt, /CURRENT_PREFERENCE — Candidate C/);
-assert.match(informedChoiceContext.userPrompt, /overall shared profile currently looks strongest/i);
+assert.match(informedChoiceContext.userPrompt, /own notes.*team.*shared/i);
 
 const tiedChoiceContext = buildRouteUserContext({
   routeKind: "address",
@@ -876,8 +907,8 @@ const tiedChoiceContext = buildRouteUserContext({
   language: "en",
   anchorSeq: 1,
 });
-assert.match(tiedChoiceContext.userPrompt, /CURRENT_CO_PREFERENCE/);
-assert.match(tiedChoiceContext.userPrompt, /discuss them more before separating them/i);
+assert.match(tiedChoiceContext.userPrompt, /CURRENT_PREFERENCE — Candidate C/);
+assert.match(tiedChoiceContext.userPrompt, /own notes.*team.*shared/i);
 
 const scopedInformationContext = buildRouteUserContext({
   routeKind: "address",
@@ -956,7 +987,15 @@ assert.equal(
     [],
     scopedInformationContext.outputScopeGuard!,
   ),
-  "too_many_trait_labels",
+  null,
+);
+assert.deepEqual(
+  outputScopeSoftViolations(
+    "Candidate A — MATCH: excellent spatial awareness; MISS: unfriendly.",
+    [],
+    scopedInformationContext.outputScopeGuard!,
+  ),
+  ["too_many_trait_labels"],
 );
 // [T-C4-019] 라벨 카운트는 트레이트 도입 위치(괄호/대시/콜론)만 센다 — 확인 어휘는 오탐이었다.
 // "MATCH or MISS" 접속 언급은 트레이트 공개가 아니다 (라이브 anchor=7: 트레이트 1개 공개, 라벨 2회).
@@ -977,14 +1016,14 @@ assert.equal(
   ),
   null,
 );
-// 도입 위치 라벨 2개는 여전히 차단된다 (라이브 anchor=6의 실제 이중 공개 형태).
+// 표현상 라벨 수는 audit만 남기며 정상 발화를 차단하지 않는다.
 assert.equal(
   outputScopeViolation(
     "Candidate A is very well organized (MATCH) and sometimes unfriendly (MISS).",
     ["A_p4"],
     scopedInformationContext.outputScopeGuard!,
   ),
-  "too_many_trait_labels",
+  null,
 );
 assert.equal(
   outputScopeViolation(
@@ -993,6 +1032,19 @@ assert.equal(
     scopedInformationContext.outputScopeGuard!,
   ),
   "candidate_outside_current_focus",
+);
+assert.deepEqual(
+  outputScopeSoftViolations(
+    "Candidate B is still uncovered.",
+    [],
+    scopedInformationContext.outputScopeGuard!,
+  ),
+  ["candidate_outside_current_focus"],
+);
+assert.equal(routeGenerationGuard("address", scopedInformationContext.outputScopeGuard), undefined);
+assert.equal(
+  routeGenerationGuard("followup", scopedInformationContext.outputScopeGuard),
+  undefined,
 );
 
 // [Step 55] address/followup 커버리지 역할 분리: 리더는 전체 가시 보드, 피어는 비공개 노트만.
@@ -1588,6 +1640,10 @@ assert.deepEqual(selectedBuildOnContext.outputScopeGuard, {
   requiredTraitId: "A_p4",
   reason: "selected_note_contribution",
 });
+assert.deepEqual(
+  routeGenerationGuard("build_on", selectedBuildOnContext.outputScopeGuard),
+  selectedBuildOnContext.outputScopeGuard,
+);
 
 const selectedXaiBuildOnContext = buildRouteUserContext({
   routeKind: "build_on",
@@ -1642,7 +1698,7 @@ assert.equal(
     selectedBuildOnContext.outputScopeGuard!,
     ["A_n5"],
   ),
-  "trait_outside_selected_contribution",
+  null,
 );
 assert.equal(
   outputScopeViolation(
@@ -1652,6 +1708,46 @@ assert.equal(
     ["A_n5"],
   ),
   "selected_trait_missing",
+);
+// Build-on hard guards inspect facts, not wording: selected note is required,
+// and any additional newly introduced note remains blocked.
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is very well organized and transmits restlessness.",
+    ["A_p4", "A_n6"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  "trait_outside_selected_contribution",
+);
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is very well organized, while Candidate B is good at multitasking.",
+    ["A_p4", "B_p4"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  "trait_outside_selected_contribution",
+);
+// A candidate name used in conversational framing is a soft signal only when
+// no out-of-scope new trait was introduced.
+assert.equal(
+  outputScopeViolation(
+    "Unlike Candidate B, my note is that Candidate A is very well organized.",
+    ["A_p4"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  null,
+);
+assert.deepEqual(
+  outputScopeSoftViolations(
+    "Unlike Candidate B, my note is that Candidate A is very well organized.",
+    ["A_p4"],
+    selectedBuildOnContext.outputScopeGuard!,
+    ["A_n5"],
+  ),
+  ["candidate_outside_current_focus"],
 );
 assert.equal(
   outputScopeViolation(
@@ -1685,6 +1781,39 @@ assert.match(cadenceMediationContext.userPrompt, /aim for 45 words or fewer/i);
 assert.match(cadenceMediationContext.userPrompt, /do not enumerate discussed traits/i);
 assert.match(cadenceMediationContext.userPrompt, /next-step sentence or question on a new line/i);
 assert.doesNotMatch(cadenceMediationContext.userPrompt, /Selected contribution/);
+assert.deepEqual(cadenceMediationContext.outputScopeGuard, {
+  candidate: null,
+  maxTraitIds: 0,
+  reason: "mediation_no_new_traits",
+});
+assert.equal(
+  outputScopeViolation(
+    "Candidate A is unfriendly, so the team should revisit that comparison.",
+    ["A_n5"],
+    cadenceMediationContext.outputScopeGuard!,
+    ["A_p1", "A_p2"],
+  ),
+  "new_trait_in_mediation",
+);
+// T-C2-029 seq 26: mediation disclosed four previously unseen Alex notes.
+assert.equal(
+  outputScopeViolation(
+    "Current focus: cross-candidate comparison between A and B versus C and D. The most useful unresolved comparison is how A's unfriendly/restless misses balance against B's arrogance/abusive-tone miss when both otherwise meet key operational matches.",
+    ["A_n5", "A_n6", "B_n5", "B_n6"],
+    cadenceMediationContext.outputScopeGuard!,
+    ["A_p1", "B_p1", "B_p2"],
+  ),
+  "new_trait_in_mediation",
+);
+assert.equal(
+  outputScopeViolation(
+    "Candidate A's organization is already on the table; the unresolved step is comparing A and B.",
+    ["A_p4"],
+    cadenceMediationContext.outputScopeGuard!,
+    ["A_p4"],
+  ),
+  null,
+);
 
 const c2CadenceMediationContext = buildRouteUserContext({
   routeKind: "mediation",
@@ -1813,17 +1942,22 @@ assert.equal(
   "internal_metadata_leak",
 );
 assert.equal(internalMetadataLeak("Let's keep looking at Candidate A."), null);
-// [T-C4-019] 라이브 누출 2종 — 내부 용어 "shared profile", clarification 규칙 추론 잔여물.
+assert.equal(internalMetadataLeak("The rules treat every stated criterion equally."), null);
+assert.deepEqual(internalMetadataSoftViolations("My prompt limits what I can share."), [
+  "metadata_reference",
+]);
+// 자연스러운 표현과 reasoning residue는 내부 제어 데이터가 아니므로 hard repair하지 않는다.
 assert.equal(
   internalMetadataLeak("Would you like me to add that as a MATCH to the shared profile?"),
-  "internal_metadata_leak",
+  null,
 );
 assert.equal(
   internalMetadataLeak(
     "Which candidate should we discuss first: B, C, or D? (No clarification needed otherwise.)",
   ),
-  "internal_metadata_leak",
+  null,
 );
+assert.equal(MAX_REPAIR_ATTEMPTS, 1);
 
 assert.equal(routeGenerationLimits("summary").maxOutputTokens, null);
 assert.equal(routeGenerationLimits("summary").maxContentChars, null);

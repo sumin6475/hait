@@ -18,6 +18,7 @@ const outputRepairAttemptSchema = new mongoose.Schema(
     systemFingerprint: { type: String },
     extractedTraitIds: { type: [String], default: undefined },
     violations: { type: [String], default: undefined },
+    softViolations: { type: [String], default: undefined },
     error: { type: String },
   },
   { _id: false },
@@ -25,7 +26,7 @@ const outputRepairAttemptSchema = new mongoose.Schema(
 
 const outputRepairGuardSchema = new mongoose.Schema(
   {
-    candidate: { type: String, enum: ["A", "B", "C", "D"], required: true },
+    candidate: { type: String, enum: ["A", "B", "C", "D"] },
     reason: { type: String, required: true },
     maxTraitIds: { type: Number },
     allowedTraitIds: { type: [String], default: undefined },
@@ -172,7 +173,7 @@ const aiInterventionSchema = new mongoose.Schema(
     // [RequestIntent] anchor 인간 발화의 요청 분류 — scope block/guard/cue 주입의 단일 근거.
     requestIntentKind: { type: String },
     requestIntentSource: { type: String },
-    // Stored only when an output repair runs. It is diagnostic data, never a chat message.
+    // Diagnostic output audit. It may record a hard repair or accepted soft signals.
     repairAudit: { type: outputRepairAuditSchema, default: undefined },
 
     //API 호출 실패 시 에러 메시지

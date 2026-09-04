@@ -223,9 +223,14 @@ export interface PreferenceDecision {
   rows: Record<Cand, { matches: number; misses: number; total: number; ratio: number | null }>;
 }
 
-export function decidePreferenceFromVisibleCoverage(revealStats: any): PreferenceDecision {
-  // Preference follows the same visible board as summary/closing: human and Alex disclosures.
-  const surfaced = new Set([...allSurfacedIds(revealStats), ...humanConfirmedIds(revealStats)]);
+export function decidePreferenceFromKnownCoverage(revealStats: any): PreferenceDecision {
+  // Alex's preference uses everything Alex can legitimately know: the complete
+  // Z profile plus every trait that has entered the shared conversation.
+  const surfaced = new Set([
+    ...ALEX_Z_IDS,
+    ...allSurfacedIds(revealStats),
+    ...humanConfirmedIds(revealStats),
+  ]);
   const rows = {} as PreferenceDecision["rows"];
 
   for (const candidate of CANDIDATES) {
@@ -242,11 +247,9 @@ export function decidePreferenceFromVisibleCoverage(revealStats: any): Preferenc
     };
   }
 
-  // Compare only profiles that have enough two-sided information on the visible
-  // board. Hidden Alex notes are never added here. This keeps a zero-MISS or
-  // barely mentioned candidate from winning through missing-data arithmetic,
-  // while an untouched fourth candidate no longer blocks a provisional read of
-  // the profiles the group has actually discussed.
+  // Compare only profiles with enough two-sided known information. Alex's own
+  // profile normally makes all four candidates eligible; the threshold remains
+  // as a defensive guard for malformed or incomplete datasets.
   const comparedCandidates = CANDIDATES.filter(
     (candidate) =>
       rows[candidate].matches > 0 && rows[candidate].misses > 0 && rows[candidate].total >= 3,
@@ -299,18 +302,28 @@ export function decidePreferenceFromVisibleCoverage(revealStats: any): Preferenc
   };
 }
 
-/** Backwards-compatible name; preference now uses visible, not human-only, coverage. */
+/** Backwards-compatible alias retained for existing callers. */
+export function decidePreferenceFromVisibleCoverage(revealStats: any): PreferenceDecision {
+  return decidePreferenceFromKnownCoverage(revealStats);
+}
+
+/** Backwards-compatible alias retained for existing callers. */
 export function decidePreferenceFromConfirmedCoverage(revealStats: any): PreferenceDecision {
-  return decidePreferenceFromVisibleCoverage(revealStats);
+  return decidePreferenceFromKnownCoverage(revealStats);
 }
 
+export function preferredCandidateFromKnownCoverage(revealStats: any): Cand | null {
+  return decidePreferenceFromKnownCoverage(revealStats).candidate;
+}
+
+/** Backwards-compatible alias retained for existing callers. */
 export function preferredCandidateFromVisibleCoverage(revealStats: any): Cand | null {
-  return decidePreferenceFromVisibleCoverage(revealStats).candidate;
+  return preferredCandidateFromKnownCoverage(revealStats);
 }
 
-/** Backwards-compatible name; preference now uses visible, not human-only, coverage. */
+/** Backwards-compatible alias retained for existing callers. */
 export function preferredCandidateFromConfirmedCoverage(revealStats: any): Cand | null {
-  return preferredCandidateFromVisibleCoverage(revealStats);
+  return preferredCandidateFromKnownCoverage(revealStats);
 }
 
 function formatCandidateList(candidates: Cand[]): string {
@@ -321,23 +334,23 @@ function formatCandidateList(candidates: Cand[]): string {
 }
 
 export function formatPreferenceDecision(revealStats: any): string {
-  const decision = decidePreferenceFromVisibleCoverage(revealStats);
+  const decision = decidePreferenceFromKnownCoverage(revealStats);
   const header = [
     "Internal preference cue (mandatory; never expose this label or its computation):",
-    "Use only the supplied outcome. Never state numerical evidence, describe how the outcome was computed, or mention a server rule.",
+    "This outcome combines Alex's complete own notes with every candidate trait shared in the conversation. Use only the supplied outcome. Never mention a server rule.",
   ];
 
   if (!decision.eligible) {
     return [
       ...header,
-      "State: NO_CURRENT_PREFERENCE — the visible shared picture does not yet contain at least two sufficiently covered MATCH/MISS profiles.",
-      "If asked to choose, say briefly that not enough has been shared yet for a grounded comparison. Do not name a candidate, expose the missing-data rule, use private notes to force a choice, or list traits.",
+      "State: NO_CURRENT_PREFERENCE — Alex's own notes plus the shared information do not yet contain at least two sufficiently covered MATCH/MISS profiles.",
+      "If asked to choose, say briefly that the combined information is not yet sufficient for a grounded comparison. Do not name a candidate, expose the missing-data rule, or list traits.",
     ].join("\n");
   }
   const compared = formatCandidateList(decision.comparedCandidates);
   const partialQualification =
     decision.scope === "partial"
-      ? `This is provisional among the sufficiently covered candidates currently on the table (${compared}), not a full-field conclusion.`
+      ? `This is provisional among the sufficiently covered candidates in Alex's own notes plus the shared information (${compared}), not a full-field conclusion.`
       : null;
   if (decision.leaders.length > 1) {
     const candidates = formatCandidateList(decision.leaders);
@@ -345,7 +358,7 @@ export function formatPreferenceDecision(revealStats: any): string {
       ...header,
       `State: CURRENT_CO_PREFERENCE — ${candidates}.`,
       partialQualification,
-      `When the Turn Metadata permits a preference, name all of ${candidates}. ${decision.scope === "partial" ? "Explicitly qualify the read as applying only among the sufficiently covered candidates so far. " : ""}Say they currently look even at the top in the overall shared MATCH/MISS picture and that you would like to discuss them more before separating them. Do not pick one, state numerical evidence, or list traits.`,
+      `When the Turn Metadata permits a preference, name all of ${candidates}. ${decision.scope === "partial" ? "Explicitly qualify the read as applying only among the sufficiently covered candidates so far. " : ""}Say that combining your own notes with what the team has shared leaves them even at the top, and that you would like to discuss them more before separating them. Do not pick one or list traits unless the participant explicitly asks for the supporting facts.`,
     ]
       .filter(Boolean)
       .join("\n");
@@ -354,7 +367,7 @@ export function formatPreferenceDecision(revealStats: any): string {
     ...header,
     `State: CURRENT_PREFERENCE — Candidate ${decision.candidate}.`,
     partialQualification,
-    `When the Turn Metadata permits a preference, name only Candidate ${decision.candidate}. ${decision.scope === "partial" ? "Explicitly say this is the current read among the sufficiently covered candidates so far. " : ""}Say its overall shared profile currently looks strongest on MATCHES relative to MISSES. Do not state numerical evidence, enumerate traits, or use one standout trait as the reason.`,
+    `When the Turn Metadata permits a preference, name only Candidate ${decision.candidate}. ${decision.scope === "partial" ? "Explicitly say this is the current read among the sufficiently covered candidates so far. " : ""}Say that combining your own notes with what the team has shared gives that candidate the strongest overall MATCH/MISS profile. Do not enumerate traits unless the participant explicitly asks for the supporting facts, and never use one standout trait as the reason.`,
   ]
     .filter(Boolean)
     .join("\n");
@@ -571,7 +584,9 @@ function formatUnsurfacedNotes(messages: TranscriptMessage[], revealStats: any):
 }
 
 export interface RouteOutputScopeGuard {
-  candidate: Cand;
+  // Mediation has no single candidate scope; its guard only prevents new
+  // facts from entering the visible board.
+  candidate: Cand | null;
   // Candidate focus and trait-count limits are independent. A depth lock keeps
   // the subject stable; only Turn Metadata or an explicitly scope-less
   // request should mechanically limit how many traits can be answered.
@@ -587,6 +602,7 @@ export interface RouteOutputScopeGuard {
     | "route_single_point"
     | "selected_note_contribution"
     | "conversation_grounded_synthesis"
+    | "mediation_no_new_traits"
     | "explicit_complete_request";
 }
 
@@ -1154,8 +1170,20 @@ export function buildRouteUserContext(input: {
         reason: "selected_note_contribution",
       }
     : undefined;
+  const mediationNoNewTraitsGuard: RouteOutputScopeGuard | undefined =
+    input.routeKind === "mediation"
+      ? {
+          candidate: null,
+          maxTraitIds: 0,
+          reason: "mediation_no_new_traits",
+        }
+      : undefined;
   const outputScopeGuard =
-    requestScope?.guard ?? selectedContributionGuard ?? routeSinglePointGuard ?? focusGuard;
+    requestScope?.guard ??
+    selectedContributionGuard ??
+    routeSinglePointGuard ??
+    mediationNoNewTraitsGuard ??
+    focusGuard;
   return {
     userPrompt: blocks.join("\n\n"),
     contextFromSeq: window[0]?.seq ?? null,
