@@ -520,9 +520,9 @@ function requestOverridesFocusControl(
 ): boolean {
   if (routeKind !== "address" && routeKind !== "followup") return false;
   if (!anchor) return false;
-  // Any classified direct request determines its own subject. A stale depth
-  // lock must never redirect an answer back to the prior candidate.
-  if (intent.kind !== "none") return true;
+  if (intent.kind === "complete_all_candidates" || intent.kind === "complete_single_candidate") {
+    return true;
+  }
   return FOCUS_SCOPE_OVERRIDE.test(anchor.content) || candidateMentions(anchor.content).size > 1;
 }
 
@@ -635,12 +635,7 @@ export type RequestIntentKind =
   | "complete_all_candidates" // all candidates / all notes
   | "new_information_request" // information Alex has that is not yet visible
   | "scoped_information_request" // broad request with no explicit scope → one trait
-  | "candidate_information_request" // ordinary factual request about one candidate
   | "preference_request" // who is best / which one / your pick
-  | "task_rule_question" // criteria, weighting, or hypothetical task-rule question
-  | "conversation_meta_request" // readiness, permission, or another-question request
-  | "thread_reply" // answer, correction, or pushback to Alex without a new request
-  | "general_direct_request" // other direct request already routed to Alex
   | "none";
 
 // Where the participant asked Alex to source the answer. Visible-board reads
@@ -764,7 +759,7 @@ function deterministicCompleteResponse(input: {
 
 const BARE_ALEX_ADDRESS = /^\s*(?:hey\s+)?alex[\s?!.,]*$/i;
 
-export function requestBundleForAnchor(
+function requestBundleForAnchor(
   window: TranscriptMessage[],
   anchorSeq: number,
 ): { anchor?: TranscriptMessage; content: string } {
@@ -807,34 +802,6 @@ function requestScopeFromIntent(input: {
 }): { block: string; guard?: RouteOutputScopeGuard } | null {
   if (input.routeKind !== "address" && input.routeKind !== "followup") return null;
   const { intent } = input;
-
-  if (intent.kind === "task_rule_question") {
-    return {
-      block:
-        "Direct request type (server-derived): TASK_RULE_QUESTION. Answer the rule question itself first. All explicitly listed requirements count equally. Do not invent a new criterion, priority, weighting, threshold, or predicted outcome. If the question assumes one criterion outweighs another, correct that assumption briefly.",
-    };
-  }
-
-  if (intent.kind === "conversation_meta_request") {
-    return {
-      block:
-        "Direct request type (server-derived): CONVERSATION_META_REQUEST. Answer the conversational request naturally and briefly. Do not volunteer candidate notes, redirect the agenda, or turn the reply into a discussion-management move.",
-    };
-  }
-
-  if (intent.kind === "thread_reply") {
-    return {
-      block:
-        "Direct response type (server-derived): THREAD_REPLY. Respond to the substance of what the participant just said to Alex. Do not treat it as a request for new notes, replace it with an agenda question, or volunteer a candidate summary.",
-    };
-  }
-
-  if (intent.kind === "general_direct_request") {
-    return {
-      block:
-        "Direct request type (server-derived): GENERAL_DIRECT_REQUEST. Answer the latest request itself in a natural, concise way. Do not substitute a candidate summary, a new agenda question, or an unsolicited note.",
-    };
-  }
 
   if (intent.kind === "complete_all_candidates") {
     return {
@@ -903,20 +870,6 @@ function requestScopeFromIntent(input: {
     };
   }
 
-  if (intent.kind === "candidate_information_request") {
-    const focus =
-      intent.candidate ??
-      currentTopicCandidate(
-        input.window.map((message) => ({ sender: message.speaker, content: message.content })),
-      ) ??
-      lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
-    return {
-      block: focus
-        ? `Direct request type (server-derived): CANDIDATE_INFORMATION_REQUEST. Answer the participant's actual question about Candidate ${focus}; do not replace it with a generic profile summary or a different question.`
-        : "Direct request type (server-derived): CANDIDATE_INFORMATION_REQUEST. The requested candidate is unclear; ask one brief necessary clarification instead of guessing or listing candidates.",
-    };
-  }
-
   if (intent.kind === "scoped_information_request") {
     const transcriptFocus = currentTopicCandidate(
       input.window.map((message) => ({ sender: message.speaker, content: message.content })),
@@ -978,7 +931,6 @@ export function buildRouteUserContext(input: {
   mediationFocusCandidate?: Cand | null;
   mediationEvidence?: string[];
   buildOnsSinceMediation?: number;
-  requestIntentOverride?: RequestIntent;
 }): {
   userPrompt: string;
   contextFromSeq: number | null;
@@ -1015,29 +967,6 @@ export function buildRouteUserContext(input: {
       ? "Session language: Korean. Return Alex's visible message in natural Korean."
       : "Session language: English. Return Alex's visible message in English.",
   ];
-  // Direct routes are already committed to answering Alex. Classify their
-  // bundled request before injecting role-specific candidate context, so a
-  // rules/meta question is not accidentally steered into a candidate monologue.
-  const requestBundle = requestBundleForAnchor(window, input.anchorSeq);
-  const anchor = requestBundle.anchor;
-  const requestIntent =
-    input.routeKind === "address" || input.routeKind === "followup"
-      ? (input.requestIntentOverride ?? classifyRequestIntent(requestBundle.content))
-      : NO_REQUEST_INTENT;
-  const suppressAmbientCandidateContext =
-    (input.routeKind === "address" || input.routeKind === "followup") &&
-    [
-      "task_rule_question",
-      "conversation_meta_request",
-      "thread_reply",
-      "general_direct_request",
-      "new_information_request",
-    ].includes(requestIntent.kind);
-  if (input.routeKind === "address" || input.routeKind === "followup") {
-    blocks.push(
-      "Direct-response override (server-derived): respond to the latest participant message itself. If it contains a question or request, begin with the substantive answer; otherwise respond directly to its substance. Peer/leader style and explanatory/inquiry style control only how the response is phrased; they never replace the response. Ask a clarification question only when information necessary to answer is genuinely missing.",
-    );
-  }
   if (input.routeKind === "build_on") {
     blocks.push(
       conversationGroundedSynthesis
@@ -1047,10 +976,10 @@ export function buildRouteUserContext(input: {
               "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
               `Selected new factual contribution (mandatory): ${selectedTrait.valence === "pos" ? "MATCH" : "MISS"} — ${selectedTrait.text}.`,
               inquiryCondition
-                ? "Use this as the only new fact, then ask one short alignment question about that same fact. Do not introduce, weigh, or combine another new fact."
-                : "Use this as the only new fact and state it directly. Add a short connection only when that connection is explicitly supported by the recent conversation; otherwise stop after the fact. Do not recap the candidate's overall profile or restate the equal-weight rule.",
-              "Make the contribution relevant to the latest human message. A separate acknowledgment is optional and usually unnecessary. Because this note was not previously on the table, present it as an additional or separate fact; never falsely call it 'that point' as though the person just said it.",
-              "Use complete conversational prose with a varied sentence opening. Do not use mechanical meta-language such as 'Acknowledging that point,' 'Noted,' or 'Taking that in,' and do not emit a bare 'MATCH:' or 'MISS:' record.",
+                ? "Use this as the only new fact, then ask one short alignment question about that same fact. You may refer naturally to an already-spoken human point for coherence, but do not introduce, weigh, or combine another new fact."
+                : "Use this as the only new fact. Add at most one short clause explaining how it connects to the latest point; do not recap the candidate's overall profile or restate the equal-weight rule. You may refer naturally to an already-spoken human point for coherence, but do not introduce another new fact.",
+              "Respond to the substance of the latest human message before or while adding this note. Because this note was not previously on the table, present it as an additional or separate fact; never falsely call the selected note 'that point' as though the person just said it.",
+              "Use complete conversational prose. Do not use mechanical meta-language such as 'Acknowledging that point,' 'Noted,' or 'Taking that in,' and do not emit a bare 'MATCH:' or 'MISS:' record.",
               "Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff that is absent from the recent conversation.",
             ].join("\n")
           : "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
@@ -1104,9 +1033,7 @@ export function buildRouteUserContext(input: {
     // (파일럿 근거: 리더가 전체 그림을 모르면 리더 이미지가 훼손됨)
     // 피어: 아직 안 꺼낸 비공개 노트만 줘서 "자기 관점 기여"의 자연스러움을 유지한다.
     // (long_silence 피어에 팀 커버리지가 들어가면 리더식 중재 말투가 누출됨 — T-C3-011 관측)
-    if (suppressAmbientCandidateContext) {
-      // The intent-specific block below supplies only the facts needed to answer.
-    } else if (isLeaderCondition(input.conditionCode)) {
+    if (isLeaderCondition(input.conditionCode)) {
       const coverage =
         input.routeKind === "long_silence"
           ? formatConfirmedCoverage(input.revealStats)
@@ -1124,6 +1051,14 @@ export function buildRouteUserContext(input: {
   if (input.routeKind === "long_silence") {
     blocks.push(formatLongSilenceContinuity(window));
   }
+  // The anchor human message is classified exactly once; the same intent
+  // drives the focus-control override, the preference cue, and the scope block.
+  const requestBundle = requestBundleForAnchor(window, input.anchorSeq);
+  const anchor = requestBundle.anchor;
+  const requestIntent =
+    input.routeKind === "address" || input.routeKind === "followup"
+      ? classifyRequestIntent(requestBundle.content)
+      : NO_REQUEST_INTENT;
   const focusControlOverridden = requestOverridesFocusControl(
     input.routeKind,
     anchor,

@@ -15,17 +15,10 @@ import { allocSeq } from "./seq.js";
 import { getRoutePrompt } from "./routePromptRegistry.js";
 import {
   buildRouteUserContext,
-  classifyRequestIntent,
   formatDeterministicSummary,
-  requestBundleForAnchor,
   type RequestIntent,
-  type RouteOutputScopeGuard,
   type TranscriptMessage,
 } from "./routeContext.js";
-import {
-  resolveDirectRequestIntent,
-  type DirectRequestIntentResolution,
-} from "./directRequestJudge.js";
 import { transcriptLabel } from "./labels.js";
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
@@ -97,13 +90,6 @@ export function routeGenerationLimits(routeKind: RouteKind, requestIntent?: Requ
   return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
 }
 
-export function routeGenerationGuard(
-  routeKind: RouteKind,
-  guard: RouteOutputScopeGuard | undefined,
-): RouteOutputScopeGuard | undefined {
-  return routeKind === "address" || routeKind === "followup" ? undefined : guard;
-}
-
 export function deterministicGreetingContent(
   conditionCode: ConditionCode,
   language: "en" | "ko",
@@ -140,27 +126,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     content: message.content,
   }));
   const prompt = getRoutePrompt(input.conditionCode, input.routeKind);
-  let directIntentResolution: DirectRequestIntentResolution | undefined;
-  if (input.routeKind === "address" || input.routeKind === "followup") {
-    const requestBundle = requestBundleForAnchor(messages, input.anchorSeq);
-    directIntentResolution = await resolveDirectRequestIntent({
-      fastIntent: classifyRequestIntent(requestBundle.content),
-      request: requestBundle.content,
-      recentConversation: messages.map(({ speaker, content }) => ({ speaker, content })),
-      fallbackIntent:
-        input.routeKind === "followup"
-          ? { kind: "thread_reply", candidate: null, source: "alex_notes" }
-          : { kind: "general_direct_request", candidate: null, source: "alex_notes" },
-    });
-    if (directIntentResolution.method !== "regex") {
-      log.info(
-        `[route-turn] direct_request_intent method=${directIntentResolution.method} ` +
-          `kind=${directIntentResolution.intent.kind} candidate=${directIntentResolution.intent.candidate ?? "none"} ` +
-          `anchor=${input.anchorSeq} session=${input.sessionCode}` +
-          (directIntentResolution.error ? ` error=${directIntentResolution.error}` : ""),
-      );
-    }
-  }
   const context = buildRouteUserContext({
     routeKind: input.routeKind,
     conditionCode: input.conditionCode,
@@ -174,7 +139,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     mediationFocusCandidate: input.mediationFocusCandidate,
     mediationEvidence: input.mediationEvidence,
     buildOnsSinceMediation: input.buildOnsSinceMediation,
-    requestIntentOverride: directIntentResolution?.intent,
   });
   const previouslySurfacedTraitIds = [
     ...new Set([
@@ -188,8 +152,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     focusHumanConfirmedCount: context.focusDepthState.humanConfirmedCount,
     focusDepthThreshold: context.focusDepthState.threshold,
     focusDirective: context.focusDepthState.directive,
-    focusGuarded:
-      routeGenerationGuard(input.routeKind, context.outputScopeGuard)?.reason === "focus_depth",
+    focusGuarded: context.outputScopeGuard?.reason === "focus_depth",
   };
 
   const recordGenerationFailure = async (
@@ -224,9 +187,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       ...focusDepthAudit,
       requestIntentKind: context.requestIntent.kind,
       requestIntentSource: context.requestIntent.source,
-      requestIntentMethod: directIntentResolution?.method,
-      requestIntentClassifierModel: directIntentResolution?.model,
-      requestIntentClassifierError: directIntentResolution?.error,
       generationSucceeded: false,
       broadcastSucceeded: false,
       repairAudit,
@@ -271,10 +231,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     : summaryContent
       ? "server-deterministic-summary"
       : "server-deterministic-peer-complete";
-  // Direct answers rely on their intent-specific prompt block. Candidate and
-  // trait repair guards are retained only for constrained contribution routes;
-  // they previously rejected correct answers to address/followup questions.
-  const generationGuard = routeGenerationGuard(input.routeKind, context.outputScopeGuard);
   const generated = deterministicContent
     ? {
         result: {
@@ -292,7 +248,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         systemPrompt: prompt.systemPrompt,
         userPrompt: context.userPrompt,
         limits: routeGenerationLimits(input.routeKind, context.requestIntent),
-        guard: generationGuard,
+        guard: context.outputScopeGuard,
         previouslySurfacedTraitIds,
         logContext:
           `stage=${input.decisionStage ?? "system"} route=${input.routeKind} ` +
@@ -328,11 +284,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       contextToSeq: context.contextToSeq ?? undefined,
       floorMs: input.floorMs,
       ...focusDepthAudit,
-      requestIntentKind: context.requestIntent.kind,
-      requestIntentSource: context.requestIntent.source,
-      requestIntentMethod: directIntentResolution?.method,
-      requestIntentClassifierModel: directIntentResolution?.model,
-      requestIntentClassifierError: directIntentResolution?.error,
       generationSucceeded: true,
       broadcastSucceeded: false,
       repairAudit: generated.repairAudit,
@@ -372,11 +323,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         contextToSeq: context.contextToSeq ?? undefined,
         floorMs: input.floorMs,
         ...focusDepthAudit,
-        requestIntentKind: context.requestIntent.kind,
-        requestIntentSource: context.requestIntent.source,
-        requestIntentMethod: directIntentResolution?.method,
-        requestIntentClassifierModel: directIntentResolution?.model,
-        requestIntentClassifierError: directIntentResolution?.error,
         generationSucceeded: true,
         broadcastSucceeded: false,
         repairAudit: generated.repairAudit,
@@ -445,12 +391,9 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       mediationEvidence: input.mediationEvidence,
       buildOnsSinceMediation: input.buildOnsSinceMediation,
       mediationTrigger: input.mediationTrigger,
-      outputScopeCandidate: generationGuard?.candidate,
+      outputScopeCandidate: context.outputScopeGuard?.candidate,
       requestIntentKind: context.requestIntent.kind,
       requestIntentSource: context.requestIntent.source,
-      requestIntentMethod: directIntentResolution?.method,
-      requestIntentClassifierModel: directIntentResolution?.model,
-      requestIntentClassifierError: directIntentResolution?.error,
       outputScopeRepaired: Boolean(generated.scopeRepair),
       outputScopeViolation: generated.scopeRepair?.violation,
       internalMetadataRepaired: Boolean(generated.internalMetadataRepair),

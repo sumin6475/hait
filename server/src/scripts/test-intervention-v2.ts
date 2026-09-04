@@ -31,13 +31,8 @@ import {
 } from "../lib/informationPools.js";
 import { internalMetadataLeak, outputScopeViolation } from "../lib/routeScopedGeneration.js";
 import { validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
-import {
-  deterministicGreetingContent,
-  routeGenerationGuard,
-  routeGenerationLimits,
-} from "../lib/routeTurn.js";
+import { deterministicGreetingContent, routeGenerationLimits } from "../lib/routeTurn.js";
 import { validateJudgeDecisionSelection } from "../lib/interventionJudge.js";
-import { resolveDirectRequestIntent } from "../lib/directRequestJudge.js";
 import { TRAIT_DB } from "../lib/traitData.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 
@@ -47,10 +42,22 @@ assert.equal(keys.filter((key) => key.startsWith("C1.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C2.")).length, 9);
 assert.equal(keys.filter((key) => key.startsWith("C3.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C4.")).length, 9);
-assert.equal(deterministicGreetingContent("C1", "en"), deterministicGreetingContent("C3", "en"));
-assert.equal(deterministicGreetingContent("C2", "en"), deterministicGreetingContent("C4", "en"));
-assert.equal(deterministicGreetingContent("C1", "ko"), deterministicGreetingContent("C3", "ko"));
-assert.equal(deterministicGreetingContent("C2", "ko"), deterministicGreetingContent("C4", "ko"));
+assert.equal(
+  deterministicGreetingContent("C1", "en"),
+  deterministicGreetingContent("C3", "en"),
+);
+assert.equal(
+  deterministicGreetingContent("C2", "en"),
+  deterministicGreetingContent("C4", "en"),
+);
+assert.equal(
+  deterministicGreetingContent("C1", "ko"),
+  deterministicGreetingContent("C3", "ko"),
+);
+assert.equal(
+  deterministicGreetingContent("C2", "ko"),
+  deterministicGreetingContent("C4", "ko"),
+);
 assert.match(deterministicGreetingContent("C1", "en"), /^Hi everyone/);
 assert.match(deterministicGreetingContent("C2", "en"), /^Let's get started/);
 assert.doesNotMatch(deterministicGreetingContent("C1", "en"), /Candidate [ABCD]|\?/);
@@ -65,20 +72,6 @@ const ordinaryIntervention = new AIIntervention({
 });
 assert.equal(ordinaryIntervention.validateSync(), undefined);
 assert.equal(ordinaryIntervention.toObject().repairAudit, undefined);
-
-const regexIntent = {
-  kind: "new_information_request" as const,
-  candidate: "A" as const,
-  source: "alex_notes" as const,
-};
-assert.deepEqual(
-  await resolveDirectRequestIntent({
-    fastIntent: regexIntent,
-    request: "Do you have any new information about Candidate A?",
-    recentConversation: [],
-  }),
-  { intent: regexIntent, method: "regex" },
-);
 
 assert.deepEqual(
   validateJudgeDecisionSelection(
@@ -253,7 +246,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.7.3");
+    assert.equal(resolvedPrompt.promptVersion, "1.7.2");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -292,20 +285,21 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   const unified = getRoutePrompt(condition, "build_on").systemPrompt;
   assert.match(unified, /one conversational policy for every route/i);
   assert.match(unified, /Respond to the meaning of the latest message/i);
-  assert.match(unified, /On build_on turns, give the supplied contribution/i);
-  assert.match(unified, /separate acknowledgment is optional and usually unnecessary/i);
-  assert.match(unified, /vary sentence structure/i);
+  assert.match(unified, /Every build_on turn briefly takes up the latest human point/i);
+  assert.match(unified, /does not need a separate opening phrase/i);
+  assert.match(unified, /never treat one transition as required/i);
   assert.match(unified, /address or followup must begin with the substantive answer/i);
   assert.doesNotMatch(unified, /introduce it with ‘also’ or ‘from my notes’/i);
-  assert.match(unified, /address and followup turns, begin with the substantive answer/is);
-  assert.match(unified, /directly relevant to the latest human point/i);
+  assert.match(
+    unified,
+    /address and followup turns, begin with the substantive answer/is,
+  );
+  assert.match(unified, /On build_on turns, engage the latest human reasoning/i);
   assert.match(unified, /separate fact rather than the same fact/i);
   assert.match(unified, /On mediation turns, briefly state where the discussion stands/i);
   assert.match(unified, /Mediation is process guidance, not a forced candidate switch/i);
   assert.match(unified, /On backchannel turns, react briefly without adding facts/i);
   assert.match(unified, /ordinary first-person language/i);
-  assert.doesNotMatch(unified, /I see what you mean/i);
-  assert.doesNotMatch(unified, /use one brief uptake/i);
   assert.match(unified, /Never emit database-like labels/i);
   assert.match(unified, /Internal preference cue, treat it as mandatory and authoritative/i);
   assert.match(unified, /request for Alex's choice is not a request for the full list/i);
@@ -962,9 +956,10 @@ assert.equal(
     [],
     scopedInformationContext.outputScopeGuard!,
   ),
-  null,
+  "too_many_trait_labels",
 );
-// "MATCH or MISS" confirmation wording is not a new factual disclosure.
+// [T-C4-019] 라벨 카운트는 트레이트 도입 위치(괄호/대시/콜론)만 센다 — 확인 어휘는 오탐이었다.
+// "MATCH or MISS" 접속 언급은 트레이트 공개가 아니다 (라이브 anchor=7: 트레이트 1개 공개, 라벨 2회).
 assert.equal(
   outputScopeViolation(
     "Candidate A has a very good sense for recognizing dangerous situations. Do you want me to add the next MATCH or MISS for A from my notes?",
@@ -982,14 +977,14 @@ assert.equal(
   ),
   null,
 );
-// Label shape is a soft style issue; extracted factual scope is the hard guard.
+// 도입 위치 라벨 2개는 여전히 차단된다 (라이브 anchor=6의 실제 이중 공개 형태).
 assert.equal(
   outputScopeViolation(
     "Candidate A is very well organized (MATCH) and sometimes unfriendly (MISS).",
     ["A_p4"],
     scopedInformationContext.outputScopeGuard!,
   ),
-  null,
+  "too_many_trait_labels",
 );
 assert.equal(
   outputScopeViolation(
@@ -1542,120 +1537,6 @@ assert.doesNotMatch(focusedLongSilenceContext.userPrompt, /Anti-repeat/);
 assert.match(bareAddressContext.userPrompt, /Notation \(server-derived\)/);
 assert.match(focusedLongSilenceContext.userPrompt, /Notation \(server-derived\)/);
 
-const taskRuleContext = buildRouteUserContext({
-  routeKind: "followup",
-  conditionCode: "C2",
-  messages: [
-    ...explicitReturnMessages,
-    {
-      seq: 10,
-      senderRole: "humanX",
-      speaker: "Participant X",
-      content: "Does reliability outweigh the other criteria?",
-    },
-  ],
-  revealStats: focusDepthStats,
-  language: "en",
-  anchorSeq: 10,
-  requestIntentOverride: {
-    kind: "task_rule_question",
-    candidate: null,
-    source: "alex_notes",
-  },
-});
-assert.equal(taskRuleContext.requestIntent.kind, "task_rule_question");
-assert.match(taskRuleContext.userPrompt, /Direct-response override/);
-assert.match(taskRuleContext.userPrompt, /All explicitly listed requirements count equally/i);
-assert.match(taskRuleContext.userPrompt, /Do not invent a new criterion.*predicted outcome/i);
-assert.doesNotMatch(taskRuleContext.userPrompt, /Conversational target: Candidate A/);
-assert.doesNotMatch(taskRuleContext.userPrompt, /Visible on-table coverage/);
-assert.equal(taskRuleContext.outputScopeGuard, undefined);
-
-const conversationMetaContext = buildRouteUserContext({
-  routeKind: "address",
-  conditionCode: "C1",
-  messages: [
-    ...explicitReturnMessages,
-    {
-      seq: 10,
-      senderRole: "humanX",
-      speaker: "Participant X",
-      content: "Can you answer another question, Alex?",
-    },
-  ],
-  revealStats: focusDepthStats,
-  language: "en",
-  anchorSeq: 10,
-  requestIntentOverride: {
-    kind: "conversation_meta_request",
-    candidate: null,
-    source: "alex_notes",
-  },
-});
-assert.match(conversationMetaContext.userPrompt, /CONVERSATION_META_REQUEST/);
-assert.match(conversationMetaContext.userPrompt, /Answer the conversational request naturally/i);
-assert.doesNotMatch(conversationMetaContext.userPrompt, /Relevant not-yet-surfaced notes/);
-assert.equal(conversationMetaContext.outputScopeGuard, undefined);
-
-const threadReplyContext = buildRouteUserContext({
-  routeKind: "followup",
-  conditionCode: "C4",
-  messages: [
-    ...explicitReturnMessages,
-    {
-      seq: 10,
-      senderRole: "humanX",
-      speaker: "Participant X",
-      content: "No, I don't think that follows from what we know.",
-    },
-  ],
-  revealStats: focusDepthStats,
-  language: "en",
-  anchorSeq: 10,
-  requestIntentOverride: {
-    kind: "thread_reply",
-    candidate: null,
-    source: "alex_notes",
-  },
-});
-assert.match(threadReplyContext.userPrompt, /THREAD_REPLY/);
-assert.match(threadReplyContext.userPrompt, /Respond to the substance/i);
-assert.doesNotMatch(threadReplyContext.userPrompt, /Visible on-table coverage/);
-assert.equal(threadReplyContext.outputScopeGuard, undefined);
-
-const semanticNewInformationContext = buildRouteUserContext({
-  routeKind: "followup",
-  conditionCode: "C1",
-  messages: [
-    ...explicitReturnMessages,
-    {
-      seq: 10,
-      senderRole: "humanX",
-      speaker: "Participant X",
-      content: "Is there anything about A that has not come up yet?",
-    },
-  ],
-  revealStats: focusDepthStats,
-  language: "en",
-  anchorSeq: 10,
-  requestIntentOverride: {
-    kind: "new_information_request",
-    candidate: "A",
-    source: "alex_notes",
-  },
-});
-assert.match(
-  semanticNewInformationContext.userPrompt,
-  /asked for new information about Candidate A/i,
-);
-assert.match(semanticNewInformationContext.userPrompt, /not yet visible/i);
-assert.doesNotMatch(semanticNewInformationContext.userPrompt, /Visible on-table coverage/);
-assert.equal(semanticNewInformationContext.outputScopeGuard?.reason, "new_information_request");
-assert.equal(
-  routeGenerationGuard("followup", semanticNewInformationContext.outputScopeGuard),
-  undefined,
-);
-
 const buildOnScopeContext = buildRouteUserContext({
   routeKind: "build_on",
   conditionCode: "C1",
@@ -1694,7 +1575,10 @@ assert.match(
   /Selected new factual contribution.*very well organized/is,
 );
 assert.match(selectedBuildOnContext.userPrompt, /additional or separate fact/i);
-assert.match(selectedBuildOnContext.userPrompt, /never falsely call it 'that point'/i);
+assert.match(
+  selectedBuildOnContext.userPrompt,
+  /never falsely call the selected note 'that point'/i,
+);
 assert.match(selectedBuildOnContext.userPrompt, /complete conversational prose/i);
 assert.match(selectedBuildOnContext.userPrompt, /Do not invent an operational scenario/i);
 assert.deepEqual(selectedBuildOnContext.outputScopeGuard, {
@@ -1704,10 +1588,6 @@ assert.deepEqual(selectedBuildOnContext.outputScopeGuard, {
   requiredTraitId: "A_p4",
   reason: "selected_note_contribution",
 });
-assert.deepEqual(
-  routeGenerationGuard("build_on", selectedBuildOnContext.outputScopeGuard),
-  selectedBuildOnContext.outputScopeGuard,
-);
 
 const selectedXaiBuildOnContext = buildRouteUserContext({
   routeKind: "build_on",
@@ -1721,12 +1601,12 @@ const selectedXaiBuildOnContext = buildRouteUserContext({
 });
 assert.match(
   selectedXaiBuildOnContext.userPrompt,
-  /Add a short connection only when that connection is explicitly supported/is,
+  /at most one short clause explaining how it connects to the latest point/is,
 );
 assert.match(selectedXaiBuildOnContext.userPrompt, /do not recap the candidate's overall profile/i);
 assert.match(
   selectedXaiBuildOnContext.userPrompt,
-  /Make the contribution relevant to the latest human message/i,
+  /Respond to the substance of the latest human message/i,
 );
 assert.deepEqual(selectedXaiBuildOnContext.outputScopeGuard, {
   candidate: "A",
@@ -1762,7 +1642,7 @@ assert.equal(
     selectedBuildOnContext.outputScopeGuard!,
     ["A_n5"],
   ),
-  null,
+  "trait_outside_selected_contribution",
 );
 assert.equal(
   outputScopeViolation(
@@ -1933,16 +1813,16 @@ assert.equal(
   "internal_metadata_leak",
 );
 assert.equal(internalMetadataLeak("Let's keep looking at Candidate A."), null);
-// Ordinary chat phrases are not internal metadata. Only explicit control terms are repaired.
+// [T-C4-019] 라이브 누출 2종 — 내부 용어 "shared profile", clarification 규칙 추론 잔여물.
 assert.equal(
   internalMetadataLeak("Would you like me to add that as a MATCH to the shared profile?"),
-  null,
+  "internal_metadata_leak",
 );
 assert.equal(
   internalMetadataLeak(
     "Which candidate should we discuss first: B, C, or D? (No clarification needed otherwise.)",
   ),
-  null,
+  "internal_metadata_leak",
 );
 
 assert.equal(routeGenerationLimits("summary").maxOutputTokens, null);
