@@ -64,9 +64,18 @@ When it is unclear, answer false.
 
 Output JSON only.`;
 
-export async function isFollowupToAlex(
+export type FollowupJudgeOutcome = "true" | "false" | "empty" | "timeout" | "error";
+
+export interface FollowupJudgeResult {
+  answer: boolean | null;
+  outcome: FollowupJudgeOutcome;
+  model: string;
+  error?: string;
+}
+
+export async function judgeFollowupToAlex(
   transcript: { speaker: string; content: string }[],
-): Promise<boolean | null> {
+): Promise<FollowupJudgeResult> {
   const lines = transcript.map((t) => `${t.speaker}: ${t.content}`).join("\n");
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
@@ -88,9 +97,24 @@ export async function isFollowupToAlex(
       { signal: ctrl.signal },
     );
     clearTimeout(to);
-    return resp.output_parsed?.answer ?? null;
-  } catch {
+    const answer = resp.output_parsed?.answer;
+    return answer === undefined
+      ? { answer: null, outcome: "empty", model: MODEL }
+      : { answer, outcome: answer ? "true" : "false", model: MODEL };
+  } catch (error: any) {
     clearTimeout(to);
-    return null; // 실패 = 판정 없음 = 면제 안 함 (보수적)
+    const timeout = error?.name === "AbortError" || error?.message?.includes("aborted");
+    return {
+      answer: null,
+      outcome: timeout ? "timeout" : "error",
+      model: MODEL,
+      error: timeout ? `timeout(${TIMEOUT_MS}ms)` : (error?.message ?? String(error)),
+    };
   }
+}
+
+export async function isFollowupToAlex(
+  transcript: { speaker: string; content: string }[],
+): Promise<boolean | null> {
+  return (await judgeFollowupToAlex(transcript)).answer;
 }

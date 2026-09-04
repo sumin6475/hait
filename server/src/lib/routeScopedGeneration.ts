@@ -88,12 +88,6 @@ const INTERNAL_METADATA_PATTERNS = [
   /\b(?:cannot|can['’]?t|unable to) (?:share|reveal|follow|answer).{0,48}\b(?:prompt|instructions?|rules?|policy|scope)\b/i,
   /\bexplicit[_ -]human[_ -]focus\b/i,
   /\bconversational target:\s*Candidate\b/i,
-  // [T-C4-019] Alex's notes are "my notes"/"what I've got" only — "shared profile"
-  // is an internal-sounding term (observed live in T-C4-019 seq 8 and repair drafts).
-  /\bshared profile\b/i,
-  // [T-C4-019] reasoning residue about the address clarification rule leaked into a
-  // visible message: "... (No clarification needed otherwise.)" (T-C4-019 seq 26).
-  /\bclarification needed\b/i,
 ];
 
 export function internalMetadataLeak(content: string): string | null {
@@ -110,7 +104,6 @@ export function outputScopeViolation(
 ): string | null {
   const previouslySurfaced = new Set(previouslySurfacedTraitIds);
   const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
-  const restatedIds = extractedIds.length - newlyIntroducedIds.length;
   // allowedTraitIds constrains facts introduced by this turn. Previously it
   // also rejected an already-visible trait used in a natural uptake, which
   // forced build-ons to ignore the sentence they were answering.
@@ -120,37 +113,8 @@ export function outputScopeViolation(
   ) {
     return "trait_outside_selected_contribution";
   }
-  const restatedOutsideSelection = guard.requiredTraitId
-    ? extractedIds.filter((id) => id !== guard.requiredTraitId && previouslySurfaced.has(id))
-    : [];
-  // Conversational uptake may name an already-visible human point, but a
-  // selected one-fact build-on must not turn that allowance into a weighing or
-  // tradeoff question. This is the C3/C4 framing failure seen in pilot turns.
-  if (
-    restatedOutsideSelection.length > 0 &&
-    /\b(?:weigh(?:ed|ing)?|balanc(?:e|ed|es|ing)|offsets?|outweighs?|trade-?offs?|tolerat(?:e|ed|es|ing)|disqualif(?:y|ied|ies|ying)|more important|less important)\b/i.test(
-      content,
-    )
-  ) {
-    return "trait_outside_selected_contribution";
-  }
   if (guard.requiredTraitId && !extractedIds.includes(guard.requiredTraitId)) {
     return "selected_trait_missing";
-  }
-  // [T-C4-019] Count labels only in trait-introducing positions: "(MATCH)", "(MISS)",
-  // "MATCH —", "MISS:". Bare confirmation vocabulary ("add the next MATCH or MISS",
-  // "mark this as a MISS") repeats labels without adding traits and was producing
-  // false too_many_trait_labels repairs (T-C4-019 anchors 7 and 16 each disclosed
-  // exactly one trait but carried two label mentions).
-  const explicitTraitLabels =
-    content.match(/\(\s*(?:MATCH|MISS)\s*\)|\b(?:MATCH|MISS)\s*[—–:]/gi)?.length ?? 0;
-  const maxExplicitTraitLabels = guard.allowedTraitIds
-    ? guard.allowedTraitIds.length
-    : guard.maxTraitIds !== undefined
-      ? guard.maxTraitIds + restatedIds
-      : undefined;
-  if (maxExplicitTraitLabels !== undefined && explicitTraitLabels > maxExplicitTraitLabels) {
-    return "too_many_trait_labels";
   }
   // maxTraitIds limits only information newly introduced by this Alex turn.
   // A natural acknowledgement of an already surfaced human point must not turn
@@ -232,10 +196,9 @@ export async function generateScopedRouteMessage(input: {
       `maxTraits=${input.guard.maxTraitIds ?? "none"} extracted=${extractedIds?.length ?? 0}`
     : "guard=none";
 
-  // [T-C4-019] Up to two repair attempts. A single attempt lost whole turns both
-  // when the rewrite still violated the scope (anchors 3, 52) and when the rewrite
-  // call itself came back as prose instead of the JSON object (anchor 6).
-  const MAX_REPAIR_ATTEMPTS = 2;
+  // Repairs are now reserved for hard factual-scope or true internal-metadata
+  // violations. One retry avoids a repair loop replacing a useful live answer.
+  const MAX_REPAIR_ATTEMPTS = 1;
   let lastViolation = metadataViolation ?? scopeViolation!;
   let lastFailureError: string | null = null;
   let lastModel: string | undefined;

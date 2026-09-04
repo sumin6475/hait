@@ -12,7 +12,7 @@ import { AIIntervention } from "../models/AIIntervention.js";
 import { Message } from "../models/Message.js";
 import { Session } from "../models/Session.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
-import { buildFollowupCandidateTranscript, isFollowupToAlex } from "./followupJudge.js";
+import { buildFollowupCandidateTranscript, judgeFollowupToAlex } from "./followupJudge.js";
 import { judgeIntervention, JUDGE_WINDOW_SIZE } from "./interventionJudge.js";
 import {
   detectDirectAddress,
@@ -946,7 +946,14 @@ export async function onHumanMessage(input: {
   const sinceAI = messagesSinceLastAI(docs);
   const followupWindow = buildFollowupCandidateTranscript(transcript(docs));
   if (!priorityRoute && followupWindow) {
-    if (await isFollowupToAlex(followupWindow)) {
+    const followupJudge = await judgeFollowupToAlex(followupWindow);
+    log.info(
+      `[intervention-v2] followup_judge anchor=${input.messageSeq} ` +
+        `outcome=${followupJudge.outcome} model=${followupJudge.model} ` +
+        `session=${runtime.sessionCode}` +
+        (followupJudge.error ? ` error=${followupJudge.error}` : ""),
+    );
+    if (followupJudge.answer) {
       priorityRoute = "followup";
       priorityEvidence = "single_human_speaker_since_alex";
     }

@@ -172,6 +172,9 @@ const aiInterventionSchema = new mongoose.Schema(
     // [RequestIntent] anchor 인간 발화의 요청 분류 — scope block/guard/cue 주입의 단일 근거.
     requestIntentKind: { type: String },
     requestIntentSource: { type: String },
+    requestIntentMethod: { type: String, enum: ["regex", "semantic", "fallback"] },
+    requestIntentClassifierModel: { type: String },
+    requestIntentClassifierError: { type: String },
     // Stored only when an output repair runs. It is diagnostic data, never a chat message.
     repairAudit: { type: outputRepairAuditSchema, default: undefined },
 
