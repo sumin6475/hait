@@ -25,6 +25,8 @@ import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
 import { generateScopedRouteMessage, type OutputRepairAudit } from "./routeScopedGeneration.js";
+import { LEADER_OPENING, PEER_OPENING } from "./prompts.js";
+import { KO_LEADER_OPENING, KO_PEER_OPENING } from "./koPilot.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -86,6 +88,15 @@ export function routeGenerationLimits(routeKind: RouteKind, requestIntent?: Requ
   // timeoutMs 45s: any turn may now produce ~2_400 chars, which the old 30s
   // budget risked timing out (= lost turn, same contamination as truncation).
   return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
+}
+
+export function deterministicGreetingContent(
+  conditionCode: ConditionCode,
+  language: "en" | "ko",
+): string {
+  const leader = conditionCode === "C2" || conditionCode === "C4";
+  if (language === "ko") return leader ? KO_LEADER_OPENING : KO_PEER_OPENING;
+  return leader ? LEADER_OPENING : PEER_OPENING;
 }
 
 export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurnResult> {
@@ -198,18 +209,28 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     }
   }
 
-  // Summary is a factual board rendering, not a free-form generation task. Use
-  // the exact established layout directly so counts, trait lists, and line
-  // breaks cannot drift or be truncated. Every other route keeps the existing
-  // model generation and repair path unchanged.
+  // Greeting and summary are fixed-format turns, not free-form generation tasks.
+  // Use the strategy-neutral, role-specific opening constants and the exact summary
+  // layout so neither can drift or be truncated. Every other route keeps the
+  // existing model generation and repair path unchanged.
+  const greetingContent =
+    input.routeKind === "greeting"
+      ? deterministicGreetingContent(
+          input.conditionCode,
+          ((session as any).language ?? "en") as "en" | "ko",
+        )
+      : null;
   const summaryContent =
     input.routeKind === "summary"
       ? formatDeterministicSummary((session as any).revealStats, input.conditionCode)
       : null;
-  const deterministicContent = summaryContent ?? context.deterministicResponse ?? null;
-  const deterministicModel = summaryContent
-    ? "server-deterministic-summary"
-    : "server-deterministic-peer-complete";
+  const deterministicContent =
+    greetingContent ?? summaryContent ?? context.deterministicResponse ?? null;
+  const deterministicModel = greetingContent
+    ? "server-deterministic-greeting"
+    : summaryContent
+      ? "server-deterministic-summary"
+      : "server-deterministic-peer-complete";
   const generated = deterministicContent
     ? {
         result: {

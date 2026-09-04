@@ -976,8 +976,8 @@ export function buildRouteUserContext(input: {
               "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
               `Selected new factual contribution (mandatory): ${selectedTrait.valence === "pos" ? "MATCH" : "MISS"} — ${selectedTrait.text}.`,
               inquiryCondition
-                ? "Use this as the only new candidate fact, then ask at most one small alignment question about this contribution. You may refer naturally to an already-spoken human point for coherence, but do not introduce, weigh, or combine another new fact."
-                : "Use this as the only new candidate fact and briefly explain how it adds to or updates the candidate's overall equal-weight profile. You may refer naturally to an already-spoken human point for coherence, but do not introduce another new fact.",
+                ? "Use this as the only new fact, then ask one short alignment question about that same fact. You may refer naturally to an already-spoken human point for coherence, but do not introduce, weigh, or combine another new fact."
+                : "Use this as the only new fact. Add at most one short clause explaining how it connects to the latest point; do not recap the candidate's overall profile or restate the equal-weight rule. You may refer naturally to an already-spoken human point for coherence, but do not introduce another new fact.",
               "Respond to the substance of the latest human message before or while adding this note. Because this note was not previously on the table, present it as an additional or separate fact; never falsely call the selected note 'that point' as though the person just said it.",
               "Use complete conversational prose. Do not use mechanical meta-language such as 'Acknowledging that point,' 'Noted,' or 'Taking that in,' and do not emit a bare 'MATCH:' or 'MISS:' record.",
               "Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff that is absent from the recent conversation.",
@@ -1003,6 +1003,7 @@ export function buildRouteUserContext(input: {
           : "Observed process evidence: cadence checkpoint.",
         conditionMove,
         "Add no new candidate trait. Mediation means orienting the team's discussion state and next direction; it does not require conflict, does not require switching candidates, and must not tell the team which candidate to choose.",
+        "Keep the whole mediation to two short sentences and aim for 45 words or fewer. Name only the current focus and the coverage gap; do not enumerate discussed traits, counts, or lettered options. Put the next-step sentence or question on a new line.",
       ].join("\n"),
     );
   }

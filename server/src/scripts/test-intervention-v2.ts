@@ -31,7 +31,7 @@ import {
 } from "../lib/informationPools.js";
 import { internalMetadataLeak, outputScopeViolation } from "../lib/routeScopedGeneration.js";
 import { validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
-import { routeGenerationLimits } from "../lib/routeTurn.js";
+import { deterministicGreetingContent, routeGenerationLimits } from "../lib/routeTurn.js";
 import { validateJudgeDecisionSelection } from "../lib/interventionJudge.js";
 import { TRAIT_DB } from "../lib/traitData.js";
 import { AIIntervention } from "../models/AIIntervention.js";
@@ -42,6 +42,27 @@ assert.equal(keys.filter((key) => key.startsWith("C1.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C2.")).length, 9);
 assert.equal(keys.filter((key) => key.startsWith("C3.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C4.")).length, 9);
+assert.equal(
+  deterministicGreetingContent("C1", "en"),
+  deterministicGreetingContent("C3", "en"),
+);
+assert.equal(
+  deterministicGreetingContent("C2", "en"),
+  deterministicGreetingContent("C4", "en"),
+);
+assert.equal(
+  deterministicGreetingContent("C1", "ko"),
+  deterministicGreetingContent("C3", "ko"),
+);
+assert.equal(
+  deterministicGreetingContent("C2", "ko"),
+  deterministicGreetingContent("C4", "ko"),
+);
+assert.match(deterministicGreetingContent("C1", "en"), /^Hi everyone/);
+assert.match(deterministicGreetingContent("C2", "en"), /^Let's get started/);
+assert.doesNotMatch(deterministicGreetingContent("C1", "en"), /Candidate [ABCD]|\?/);
+assert.match(deterministicGreetingContent("C2", "en"), /together/i);
+assert.doesNotMatch(deterministicGreetingContent("C2", "en"), /\?/);
 
 const ordinaryIntervention = new AIIntervention({
   sessionId: "64b000000000000000000001",
@@ -225,7 +246,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.7.0");
+    assert.equal(resolvedPrompt.promptVersion, "1.7.1");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -264,7 +285,8 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   const unified = getRoutePrompt(condition, "build_on").systemPrompt;
   assert.match(unified, /one conversational policy for every route/i);
   assert.match(unified, /Respond to the meaning of the latest message/i);
-  assert.match(unified, /Every build_on turn begins by naturally responding/i);
+  assert.match(unified, /Every build_on turn starts with one very short, natural uptake/i);
+  assert.match(unified, /do not use ‘separately’ as a stock transition/i);
   assert.match(
     unified,
     /address and followup turns, answer the actual question.*first and directly/is,
@@ -278,7 +300,15 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   assert.match(unified, /Never emit database-like labels/i);
   assert.match(unified, /Internal preference cue, treat it as mandatory and authoritative/i);
   assert.match(unified, /request for Alex's choice is not a request for the full list/i);
+  assert.match(unified, /aim for 40 words or fewer/i);
+  assert.match(unified, /common B2-level words/i);
+  assert.match(unified, /do not use semicolons, em dashes, or chains of clauses/i);
 }
+
+assert.match(peerXai, /contribute one point from Alex's perspective/i);
+assert.match(peerAci, /contribute one point from Alex's perspective/i);
+assert.match(leaderXai, /state only the minimum discussion state needed/i);
+assert.match(leaderAci, /state only the minimum discussion state needed/i);
 
 // Inquiry wording remains a condition manipulation, not a route-level sentence
 // template. These three equivalent forms may rotate on C3 build-ons.
@@ -1568,8 +1598,9 @@ const selectedXaiBuildOnContext = buildRouteUserContext({
 });
 assert.match(
   selectedXaiBuildOnContext.userPrompt,
-  /adds to or updates.*overall equal-weight profile/is,
+  /at most one short clause explaining how it connects to the latest point/is,
 );
+assert.match(selectedXaiBuildOnContext.userPrompt, /do not recap the candidate's overall profile/i);
 assert.match(
   selectedXaiBuildOnContext.userPrompt,
   /Respond to the substance of the latest human message/i,
@@ -1647,6 +1678,9 @@ assert.match(
   /state clear.*most useful unresolved comparison or coverage gap/is,
 );
 assert.match(cadenceMediationContext.userPrompt, /does not require switching candidates/i);
+assert.match(cadenceMediationContext.userPrompt, /aim for 45 words or fewer/i);
+assert.match(cadenceMediationContext.userPrompt, /do not enumerate discussed traits/i);
+assert.match(cadenceMediationContext.userPrompt, /next-step sentence or question on a new line/i);
 assert.doesNotMatch(cadenceMediationContext.userPrompt, /Selected contribution/);
 
 const c2CadenceMediationContext = buildRouteUserContext({
