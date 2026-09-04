@@ -246,7 +246,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.7.1");
+    assert.equal(resolvedPrompt.promptVersion, "1.7.2");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -285,11 +285,14 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   const unified = getRoutePrompt(condition, "build_on").systemPrompt;
   assert.match(unified, /one conversational policy for every route/i);
   assert.match(unified, /Respond to the meaning of the latest message/i);
-  assert.match(unified, /Every build_on turn starts with one very short, natural uptake/i);
-  assert.match(unified, /do not use ‘separately’ as a stock transition/i);
+  assert.match(unified, /Every build_on turn briefly takes up the latest human point/i);
+  assert.match(unified, /does not need a separate opening phrase/i);
+  assert.match(unified, /never treat one transition as required/i);
+  assert.match(unified, /address or followup must begin with the substantive answer/i);
+  assert.doesNotMatch(unified, /introduce it with ‘also’ or ‘from my notes’/i);
   assert.match(
     unified,
-    /address and followup turns, answer the actual question.*first and directly/is,
+    /address and followup turns, begin with the substantive answer/is,
   );
   assert.match(unified, /On build_on turns, engage the latest human reasoning/i);
   assert.match(unified, /separate fact rather than the same fact/i);
