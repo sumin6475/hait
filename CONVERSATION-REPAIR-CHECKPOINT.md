@@ -80,6 +80,17 @@ session, so this branch can only ever produce `opp:1:group_request:alex` — whi
 was already `consumed_by_alex` at turnIndex 3. Nine of eighteen turns routed onto
 that dead id.
 
+**Attribution correction (2026-09-06, after re-reading the run).** That dead id
+did not cause any silence in this session. It was selected once, at turn 3.
+Turns 9 and 23 spoke through the *voluntary* path (`relevant_unsurfaced_information`,
+`routeReason: ledger_voluntary_act`) while ignoring it; turns 7, 17, 25 and 26
+never attempted to select it; turn 16 selected a different terminal id leaked by
+defect B. The damage from this branch is a terminal record that absorbs evidence
+forever plus an observer that never learns the id is closed — a correctness and
+auditability defect, not the speech-volume defect. **The keying itself is left
+unchanged** (see Gate 1 below for why); Gate 1's terminal-merge guard makes the
+deadness visible in `transition.rejected` so the decision can be made on data.
+
 `server/src/lib/conversationLedger.ts:610` — the reducer's merge branch attaches
 evidence to an existing opportunity **without checking status**, so terminal
 opportunities keep accumulating `evidenceSeqs` forever (`opp:1` grew to
@@ -179,27 +190,43 @@ start a later gate before the earlier one's tests pass**, because the later
 symptoms are downstream of the earlier causes — the generation layer is currently
 being blamed for receiving empty inputs.
 
-### Gate 1 — Opportunity identity (largest speech-volume recovery)
+### Gate 1 — Opportunity identity — DONE (`ebd697d`)
 
-1. `conversationLedger.ts:385` — derive `opportunitySourceSeq` from the current
-   trigger seq, not `observedThread.rootSeq`, so each turn can open a distinct id.
-2. `conversationLedger.ts:610` — reject evidence merges into an opportunity whose
-   status is in `TERMINAL_OPPORTUNITY_STATUSES`; open a new opportunity instead.
-3. Make the derivation cascade treat `alexRelation === "explicit_addressee"` as
-   satisfying the first branch, not only a non-empty `addressees` array.
-4. `interventionJudge.ts:595` — narrow the decision projection to
-   `status === "open" || status === "deferred"` so the JSON and the prose summary
-   agree on what is selectable.
+Shipped three changes, ordered by evidenced impact:
 
-Regression (`test-conversation-ledger`, `test-conversation-recovery`):
-- one session's thread-continuation branch produces N distinct opportunity ids
-  across N turns;
-- an evidence merge into a terminal opportunity is rejected;
-- an explicit request with `addressees: []` and
-  `alexRelation: "explicit_addressee"` opens a `direct_question`;
-- the judge prompt never contains a terminal opportunity id.
+1. `interventionJudge.ts` — extracted `conversationLedgerDecisionProjection(state)`,
+   an exported pure function returning exactly the selectable opportunities
+   (open + deferred, minus stale invited). Both the prose summary and the
+   serialized `Exact structured decision ledger` are now built from it, so they
+   can never disagree again. This was implicated in 4 of the 5 structural
+   silences (turns 16, 22, 25, 26).
+2. `conversationLedger.ts` — the derivation cascade now treats
+   `alexRelation === "explicit_addressee"` as addressing Alex even when
+   `addressees` is empty, still gated on `requestsAction`. Recorded as repair
+   code `alex_addressee_taken_from_explicit_relation` so over-firing stays
+   measurable. This was the sole cause of the dropped explicit request at turn 16.
+3. `conversationLedger.ts` — the reducer rejects evidence merges into an
+   opportunity in a terminal status (`opportunity:<id>:already_terminal`)
+   instead of growing a closed record.
 
-Exit check: replay `T-C2-034`; the seq 16 request must produce a `speak`.
+**Deliberately not changed:** the inferred thread-continuation branch still keys
+its id to the thread root. Re-keying it per Alex generation would widen Alex's
+entitlement to an invited opportunity that `opportunityMayBypassCooldown` still
+refuses, producing more `selected_opportunity_requires_cooldown` rejections and,
+through the same retry path as change 1, *more* capitulated silence. There is no
+evidence in the observed run that the dead id cost any speech. Change 3 now
+surfaces it in the audit; revisit with measurements after Gates 2–3.
+
+Regression coverage added to `server/src/scripts/test-conversation-ledger.ts`,
+reproducing all three shapes from the observed run. Each new assertion was
+verified to fail with its own fix reverted, so none of them is vacuous.
+
+Verified: `build`, `test:conversation-ledger`, `test:conversation-recovery`,
+`test:intervention-v2` all pass; `git diff --check` clean.
+
+Still open from the original Gate 1 exit check: replaying `T-C2-034` end to end
+to confirm turn 16 now produces a `speak`. That needs a live model run, which is
+the user's call.
 
 ### Gate 2 — Separate the real reason for silence
 
@@ -278,7 +305,22 @@ permission granted. Run `git diff --check` before every commit.
 Live smoke runs are the user's call (they own the server on port 3001). Per-gate
 exit checks above should be measured against the Section 2 baseline table.
 
-## 6. Invariants that must not regress
+## 6. Method note
+
+Existing tests in this repository were written alongside the defects they cover.
+`test-conversation-ledger.ts` asserts "standing opportunity identity is unique
+per thread origin" — that is the very property that lets one consumed id kill a
+derivation branch for a whole session. **Do not treat an existing assertion as
+evidence of intended design.** Re-derive intent from the code and the observed
+run, and when a fix requires changing a test, say so explicitly rather than
+bending the fix to fit.
+
+Equally, do not let a plausible causal story outrun the data. The first version
+of Section 3.A claimed nine turns of speech loss from a dead opportunity id; the
+run shows it cost none. Check attribution against the record before ranking a
+repair.
+
+## 7. Invariants that must not regress
 
 - Observer supplies current-turn evidence; a deterministic reducer owns threads,
   opportunities, and floor state.
@@ -296,9 +338,15 @@ exit checks above should be measured against the Section 2 baseline table.
   rejected invited opportunity speak immediately.
 - Shadow mode must not alter live routing, cadence, timing, or reservations.
 
-## 7. Progress log
+## 8. Progress log
 
 Append one line per completed gate: date, gate, commit, tests run, measured effect.
 
 - 2026-09-06 — Gate 0 (branch relocation + this checkpoint). Commit `362416b`
   snapshot; work moved off the production `main` checkout. No behavioral change.
+- 2026-09-06 — Gate 1 complete. Commit `ebd697d`. Judge decision projection,
+  addressee/relation dispatch, terminal-merge guard, plus three verified-failing
+  regressions. build + ledger + recovery + intervention-v2 green. Attribution for
+  root cause A corrected downward: the dead standing id cost no speech in the
+  observed run, so its keying was left unchanged and instrumented instead.
+  Live-replay exit check for turn 16 not yet run (needs a model run).
