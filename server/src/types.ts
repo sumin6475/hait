@@ -43,6 +43,13 @@ export type ProgressStep =
 // [Tier 0] AI 발화 경로 종류 — 분석/관측용
 export type PriorityRoute = "address" | "followup" | "long_silence" | null;
 export type MainJudgeDecision = "contribute" | "acknowledge" | "silent";
+export type CommunicativeAct =
+  | "answer"
+  | "participate"
+  | "follow"
+  | "contribute"
+  | "acknowledge"
+  | "mediate";
 // Where a turn was decided. Keep this separate from the Main Judge result so
 // cooldown, timer, priority, and route-gate suppressions remain distinguishable.
 export type InterventionDecisionStage =

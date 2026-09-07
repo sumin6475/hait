@@ -5,6 +5,8 @@ import { callAIStructured } from "../lib/openai.js";
 
   const result = await callAIStructured({
     systemPrompt: "You are Alex, an AI participant. Respond briefly to the discussion.",
+    developerPrompt:
+      "Current situation: two participants agree about Candidate C. Communicative act: acknowledge.",
     userPrompt: "Discussion so far:\nP-X-001: 나는 C가 좋아 보이는데\nP-Y-001: 나도 C가 강해 보여",
   });
 

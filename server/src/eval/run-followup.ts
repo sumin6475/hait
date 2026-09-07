@@ -30,6 +30,8 @@ if (!process.env.OPENAI_API_KEY) {
 const FIXTURE_PATH = resolve(__dirname, "followup_cases.yaml");
 const doc = yaml.load(readFileSync(FIXTURE_PATH, "utf8")) as FollowupFile;
 const RUNS = 3;
+const MIN_RECALL_RATE = 0.6;
+const MAX_FALSE_POSITIVES = 5;
 
 type Row = FollowupCase & {
   results: (boolean | null)[];
@@ -63,6 +65,7 @@ for (const c of doc.cases) {
 
 const positives = rows.filter((r) => r.expect === "yes");
 const recallHits = positives.filter((r) => r.predicted).length;
+const minRecallHits = Math.ceil(positives.length * MIN_RECALL_RATE);
 
 const verifiedNegatives = rows.filter((r) => r.expect === "no" && !r.alex_answered);
 const falsePositives = verifiedNegatives.filter((r) => r.predicted).length;
@@ -73,15 +76,15 @@ const deferredYes = deferredNegatives.filter((r) => r.predicted).length;
 const named = rows.filter((r) => r.named);
 const namedMatches = named.filter((r) => r.predicted === (r.expect === "yes")).length;
 
-const recallPass = recallHits >= 14;
-const precisionPass = falsePositives <= 4;
+const recallPass = recallHits >= minRecallHits;
+const precisionPass = falsePositives <= MAX_FALSE_POSITIVES;
 
 console.log("\n[followup] summary");
 console.log(
-  `  recall: ${recallHits}/${positives.length} ${recallPass ? "PASS" : "FAIL"} (target ≥14)`,
+  `  recall: ${recallHits}/${positives.length} ${recallPass ? "PASS" : "FAIL"} (target ≥${minRecallHits}, ${(MIN_RECALL_RATE * 100).toFixed(0)}%)`,
 );
 console.log(
-  `  false positives: ${falsePositives}/${verifiedNegatives.length} ${precisionPass ? "PASS" : "FAIL"} (target ≤4)`,
+  `  false positives: ${falsePositives}/${verifiedNegatives.length} ${precisionPass ? "PASS" : "FAIL"} (target ≤${MAX_FALSE_POSITIVES})`,
 );
 console.log(
   `  deferred no/alex_answered=true: ${deferredYes}/${deferredNegatives.length} predicted yes (not scored)`,

@@ -2,6 +2,7 @@ import type { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "../sockets/events.js";
 import type {
   ConditionCode,
+  CommunicativeAct,
   Candidate,
   InterventionDecisionStage,
   MainJudgeDecision,
@@ -18,8 +19,10 @@ import {
   formatDeterministicSummary,
   type RequestIntent,
   type RouteOutputScopeGuard,
+  type SelectedOpportunityGenerationContext,
   type TranscriptMessage,
 } from "./routeContext.js";
+import type { ConversationLedgerState, ReducerTransitionAudit } from "./conversationLedger.js";
 import { transcriptLabel } from "./labels.js";
 import { extractSurfacedTraits } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
@@ -28,6 +31,10 @@ import { allSurfacedIds } from "./informationPools.js";
 import { generateScopedRouteMessage, type OutputRepairAudit } from "./routeScopedGeneration.js";
 import { LEADER_OPENING, PEER_OPENING } from "./prompts.js";
 import { KO_LEADER_OPENING, KO_PEER_OPENING } from "./koPilot.js";
+import {
+  describeConversationSituation,
+  waitForConversationObservation,
+} from "./conversationObserver.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 
@@ -53,7 +60,38 @@ export interface RouteTurnInput {
   buildOnsSinceMediation?: number;
   mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons";
   mediationFocusCandidate?: Candidate | null;
+  expectedConversationEpoch?: number;
+  interactionObligationEpoch?: number;
+  postGenerationReevaluation?: boolean;
+  requestIntentOverride?: RequestIntent;
+  communicativeAct?: CommunicativeAct;
+  conversationSituation?: string;
+  judgeEvidenceSeqs?: number[];
+  controllerMode?: "legacy" | "ledger_shadow" | "ledger_active";
+  ledgerVersion?: string;
+  ledgerJudgeVersion?: string;
+  ledgerJudgePromptVersion?: string;
+  ledgerJudgeSchemaVersion?: string;
+  ledgerJudgeAttempts?: unknown[];
+  selectedOpportunity?: SelectedOpportunityGenerationContext;
+  onBroadcastSuccess?: (input: { messageSeq: number }) => Promise<{
+    stateAfter: ConversationLedgerState;
+    transition: ReducerTransitionAudit;
+  }>;
   commitGuard?: () => boolean;
+}
+
+export function blocksConsecutiveAITurn(input: {
+  lastSenderRole?: string;
+  routeKind: RouteKind;
+  postGenerationReevaluation?: boolean;
+}): boolean {
+  return (
+    input.lastSenderRole === "ai" &&
+    input.routeKind !== "closing" &&
+    input.routeKind !== "greeting" &&
+    !input.postGenerationReevaluation
+  );
 }
 
 export interface RouteTurnResult {
@@ -61,6 +99,8 @@ export interface RouteTurnResult {
   messageId?: string;
   messageSeq?: number;
   response?: string;
+  ledgerStateAfter?: ConversationLedgerState;
+  ledgerTransition?: ReducerTransitionAudit;
   error?: string;
 }
 
@@ -99,7 +139,8 @@ export function routeGenerationGuard(
   routeKind: RouteKind,
   guard: RouteOutputScopeGuard | undefined,
 ): RouteOutputScopeGuard | undefined {
-  return routeKind === "address" || routeKind === "followup" ? undefined : guard;
+  if (routeKind !== "address" && routeKind !== "followup") return guard;
+  return guard?.reason === "requested_narrowing" ? guard : undefined;
 }
 
 export function deterministicGreetingContent(
@@ -109,6 +150,24 @@ export function deterministicGreetingContent(
   const leader = conditionCode === "C2" || conditionCode === "C4";
   if (language === "ko") return leader ? KO_LEADER_OPENING : KO_PEER_OPENING;
   return leader ? LEADER_OPENING : PEER_OPENING;
+}
+
+function defaultCommunicativeAct(routeKind: RouteKind): CommunicativeAct | undefined {
+  switch (routeKind) {
+    case "address":
+      return "answer";
+    case "followup":
+      return "follow";
+    case "build_on":
+    case "long_silence":
+      return "contribute";
+    case "mediation":
+      return "mediate";
+    case "backchannel":
+      return "acknowledge";
+    default:
+      return undefined;
+  }
 }
 
 export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurnResult> {
@@ -124,9 +183,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
 
   const last = docs.at(-1);
   if (
-    last?.senderRole === "ai" &&
-    input.routeKind !== "closing" &&
-    input.routeKind !== "greeting"
+    blocksConsecutiveAITurn({
+      lastSenderRole: last?.senderRole,
+      routeKind: input.routeKind,
+      postGenerationReevaluation: input.postGenerationReevaluation,
+    })
   ) {
     return { ok: false, error: "anti_double_post" };
   }
@@ -137,6 +198,16 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     speaker: transcriptLabel(message.senderRole),
     content: message.content,
   }));
+  const observerSnapshot =
+    !input.conversationSituation && !["greeting", "summary", "closing"].includes(input.routeKind)
+      ? await waitForConversationObservation({
+          sessionId: input.sessionId,
+          anchorSeq: input.anchorSeq,
+        })
+      : null;
+  const conversationSituation =
+    input.conversationSituation ??
+    (observerSnapshot ? describeConversationSituation(observerSnapshot) : undefined);
   const prompt = getRoutePrompt(input.conditionCode, input.routeKind);
   const context = buildRouteUserContext({
     routeKind: input.routeKind,
@@ -151,6 +222,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     mediationFocusCandidate: input.mediationFocusCandidate,
     mediationEvidence: input.mediationEvidence,
     buildOnsSinceMediation: input.buildOnsSinceMediation,
+    requestIntentOverride: input.requestIntentOverride,
+    communicativeAct: input.communicativeAct ?? defaultCommunicativeAct(input.routeKind),
+    conversationSituation,
+    judgeEvidenceSeqs: input.judgeEvidenceSeqs,
+    selectedOpportunity: input.selectedOpportunity,
   });
   const previouslySurfacedTraitIds = [
     ...new Set([
@@ -167,6 +243,21 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     focusDirective: context.focusDepthState.directive,
     focusGuarded: generationGuard?.reason === "focus_depth",
   };
+  const ledgerControllerAudit = {
+    controllerMode: input.controllerMode,
+    ledgerVersion: input.ledgerVersion,
+    ledgerJudgeVersion: input.ledgerJudgeVersion,
+    ledgerJudgePromptVersion: input.ledgerJudgePromptVersion,
+    ledgerJudgeSchemaVersion: input.ledgerJudgeSchemaVersion,
+    ledgerJudgeAttempts: input.ledgerJudgeAttempts,
+    selectedOpportunityId: input.selectedOpportunity?.id,
+    selectedOpportunitySourceSeq: input.selectedOpportunity?.sourceSeq,
+    selectedOpportunityThreadId: input.selectedOpportunity?.threadId,
+    selectedOpportunityKind: input.selectedOpportunity?.kind,
+    selectedOpportunityExpectation: input.selectedOpportunity?.expectation,
+    selectedOpportunityTargets: input.selectedOpportunity?.targets,
+    selectedOpportunityRequestedAction: input.selectedOpportunity?.requestedAction,
+  };
 
   const recordGenerationFailure = async (
     error: string,
@@ -182,10 +273,15 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       source: input.source,
       reservationId: input.reservationId,
       anchorSeq: input.anchorSeq,
+      conversationEpoch: input.expectedConversationEpoch,
+      interactionObligationEpoch: input.interactionObligationEpoch,
+      postGenerationReevaluation: input.postGenerationReevaluation,
       priorityRoute: input.priorityRoute ?? undefined,
       priorityEvidence: input.priorityEvidence,
       mainJudgeDecision: input.mainJudgeDecision ?? undefined,
       judgeEvidence: input.judgeEvidence ?? undefined,
+      communicativeAct: input.communicativeAct,
+      judgeEvidenceSeqs: input.judgeEvidenceSeqs,
       selectedTraitId: input.selectedTraitId ?? undefined,
       mediationTrigger: input.mediationTrigger,
       decisionStage: input.decisionStage ?? "system",
@@ -202,6 +298,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       requestIntentSource: context.requestIntent.source,
       generationSucceeded: false,
       broadcastSucceeded: false,
+      ...ledgerControllerAudit,
       repairAudit,
       model,
       error,
@@ -243,6 +340,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     ? "server-deterministic-greeting"
     : summaryContent
       ? "server-deterministic-summary"
+      : context.taskGroundingSignal !== "none"
+        ? "server-deterministic-task-grounding"
       : context.requestIntent.kind === "known_count_request"
         ? "server-deterministic-known-count"
         : "server-deterministic-peer-complete";
@@ -261,7 +360,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       }
     : await generateScopedRouteMessage({
         systemPrompt: prompt.systemPrompt,
-        userPrompt: context.userPrompt,
+        developerPrompt: context.developerPrompt,
+        userPrompt: context.transcriptPrompt,
         limits: routeGenerationLimits(input.routeKind, context.requestIntent),
         guard: generationGuard,
         previouslySurfacedTraitIds,
@@ -286,7 +386,12 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       source: input.source,
       reservationId: input.reservationId,
       anchorSeq: input.anchorSeq,
+      conversationEpoch: input.expectedConversationEpoch,
+      interactionObligationEpoch: input.interactionObligationEpoch,
+      postGenerationReevaluation: input.postGenerationReevaluation,
       selectedTraitId: input.selectedTraitId ?? undefined,
+      communicativeAct: input.communicativeAct,
+      judgeEvidenceSeqs: input.judgeEvidenceSeqs,
       mediationTrigger: input.mediationTrigger,
       decisionStage: input.decisionStage ?? "system",
       routeReason: input.routeReason,
@@ -301,6 +406,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       ...focusDepthAudit,
       generationSucceeded: true,
       broadcastSucceeded: false,
+      ...ledgerControllerAudit,
       repairAudit: generated.repairAudit,
       model: result.model,
     });
@@ -325,7 +431,12 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         source: input.source,
         reservationId: input.reservationId,
         anchorSeq: input.anchorSeq,
+        conversationEpoch: input.expectedConversationEpoch,
+        interactionObligationEpoch: input.interactionObligationEpoch,
+        postGenerationReevaluation: input.postGenerationReevaluation,
         selectedTraitId: input.selectedTraitId ?? undefined,
+        communicativeAct: input.communicativeAct,
+        judgeEvidenceSeqs: input.judgeEvidenceSeqs,
         mediationTrigger: input.mediationTrigger,
         decisionStage: input.decisionStage ?? "system",
         routeReason: input.routeReason,
@@ -340,6 +451,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         ...focusDepthAudit,
         generationSucceeded: true,
         broadcastSucceeded: false,
+        ...ledgerControllerAudit,
         repairAudit: generated.repairAudit,
         model: result.model,
       });
@@ -347,9 +459,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     }
   }
 
-  // Close the freshness window after the lifecycle read as well. For the
-  // long-silence route this prevents a newly arrived human message from being
-  // overtaken by a response generated for the prior quiet anchor.
+  // A lifecycle change can race with the read above; check the runtime guard
+  // once more immediately before committing the message.
   if (input.commitGuard && !input.commitGuard()) {
     await recordSupersededDuringGeneration();
     return { ok: false, error: "superseded_during_generation" };
@@ -366,8 +477,9 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   });
 
   let interventionSaved = false;
+  let interventionId: string | undefined;
   try {
-    await AIIntervention.create({
+    const intervention = await AIIntervention.create({
       sessionId: input.sessionId,
       turnIndex: input.anchorSeq,
       triggerReason: input.source,
@@ -385,14 +497,19 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       source: input.source,
       reservationId: input.reservationId,
       anchorSeq: input.anchorSeq,
+      conversationEpoch: input.expectedConversationEpoch,
+      interactionObligationEpoch: input.interactionObligationEpoch,
+      postGenerationReevaluation: input.postGenerationReevaluation,
       priorityRoute: input.priorityRoute ?? undefined,
       priorityEvidence: input.priorityEvidence,
       mainJudgeDecision: input.mainJudgeDecision ?? undefined,
       judgeEvidence: input.judgeEvidence ?? undefined,
       selectedTraitId: input.selectedTraitId ?? undefined,
+      communicativeAct: input.communicativeAct,
+      judgeEvidenceSeqs: input.judgeEvidenceSeqs,
       decisionStage: input.decisionStage ?? "system",
       routeReason: input.routeReason,
-      outcome: "broadcast",
+      outcome: "saved",
       promptKey: prompt.promptKey,
       promptVersion: prompt.promptVersion,
       promptHash: prompt.promptHash,
@@ -401,7 +518,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       floorMs: input.floorMs,
       generationSucceeded: true,
       interventionSaved: true,
-      broadcastSucceeded: true,
+      broadcastSucceeded: false,
       mediationLatched: input.mediationLatched,
       mediationEvidence: input.mediationEvidence,
       buildOnsSinceMediation: input.buildOnsSinceMediation,
@@ -415,7 +532,9 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       internalMetadataViolation: generated.internalMetadataRepair?.violation,
       repairAudit: generated.repairAudit,
       ...focusDepthAudit,
+      ...ledgerControllerAudit,
     });
+    interventionId = intervention._id.toString();
     interventionSaved = true;
   } catch (error) {
     log.error("[route-turn] intervention log failed after message save:", error);
@@ -446,13 +565,63 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     }
   }
 
-  input.io.to(input.sessionCode).emit("new-message", {
-    seq: savedMessage.seq,
-    sender: savedMessage.sender,
-    senderRole: savedMessage.senderRole,
-    content: savedMessage.content,
-    createdAt: (savedMessage as any).createdAt.toISOString(),
-  });
+  try {
+    input.io.to(input.sessionCode).emit("new-message", {
+      seq: savedMessage.seq,
+      sender: savedMessage.sender,
+      senderRole: savedMessage.senderRole,
+      content: savedMessage.content,
+      createdAt: (savedMessage as any).createdAt.toISOString(),
+    });
+  } catch (error: any) {
+    if (interventionId) {
+      await AIIntervention.updateOne(
+        { _id: interventionId },
+        {
+          $set: {
+            outcome: "broadcast_failed",
+            broadcastSucceeded: false,
+            error: error?.message ?? String(error),
+          },
+        },
+      );
+    }
+    return { ok: false, error: "broadcast_failed" };
+  }
+
+  let ledgerCommit:
+    | { stateAfter: ConversationLedgerState; transition: ReducerTransitionAudit }
+    | undefined;
+  if (input.onBroadcastSuccess) {
+    try {
+      ledgerCommit = await input.onBroadcastSuccess({ messageSeq: savedMessage.seq });
+    } catch (error) {
+      // The visible broadcast cannot be rolled back. Keep the failure loud so
+      // recovery can reconcile the selected opportunity from this audit row.
+      log.error("[route-turn] ledger consumption persistence failed after broadcast:", error);
+    }
+  }
+  if (interventionId) {
+    try {
+      await AIIntervention.updateOne(
+        { _id: interventionId },
+        {
+          $set: {
+            outcome: "broadcast",
+            broadcastSucceeded: true,
+            ...(input.selectedOpportunity
+              ? { selectedOpportunityAlexBroadcastSeq: savedMessage.seq }
+              : {}),
+            ...(ledgerCommit
+              ? { selectedOpportunityTransition: ledgerCommit.transition }
+              : {}),
+          },
+        },
+      );
+    } catch (error) {
+      log.error("[route-turn] post-broadcast intervention update failed:", error);
+    }
+  }
 
   if (!interventionSaved) {
     log.warn(`[route-turn] message broadcast without intervention row (${input.sessionCode})`);
@@ -462,5 +631,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     messageId: savedMessage._id.toString(),
     messageSeq: savedMessage.seq,
     response: result.parsed.content,
+    ledgerStateAfter: ledgerCommit?.stateAfter,
+    ledgerTransition: ledgerCommit?.transition,
   };
 }

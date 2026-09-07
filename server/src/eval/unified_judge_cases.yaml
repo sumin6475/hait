@@ -1,0 +1,50 @@
+cases:
+  - id: UJ1
+    desc: "An explicit group comparison includes Alex as a participant"
+    msgs_since_alex: 3
+    cooldown_available: true
+    context:
+      - { seq: 1, senderRole: humanX, speaker: "Participant X", text: "Let's compare all four candidates together before we decide." }
+    eligible_trait_ids: []
+    expect: { decision: speak, act: participate }
+
+  - id: UJ2
+    desc: "A named human question preserves that human's floor"
+    msgs_since_alex: 3
+    cooldown_available: true
+    context:
+      - { seq: 1, senderRole: humanX, speaker: "Participant X", text: "Y, what matches do you have for Candidate B?" }
+    eligible_trait_ids: []
+    expect: { decision: silent }
+
+  - id: UJ3
+    desc: "Human answers remain attached to an Alex-initiated question thread"
+    msgs_since_alex: 3
+    cooldown_available: true
+    context:
+      - { seq: 10, senderRole: ai, speaker: "Alex", text: "How do A and B compare on reliability?" }
+      - { seq: 11, senderRole: humanX, speaker: "Participant X", text: "A seems more reliable to me." }
+      - { seq: 12, senderRole: humanY, speaker: "Participant Y", text: "X, I agree about A, though B also looks steady." }
+      - { seq: 13, senderRole: humanX, speaker: "Participant X", text: "That covers our answers to your question." }
+    eligible_trait_ids: []
+    expect: { decision: speak, act: follow }
+
+  - id: UJ4
+    desc: "A relevant exact private fact can support a voluntary contribution"
+    msgs_since_alex: 3
+    cooldown_available: true
+    context:
+      - { seq: 1, senderRole: humanX, speaker: "Participant X", text: "Candidate A's organization still seems unclear." }
+      - { seq: 2, senderRole: humanY, speaker: "Participant Y", text: "I don't think we've heard anything concrete about A's organization." }
+    eligible_trait_ids: [A_p4]
+    expect: { decision: speak, act: contribute, evidence: relevant_unsurfaced_information, selectedTraitId: A_p4 }
+
+  - id: UJ5
+    desc: "Third-person discussion about Alex is not a direct interaction obligation"
+    msgs_since_alex: 1
+    cooldown_available: false
+    context:
+      - { seq: 1, senderRole: humanX, speaker: "Participant X", text: "Alex said A was reliable earlier." }
+      - { seq: 2, senderRole: humanY, speaker: "Participant Y", text: "I remember Alex's point, but let's hear X's Candidate C notes first." }
+    eligible_trait_ids: []
+    expect: { decision: silent }

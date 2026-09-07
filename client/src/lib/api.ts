@@ -243,6 +243,7 @@ export interface SessionExport {
   }>;
   messages: SessionDetail["messages"];
   interventions: InterventionLog[];
+  conversationObservations: Array<Record<string, unknown>>;
 }
 
 export async function exportSession(sessionCode: string): Promise<SessionExport> {
@@ -254,6 +255,7 @@ export async function exportSession(sessionCode: string): Promise<SessionExport>
     participants: data.participants,
     messages: data.messages,
     interventions: data.interventions,
+    conversationObservations: data.conversationObservations ?? [],
   };
 }
 

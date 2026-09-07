@@ -1,0 +1,167 @@
+cases:
+  - id: O1
+    desc: "Explicit Alex defer preserves the named human's floor"
+    context:
+      - {
+          seq: 1,
+          senderRole: humanX,
+          speaker: "Participant X",
+          text: "Alex, wait—let Y answer first.",
+        }
+    anchorSeq: 1
+    expect:
+      speechAct: defer
+      expectedHumanResponder: humanY
+      transitionState: mid_thread
+
+  - id: O2
+    desc: "An active A/B comparison retains both candidates"
+    context:
+      - { seq: 1, senderRole: humanX, speaker: "Participant X", text: "A seems safer than B." }
+      - {
+          seq: 2,
+          senderRole: humanY,
+          speaker: "Participant Y",
+          text: "B is more reliable, though, so I am still comparing A and B.",
+        }
+    anchorSeq: 2
+    expect:
+      activeCandidates: [A, B]
+      transitionState: mid_thread
+
+  - id: O3
+    desc: "Dismissed C/D mentions do not displace the active A/B comparison"
+    context:
+      - {
+          seq: 1,
+          senderRole: humanX,
+          speaker: "Participant X",
+          text: "We already ruled out C and D.",
+        }
+      - {
+          seq: 2,
+          senderRole: humanY,
+          speaker: "Participant Y",
+          text: "Right, so between A and B, A looks safer.",
+        }
+    anchorSeq: 2
+    expect:
+      activeCandidates: [A, B]
+
+  - id: O4
+    desc: "Y can add to Alex's question while syntactically replying to X"
+    context:
+      - { seq: 10, senderRole: ai, speaker: "Alex", text: "How do A and B compare on safety?" }
+      - { seq: 11, senderRole: humanX, speaker: "Participant X", text: "A looks safer to me." }
+      - {
+          seq: 12,
+          senderRole: humanY,
+          speaker: "Participant Y",
+          text: "X, I agree about A, but B seems steadier under pressure.",
+        }
+    anchorSeq: 12
+    expect:
+      relationToPendingAlexQuestion: related_addition
+      activeCandidates: [A, B]
+      alexRelation: response_to_alex
+
+  - id: O5
+    desc: "A direct human question holds the next floor for that human"
+    context:
+      - {
+          seq: 1,
+          senderRole: humanX,
+          speaker: "Participant X",
+          text: "Y, what do you have for Candidate C?",
+        }
+    anchorSeq: 1
+    expect:
+      speechAct: question
+      addresseeIncludes: humanY
+      expectedHumanResponder: humanY
+
+  - id: O6
+    desc: "A one-candidate comparison can still invite the whole group"
+    context:
+      - {
+          seq: 32,
+          senderRole: humanY,
+          speaker: "Participant Y",
+          text: "Let's compare A's attributes with each other, starting with matches.",
+        }
+    anchorSeq: 32
+    expect:
+      speechAct: proposal
+      addresseeIncludes: group
+      activeCandidates: [A]
+      threadGoal: compare
+      requestedScope: single_candidate
+      requestExplicitness: explicit
+      alexRelation: group_participant
+      alexRelevance: relevant
+      alexParticipation: invited
+
+  - id: O7
+    desc: "A named human may get the first floor without removing Alex from the group task"
+    context:
+      - {
+          seq: 32,
+          senderRole: humanY,
+          speaker: "Participant Y",
+          text: "Let's compare our Candidate A matches together. X, start with yours.",
+        }
+    anchorSeq: 32
+    expect:
+      speechAct: proposal
+      expectedHumanResponder: humanX
+      threadGoal: compare
+      requestedScope: single_candidate
+      requestExplicitness: explicit
+      alexRelation: group_participant
+      alexRelevance: relevant
+      activeThreadGoal: compare_information
+      alexParticipation: invited
+
+  - id: O8
+    desc: "A non-canonical question about Alex is still structurally addressed to Alex"
+    context:
+      - {
+          seq: 36,
+          senderRole: humanX,
+          speaker: "Participant X",
+          text: "I put down three Candidate A matches.",
+        }
+      - {
+          seq: 37,
+          senderRole: humanY,
+          speaker: "Participant Y",
+          text: "I have the same ones plus being very well organized.",
+        }
+      - {
+          seq: 39,
+          senderRole: humanX,
+          speaker: "Participant X",
+          text: "Why alex didn't put yours?",
+        }
+    anchorSeq: 39
+    expect:
+      speechAct: question
+      addresseeIncludes: alex
+      alexRelation: explicit_addressee
+      alexRelevance: required
+
+  - id: O9
+    desc: "An explicit group narrowing request is a whole-board decision task"
+    context:
+      - {
+          seq: 50,
+          senderRole: humanX,
+          speaker: "Participant X",
+          text: "Let's narrow all four candidates to two together.",
+        }
+    anchorSeq: 50
+    expect:
+      addresseeIncludes: group
+      threadGoal: decide
+      requestedScope: whole_board
+      requestExplicitness: explicit

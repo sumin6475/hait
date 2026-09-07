@@ -7,6 +7,38 @@ export interface AddressDetection {
   evidence: "name_prefix" | "name_suffix" | "direct_request" | "group_request" | "none";
 }
 
+export interface AlexDeferDetection {
+  deferred: boolean;
+  evidence: "alex_wait" | "human_floor_first" | "none";
+}
+
+export type HumanArrivalAction =
+  | "evaluate_now"
+  | "cancel_floor_then_evaluate"
+  | "finish_generation_then_reevaluate";
+
+export function humanArrivalAction(input: {
+  floorWaiting: boolean;
+  generating: boolean;
+}): HumanArrivalAction {
+  if (input.generating) return "finish_generation_then_reevaluate";
+  if (input.floorWaiting) return "cancel_floor_then_evaluate";
+  return "evaluate_now";
+}
+
+export function postGenerationEvaluationReady(input: {
+  pendingSeq?: number;
+  pooledThroughSeq?: number;
+  generating: boolean;
+}): boolean {
+  return Boolean(
+    !input.generating &&
+    input.pendingSeq !== undefined &&
+    input.pooledThroughSeq !== undefined &&
+    input.pooledThroughSeq >= input.pendingSeq,
+  );
+}
+
 const NAME = "(?:alex|알렉스)";
 const THIRD_PERSON = new RegExp(
   `\\b(?:agree with (?:what )?${NAME}(?: said)?|what ${NAME} said|(?:according to|as) ${NAME}|${NAME}(?:'s|’s) (?:note|point|message)|${NAME} (?:said|mentioned|noted|argued))`,
@@ -25,9 +57,24 @@ const DIRECT_REQUEST = new RegExp(
 const GROUP_REQUEST =
   /(?:\b(?:both|either|all|the two) of you\b|\byou (?:both|two|all)\b|\b(?:what|how) (?:do|does) (?:everyone|the rest of you)\b|\bdoes (?:everyone|anyone else)\b|(?:두 분|둘 다|두 사람|다들|모두).*(?:생각|의견|동의|어때|어떻게)).*[?？]\s*$/i;
 
+const ALEX_WAIT =
+  /(?:^|[.!?]\s*)(?:alex|알렉스)\s*[,!:;–—-]?\s*(?:wait|hold (?:on|off)|one (?:moment|second)|pause|잠깐|기다|기다려|멈춰)|(?:wait|hold (?:on|off)|잠깐|기다려)[^.!?]{0,40}(?:alex|알렉스)/i;
+const HUMAN_FLOOR_FIRST =
+  /(?:let|have)\s+(?:x|y|z|human\s*[xyz]|them|him|her)\s+(?:answer|respond|reply|speak|finish|go first)|(?:wait for|hear from)\s+(?:x|y|z|human\s*[xyz]|them|him|her)|(?:x|y|z|human\s*[xyz])\s+(?:should|can|needs? to)\s+(?:answer|respond|reply|speak|finish|go first)|(?:(?:alex|알렉스)[^.!?]{0,80})?(?:x|y|z|사람\s*[xyz])(?:가|이)?[^.!?]{0,30}(?:먼저|답|말)[^.!?]{0,20}(?:하|할|해|하게|까지)/i;
+
+export function detectExplicitAlexDefer(message: string): AlexDeferDetection {
+  const text = message.trim();
+  if (!text) return { deferred: false, evidence: "none" };
+  if (ALEX_WAIT.test(text)) return { deferred: true, evidence: "alex_wait" };
+  if (HUMAN_FLOOR_FIRST.test(text)) return { deferred: true, evidence: "human_floor_first" };
+  return { deferred: false, evidence: "none" };
+}
+
 export function detectDirectAddress(message: string): AddressDetection {
   const text = message.trim();
-  if (!text || THIRD_PERSON.test(text)) return { addressed: false, evidence: "none" };
+  if (!text || THIRD_PERSON.test(text) || detectExplicitAlexDefer(text).deferred) {
+    return { addressed: false, evidence: "none" };
+  }
   if (PREFIX.test(text)) return { addressed: true, evidence: "name_prefix" };
   if (SUFFIX.test(text)) return { addressed: true, evidence: "name_suffix" };
   if (DIRECT_REQUEST.test(text)) return { addressed: true, evidence: "direct_request" };

@@ -113,6 +113,13 @@ const aiStateSchema = new mongoose.Schema(
     lastBackchannelAt: { type: Date },
     longSilenceBroadcastCount: { type: Number, default: 0 },
     lastLongSilenceAt: { type: Date },
+    // Incremented atomically with every human sequence allocation. A running
+    // generation records the epoch it started from; later human turns are
+    // coalesced and re-evaluated after that generation finishes.
+    conversationEpoch: { type: Number, default: 0 },
+    // Highest human epoch whose explicit Alex/group interaction obligation was
+    // fulfilled by a successfully broadcast address/followup turn.
+    interactionServedThroughEpoch: { type: Number, default: 0 },
   },
   { _id: false },
 );

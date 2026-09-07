@@ -5,7 +5,7 @@
 import mongoose from "mongoose";
 import { config } from "../config.js";
 import { Session } from "../models/Session.js";
-import { allocSeq } from "../lib/seq.js";
+import { allocHumanSeq, allocSeq } from "../lib/seq.js";
 
 const N = 50;
 
@@ -23,6 +23,16 @@ try {
   } else {
     console.log("PASS");
   }
+
+  const human = await allocHumanSeq(sid);
+  if (human.seq !== N + 1 || human.conversationEpoch !== 1) {
+    throw new Error(`unexpected human allocation: ${JSON.stringify(human)}`);
+  }
+  const secondHuman = await allocHumanSeq(sid);
+  if (secondHuman.seq !== N + 2 || secondHuman.conversationEpoch !== 2) {
+    throw new Error(`unexpected second human allocation: ${JSON.stringify(secondHuman)}`);
+  }
+  console.log("conversationEpoch tracking: first=1 second=2");
 } finally {
   await Session.deleteOne({ _id: sid });
   await mongoose.disconnect();

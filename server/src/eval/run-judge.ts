@@ -1,5 +1,5 @@
-// run-judge.ts — judge(개입 게이트) 회귀셋 러너.
-// judgeIntervention의 분류 출력(speak + reason)만 대조한다. golden(생성된 Alex 턴)과 별개 —
+// run-judge.ts — V2 Main Judge 회귀셋 러너.
+// judgeIntervention의 three-way decision + evidence만 대조한다. golden(생성된 Alex 턴)과 별개 —
 // 여기선 AI 발화를 생성하지 않는다. judge가 조용히 망가지는 걸 잡는 그물(tripwire).
 // 판정: 케이스당 ×3 호출, ≥2/3 일치면 PASS. 하나라도 FAIL이면 exit(1) (CI용).
 import "dotenv/config"; // server/.env 의 OPENAI_API_KEY 로드
@@ -16,7 +16,16 @@ interface JudgeCase {
   desc: string;
   msgs_since_alex: number;
   context: { speaker: string; text: string }[];
-  expect: { speak: boolean; reason?: string };
+  signal: {
+    focusCandidate: "A" | "B" | "C" | "D" | null;
+    exchangeClass: "substantive" | "acknowledgment" | "preference" | "procedural" | "unclear";
+    privateContributionIds: string[];
+  };
+  expect: {
+    decision: "contribute" | "acknowledge" | "silent";
+    evidence?: string;
+    selectedTraitId?: string | null;
+  };
 }
 interface JudgeFile {
   cases: JudgeCase[];
@@ -42,36 +51,40 @@ let passed = 0;
 for (const c of doc.cases) {
   const transcript = c.context.map((m) => ({ speaker: m.speaker, content: m.text }));
 
-  const results: ({ speak: boolean; reason: string } | null)[] = [];
+  const results: ({
+    decision: "contribute" | "acknowledge" | "silent";
+    evidence: string;
+    selectedTraitId?: string | null;
+  } | null)[] = [];
   for (let r = 0; r < RUNS; r++) {
-    // Fixture cases predate the runtime's compact server-derived signal. Keep
-    // this legacy evaluator conservative rather than fabricating pool state.
     const decision = await judgeIntervention(transcript, c.msgs_since_alex, {
-      focusCandidate: null,
-      exchangeClass: "unclear",
-      privateContributionAvailable: false,
-      privateContributionIds: [],
+      ...c.signal,
+      privateContributionAvailable: c.signal.privateContributionIds.length > 0,
     });
-    // Keep the historical report shape while the runtime uses the V2 three-way decision.
-    results.push(
-      decision ? { speak: decision.decision !== "silent", reason: decision.evidence } : null,
-    );
+    results.push(decision);
   }
 
-  // 한 호출 match: null(파싱실패/타임아웃)은 non-match. speak 항상 대조, reason은 expect에 있을 때만.
+  // null(파싱실패/타임아웃)은 non-match. decision은 항상, optional evidence/trait는 지정 시 대조.
   const matches = results.filter(
     (d) =>
       d != null &&
-      d.speak === c.expect.speak &&
-      (c.expect.reason === undefined || d.reason === c.expect.reason),
+      d.decision === c.expect.decision &&
+      (c.expect.evidence === undefined || d.evidence === c.expect.evidence) &&
+      (c.expect.selectedTraitId === undefined ||
+        (d.selectedTraitId ?? null) === c.expect.selectedTraitId),
   ).length;
   const pass = matches >= 2;
   if (pass) passed++;
 
   const got = results
-    .map((d) => (d == null ? "null" : `${d.speak ? "T" : "F"}:${d.reason}`))
+    .map((d) => (d == null ? "null" : `${d.decision}:${d.evidence}:${d.selectedTraitId ?? "none"}`))
     .join(" ");
-  const want = `speak=${c.expect.speak}${c.expect.reason ? ` reason=${c.expect.reason}` : ""}`;
+  const want =
+    `decision=${c.expect.decision}` +
+    (c.expect.evidence ? ` evidence=${c.expect.evidence}` : "") +
+    (c.expect.selectedTraitId !== undefined
+      ? ` selected=${c.expect.selectedTraitId ?? "none"}`
+      : "");
   console.log(`  ${pass ? "PASS" : "FAIL"}  ${c.id.padEnd(3)} ${c.desc}`);
   console.log(`        want ${want} · got [${got}] (${matches}/${RUNS})`);
 }

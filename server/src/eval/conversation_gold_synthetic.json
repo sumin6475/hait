@@ -1,0 +1,76 @@
+{
+  "actual": {
+    "evidenceSeqs": [2],
+    "opportunityChanges": [
+      {
+        "operation": "create",
+        "opportunity": {
+          "opportunitySourceSeq": 2,
+          "kind": "direct_question",
+          "targets": ["alex"]
+        },
+        "threadRelation": "existing_thread",
+        "evidenceSeqs": [2]
+      }
+    ],
+    "lifecycleTransitions": [],
+    "floor": {
+      "holder": "open",
+      "expectedNext": [],
+      "transition": "available",
+      "evidenceSeqs": [2]
+    },
+    "judge": {
+      "decision": "select_opportunity",
+      "act": "answer",
+      "opportunity": {
+        "opportunitySourceSeq": 2,
+        "kind": "direct_question",
+        "targets": ["alex"]
+      },
+      "evidenceSeqs": [2]
+    }
+  },
+  "singleExpectation": {
+    "mode": "single",
+    "outcomes": [
+      {
+        "evidenceSeqs": [2],
+        "opportunityChanges": [
+          {
+            "operation": "create",
+            "opportunity": {
+              "opportunitySourceSeq": 2,
+              "kind": "direct_question",
+              "targets": ["alex"]
+            },
+            "threadRelation": "existing_thread",
+            "evidenceSeqs": [2]
+          }
+        ],
+        "lifecycleTransitions": [],
+        "floor": {
+          "holder": "open",
+          "expectedNext": [],
+          "transition": "available",
+          "evidenceSeqs": [2]
+        },
+        "judge": {
+          "decision": "select_opportunity",
+          "act": "answer",
+          "opportunity": {
+            "opportunitySourceSeq": 2,
+            "kind": "direct_question",
+            "targets": ["alex"]
+          },
+          "evidenceSeqs": [2]
+        }
+      }
+    ],
+    "abstainReason": null,
+    "criticalCategories": ["direct_request_suppression"],
+    "mustFixIds": [],
+    "goldImportant": true,
+    "notes": null
+  }
+}

@@ -13,6 +13,7 @@ import { Session } from "../models/Session.js";
 import { Participant } from "../models/Participant.js";
 import { Message } from "../models/Message.js";
 import { AIIntervention } from "../models/AIIntervention.js";
+import { ConversationObservation } from "../models/ConversationObservation.js";
 import { requireAdmin } from "../middleware/adminAuth.js";
 import {
   generateNextSeq,
@@ -194,9 +195,10 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
       .sort({ assignedProfile: 1 })
       .lean();
     const messages = await Message.find({ sessionId: session._id }).sort({ seq: 1 }).lean();
-    const interventions = await AIIntervention.find({ sessionId: session._id })
-      .sort({ turnIndex: 1, createdAt: 1 })
-      .lean();
+    const [interventions, conversationObservations] = await Promise.all([
+      AIIntervention.find({ sessionId: session._id }).sort({ turnIndex: 1, createdAt: 1 }).lean(),
+      ConversationObservation.find({ sessionId: session._id }).sort({ anchorSeq: 1 }).lean(),
+    ]);
 
     res.json({
       ok: true,
@@ -233,10 +235,30 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         source: i.source,
         reservationId: i.reservationId,
         anchorSeq: i.anchorSeq,
+        conversationEpoch: i.conversationEpoch,
+        interactionObligationEpoch: i.interactionObligationEpoch,
+        postGenerationReevaluation: i.postGenerationReevaluation,
         priorityRoute: i.priorityRoute,
         priorityEvidence: i.priorityEvidence,
         mainJudgeDecision: i.mainJudgeDecision,
         judgeEvidence: i.judgeEvidence,
+        communicativeAct: i.communicativeAct,
+        judgeEvidenceSeqs: i.judgeEvidenceSeqs,
+        controllerMode: i.controllerMode,
+        ledgerVersion: i.ledgerVersion,
+        ledgerJudgeVersion: i.ledgerJudgeVersion,
+        ledgerJudgePromptVersion: i.ledgerJudgePromptVersion,
+        ledgerJudgeSchemaVersion: i.ledgerJudgeSchemaVersion,
+        ledgerJudgeAttempts: i.ledgerJudgeAttempts,
+        selectedOpportunityId: i.selectedOpportunityId,
+        selectedOpportunitySourceSeq: i.selectedOpportunitySourceSeq,
+        selectedOpportunityThreadId: i.selectedOpportunityThreadId,
+        selectedOpportunityKind: i.selectedOpportunityKind,
+        selectedOpportunityExpectation: i.selectedOpportunityExpectation,
+        selectedOpportunityTargets: i.selectedOpportunityTargets,
+        selectedOpportunityRequestedAction: i.selectedOpportunityRequestedAction,
+        selectedOpportunityAlexBroadcastSeq: i.selectedOpportunityAlexBroadcastSeq,
+        selectedOpportunityTransition: i.selectedOpportunityTransition,
         selectedTraitId: i.selectedTraitId,
         decisionStage: i.decisionStage,
         routeReason: i.routeReason,
@@ -266,6 +288,8 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         outputScopeCandidate: i.outputScopeCandidate,
         outputScopeRepaired: i.outputScopeRepaired,
         outputScopeViolation: i.outputScopeViolation,
+        requestIntentKind: i.requestIntentKind,
+        requestIntentSource: i.requestIntentSource,
         repairAudit: i.repairAudit,
         calloutTarget: i.calloutTarget,
         calloutCand: i.calloutCand,
@@ -275,6 +299,74 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         outputTokens: i.outputTokens,
         error: i.error,
         createdAt: (i as any).createdAt,
+      })),
+      conversationObservations: conversationObservations.map((observation: any) => ({
+        anchorSeq: observation.anchorSeq,
+        conversationEpoch: observation.conversationEpoch,
+        observerVersion: observation.observerVersion,
+        mode: observation.mode,
+        participantRoster: observation.participantRoster,
+        ledgerVersion: observation.ledgerVersion,
+        ledgerDelta: observation.ledgerDelta,
+        ledgerTransition: observation.ledgerTransition,
+        ledgerStateAfter: observation.ledgerStateAfter,
+        observerCallAttempts: observation.observerCallAttempts,
+        ledgerJudgeVersion: observation.ledgerJudgeVersion,
+        ledgerJudgePromptVersion: observation.ledgerJudgePromptVersion,
+        ledgerJudgeSchemaVersion: observation.ledgerJudgeSchemaVersion,
+        ledgerJudgeDecision: observation.ledgerJudgeDecision,
+        ledgerJudgeAttempts: observation.ledgerJudgeAttempts,
+        ledgerJudgeReobserved: observation.ledgerJudgeReobserved,
+        ledgerBroadcastTransition: observation.ledgerBroadcastTransition,
+        repairCodes: observation.repairCodes,
+        conflictCodes: observation.conflictCodes,
+        degradedMode: observation.degradedMode,
+        addressees: observation.addressees,
+        replyToSeq: observation.replyToSeq,
+        speechAct: observation.speechAct,
+        activeCandidates: observation.activeCandidates,
+        mentionedCandidates: observation.mentionedCandidates,
+        scopeCandidates: observation.scopeCandidates,
+        focusCandidate: observation.focusCandidate,
+        focusBasis: observation.focusBasis,
+        threadGoal: observation.threadGoal,
+        requestedScope: observation.requestedScope,
+        requestExplicitness: observation.requestExplicitness,
+        transitionState: observation.transitionState,
+        relationToPendingAlexQuestion: observation.relationToPendingAlexQuestion,
+        expectedHumanResponder: observation.expectedHumanResponder,
+        conversationPhase: observation.conversationPhase,
+        alexRelation: observation.alexRelation,
+        alexRelevance: observation.alexRelevance,
+        activeThread: observation.activeThread,
+        floor: observation.floor,
+        fieldConfidence: observation.fieldConfidence,
+        observerReviewed: observation.observerReviewed,
+        confidence: observation.confidence,
+        explicitAlexDefer: observation.explicitAlexDefer,
+        explicitAlexDeferEvidence: observation.explicitAlexDeferEvidence,
+        pendingQuestionRootSeq: observation.pendingQuestionRootSeq,
+        questionThreadAfter: observation.questionThreadAfter,
+        stateAfter: observation.stateAfter,
+        uptakeJudgeCalled: observation.uptakeJudgeCalled,
+        uptakeDecision: observation.uptakeDecision,
+        uptakeEvidence: observation.uptakeEvidence,
+        uptakeSelectedTraitId: observation.uptakeSelectedTraitId,
+        uptakeModel: observation.uptakeModel,
+        uptakeResponseId: observation.uptakeResponseId,
+        uptakeLatencyMs: observation.uptakeLatencyMs,
+        uptakeError: observation.uptakeError,
+        followupCandidateEligible: observation.followupCandidateEligible,
+        followupJudgeCalled: observation.followupJudgeCalled,
+        followupJudgeResult: observation.followupJudgeResult,
+        followupWindowMessageCount: observation.followupWindowMessageCount,
+        followupWindowSpeakerRole: observation.followupWindowSpeakerRole,
+        model: observation.model,
+        responseId: observation.responseId,
+        latencyMs: observation.latencyMs,
+        error: observation.error,
+        createdAt: observation.createdAt,
+        updatedAt: observation.updatedAt,
       })),
     });
   } catch (error) {
@@ -292,11 +384,12 @@ sessionsRouter.delete("/:code", requireAdmin, async (req, res) => {
       return res.status(404).json({ ok: false, error: "Session not found" });
     }
 
-    //cascade: Participant + Message + AIIntervention + Session
-    const [pDel, mDel, aiDel] = await Promise.all([
+    //cascade: Participant + Message + AIIntervention + ConversationObservation + Session
+    const [pDel, mDel, aiDel, observationDel] = await Promise.all([
       Participant.deleteMany({ sessionId: session._id }),
       Message.deleteMany({ sessionId: session._id }),
       AIIntervention.deleteMany({ sessionId: session._id }),
+      ConversationObservation.deleteMany({ sessionId: session._id }),
     ]);
     await session.deleteOne();
 
@@ -307,6 +400,7 @@ sessionsRouter.delete("/:code", requireAdmin, async (req, res) => {
         participants: pDel.deletedCount,
         messages: mDel.deletedCount,
         aiInterventions: aiDel.deletedCount,
+        conversationObservations: observationDel.deletedCount,
       },
     });
   } catch (error) {

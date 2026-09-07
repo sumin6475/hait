@@ -189,6 +189,7 @@ export const MAX_REPAIR_ATTEMPTS = 1;
 
 export async function generateScopedRouteMessage(input: {
   systemPrompt: string;
+  developerPrompt?: string;
   userPrompt: string;
   limits: GenerationLimits;
   guard?: RouteOutputScopeGuard;
@@ -203,6 +204,7 @@ export async function generateScopedRouteMessage(input: {
 }> {
   let result = await callAIStructured({
     systemPrompt: input.systemPrompt,
+    developerPrompt: input.developerPrompt,
     userPrompt: input.userPrompt,
     ...input.limits,
   });
@@ -329,7 +331,8 @@ export async function generateScopedRouteMessage(input: {
       .join(" ");
     const repaired = await callAIStructured({
       systemPrompt: input.systemPrompt,
-      userPrompt: `${input.userPrompt}\n\n${correction}`,
+      developerPrompt: [input.developerPrompt, correction].filter(Boolean).join("\n\n"),
+      userPrompt: input.userPrompt,
       ...input.limits,
     });
     lastModel = repaired.model;

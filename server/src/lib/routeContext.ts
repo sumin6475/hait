@@ -1,4 +1,4 @@
-import type { ConditionCode, RouteKind } from "../types.js";
+import type { CommunicativeAct, ConditionCode, RouteKind } from "../types.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { currentTopicCandidate } from "./poolingTally.js";
@@ -19,21 +19,83 @@ export interface TranscriptMessage {
   content: string;
 }
 
-const WINDOWS: Record<RouteKind, number> = {
-  greeting: 0,
-  address: 8,
-  followup: 8,
-  long_silence: 16,
-  build_on: 12,
-  mediation: 16,
-  backchannel: 4,
-  summary: 40,
-  closing: 40,
-};
-
 // 리더 조건은 여기서만 정의한다 (interventionEngine도 이 함수를 사용).
 export function isLeaderCondition(conditionCode: ConditionCode): boolean {
   return conditionCode === "C2" || conditionCode === "C4";
+}
+
+export type TaskGroundingSignal =
+  | "none"
+  | "task_standard_drift"
+  | "distributed_information_question";
+
+/**
+ * Deterministic guard for the two task facts that must not be negotiated by
+ * the conversational model: equal criterion weight and distributed files.
+ */
+export function taskGroundingSignal(content: string): TaskGroundingSignal {
+  const normalized = content.replace(/\s+/g, " ").trim();
+  if (
+    /\b(?:my|your|our)\s+(?:list|notes?)\b/i.test(normalized) &&
+    /\b(?:differ|different|don'?t have|do not have|not (?:on|in)|why)\b/i.test(normalized)
+  ) {
+    return "distributed_information_question";
+  }
+  const explicitlyEqual = /\b(?:all|every|each)\b.{0,35}\bequally important\b/i.test(normalized);
+  if (
+    !explicitlyEqual &&
+    (/\b(?:more|most|less|least)\s+(?:important|relevant|valuable)\b/i.test(normalized) ||
+      /\b(?:communication|resilience|stress|human (?:quality|qualities|abilit(?:y|ies)))\b.{0,30}\b(?:key|essential|important|matter|should|must)\b/i.test(normalized) ||
+      /\b(?:looking for|need|want)\b.{0,35}\b(?:human (?:quality|qualities|abilit(?:y|ies))|pilot qualities)\b/i.test(normalized) ||
+      /\bqualit(?:y|ies)\b.{0,35}\bmore human\b/i.test(normalized) ||
+      /\bsomething\b.{0,40}\b(?:computer|AI|autopilot)\b.{0,20}\b(?:cannot|can not|can'?t)\b/i.test(normalized) ||
+      /\b(?:role|captain|pilot)\b.{0,80}\bshould be able\b/i.test(normalized))
+  ) {
+    return "task_standard_drift";
+  }
+  return "none";
+}
+
+function deterministicTaskGroundingResponse(input: {
+  signal: TaskGroundingSignal;
+  conditionCode: ConditionCode;
+  language: "en" | "ko";
+  content: string;
+}): string | null {
+  if (input.signal === "distributed_information_question") {
+    return input.language === "ko"
+      ? "후보자 자료가 위원들에게 나뉘어 있어서 같은 후보에 대해서도 서로 다른 특성을 가지고 있을 수 있어요. 두 목록이 다르다고 해서 어느 한쪽이 잘못된 것은 아닙니다."
+      : "The candidate files are distributed across the board, so different members can legitimately have different traits for the same candidate. Our lists can differ without either one being wrong.";
+  }
+  if (input.signal === "task_standard_drift") {
+    // Task-standard correction is a leader responsibility. Peer conditions
+    // retain their ordinary response path and do not mediate the group's frame.
+    if (!isLeaderCondition(input.conditionCode)) return null;
+    const humanQualityFrame = /\b(?:human|computer|AI|autopilot)\b/i.test(input.content);
+    const communicationFrame = /\bcommunication\b/i.test(input.content);
+    const candidate = (["A", "B", "C", "D"] as Cand[]).find((item) =>
+      new RegExp(`\\b(?:candidate\\s+)?${item}\\b`).test(input.content),
+    );
+    if (input.language === "ko") {
+      if (input.conditionCode === "C4") {
+        return humanQualityFrame
+          ? "인간적인 자질도 다른 항목과 마찬가지로 하나의 MATCH 또는 MISS이며 별도 가중치는 없습니다. 어느 후보의 전체 프로필을 같은 기준으로 먼저 비교할까요?"
+          : communicationFrame
+            ? `의사소통도 전체 프로필을 구성하는 한 항목이지만 다른 MATCH나 MISS보다 우선하지는 않습니다. ${candidate ? `Candidate ${candidate}의` : "해당 후보의"} 다른 항목 중 무엇을 함께 놓고 비교할까요?`
+            : "어느 한 항목에도 더 높은 비중은 없습니다. 모든 MATCH와 MISS를 같은 비중으로 놓고 어느 후보의 전체 프로필부터 비교할까요?";
+      }
+      return "특정 자질에 별도 가중치는 없습니다. 모든 MATCH와 MISS를 같은 비중으로 두고 후보자의 전체 프로필을 비교해야 합니다.";
+    }
+    if (input.conditionCode === "C4") {
+      return humanQualityFrame
+        ? "Human qualities are still individual MATCH or MISS items and do not receive extra weight. Which candidate's complete profile should the team compare under the same standard first?"
+        : communicationFrame
+          ? `Communication is one item in the complete profile, but it does not outweigh the other MATCH or MISS items. Which other parts of ${candidate ? `Candidate ${candidate}'s` : "that candidate's"} profile should the team place beside it?`
+          : "No single item receives extra weight. Which candidate's complete MATCH-and-MISS profile should the team compare first?";
+    }
+    return "No single quality receives extra weight. The team should compare each candidate's complete profile with every MATCH and MISS counting equally.";
+  }
+  return null;
 }
 
 /**
@@ -378,6 +440,54 @@ export function formatPreferenceDecision(revealStats: any): string {
     .join("\n");
 }
 
+export function formatScopedPreferenceDecision(
+  revealStats: any,
+  requestedCandidates: readonly Cand[],
+): string {
+  const candidates = CANDIDATES.filter((candidate) => requestedCandidates.includes(candidate));
+  if (candidates.length < 2) return formatPreferenceDecision(revealStats);
+  const decision = decidePreferenceFromKnownCoverage(revealStats);
+  const comparable = candidates.filter((candidate) => {
+    const row = decision.rows[candidate];
+    return row.matches > 0 && row.misses > 0 && row.total >= 3;
+  });
+  const header = [
+    "Scoped preference cue (mandatory; never expose this label or its computation):",
+    `The participant limited the choice to ${formatCandidateList(candidates)}. Do not name or recommend any candidate outside this requested set.`,
+    "This scoped outcome combines Alex's complete own notes with every shared trait and treats every MATCH/MISS criterion equally.",
+  ];
+  if (comparable.length < 2) {
+    return [
+      ...header,
+      "State: NO_SCOPED_PREFERENCE — there is not enough two-sided known information to compare the requested candidates. Say that briefly without expanding the field.",
+    ].join("\n");
+  }
+  let leaders: Cand[] = [];
+  for (const candidate of comparable) {
+    if (!leaders.length) {
+      leaders = [candidate];
+      continue;
+    }
+    const row = decision.rows[candidate];
+    const leader = decision.rows[leaders[0]!];
+    const comparison = row.matches * leader.misses - leader.matches * row.misses;
+    if (comparison > 0) leaders = [candidate];
+    else if (comparison === 0) leaders.push(candidate);
+  }
+  if (leaders.length > 1) {
+    return [
+      ...header,
+      `State: SCOPED_CO_PREFERENCE — ${formatCandidateList(leaders)} are even within the requested set.`,
+      "Name only those tied requested candidates and say the combined known profile does not currently separate them.",
+    ].join("\n");
+  }
+  return [
+    ...header,
+    `State: SCOPED_PREFERENCE — Candidate ${leaders[0]}.`,
+    `Name only Candidate ${leaders[0]} as the strongest current option within the requested set.`,
+  ].join("\n");
+}
+
 function compactMessage(content: string, maxChars = 360): string {
   const compact = content.replace(/\s+/g, " ").trim();
   return compact.length <= maxChars ? compact : `${compact.slice(0, maxChars - 1)}…`;
@@ -545,7 +655,9 @@ function requestOverridesFocusControl(
     intent.kind === "preference_request" ||
     intent.kind === "preference_reason_request" ||
     intent.kind === "known_count_request" ||
-    intent.kind === "insight_request"
+    intent.kind === "insight_request" ||
+    intent.kind === "compare_request" ||
+    intent.kind === "narrow_decision_request"
   ) {
     return true;
   }
@@ -616,7 +728,8 @@ export interface RouteOutputScopeGuard {
     | "selected_note_contribution"
     | "conversation_grounded_synthesis"
     | "mediation_no_new_traits"
-    | "explicit_complete_request";
+    | "explicit_complete_request"
+    | "requested_narrowing";
 }
 
 const BROAD_INFORMATION_REQUESTS = [
@@ -669,6 +782,8 @@ export type RequestIntentKind =
   | "preference_request" // who is best / which one / your pick
   | "preference_reason_request" // why Alex holds the current preference
   | "known_count_request" // exact MATCH/MISS count in Alex's known profile
+  | "compare_request" // explicit comparison using the requested factual source
+  | "narrow_decision_request" // explicit request to reduce the current field
   | "none";
 
 // Where the participant asked Alex to source the answer. Visible-board reads
@@ -680,6 +795,7 @@ export type RequestCountKind = "matches" | "misses" | "all";
 export interface RequestIntent {
   kind: RequestIntentKind;
   candidate: Cand | null;
+  candidates?: Cand[];
   source: RequestSource;
   countKind?: RequestCountKind;
 }
@@ -709,6 +825,18 @@ const INSIGHT_REQUESTS = [
   /\b(?:any|some)\s+(?:insight|analysis)\b/i,
   /(?:새로운|추가|다른|더).*(?:인사이트|통찰|분석)|(?:인사이트|통찰|분석).*(?:있|해|말)/,
 ];
+const COMPARE_REQUESTS = [
+  /\b(?:compare|comparison|contrast|side[ -]by[ -]side|put\s+.+\s+together)\b/i,
+  /(?:비교|나란히|한꺼번에|같이\s*놓|다\s*놓고)/,
+];
+const NARROW_DECISION_REQUESTS = [
+  /\b(?:narrow|shortlist|reduce\s+(?:it|them|the\s+field)|decide\s+between|choose\s+between|pick\s+between|select\s+between|cut\s+(?:it|them)\s+down)\b/i,
+  /(?:좁(?:히|혀)|추리|후보.{0,12}줄이|결론.{0,12}좁|둘\s*중.{0,12}(?:고르|선택))/,
+];
+const KNOWN_PROFILE_REQUEST_SCOPE =
+  /\b(?:based\s+on|using|from)\s+(?:everything|all)\s+(?:you\s+)?(?:know|have|got)|\byour\s+(?:full|overall)\s+(?:view|read|assessment)\b|(?:네가|알렉스가).*(?:아는|가진).*(?:전부|전체)|(?:전체|전부).*(?:판단|관점)/i;
+const COLLABORATIVE_SINGLE_CANDIDATE_COMPARISON =
+  /\b(?:let'?s|our|each other(?:'s|’s)?|one another(?:'s|’s)?)\b|(?:우리|각자|서로)/i;
 const MATCH_COUNT_MARKER = /\bmatches?\b|(?:매치|긍정)/i;
 const MISS_COUNT_MARKER = /\bmisses?\b|(?:미스|부정)/i;
 
@@ -734,6 +862,9 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
     matchesAny(text, EXPLICIT_COMPLETE_SINGLE) || EVERYTHING_REQUEST.test(text);
   const allMarker = matchesAny(text, EXPLICIT_ALL_SCOPE);
   const named = mentions.size === 1 ? [...mentions][0]! : null;
+  const mentionedCandidates = [...mentions];
+  const compareMarker = matchesAny(text, COMPARE_REQUESTS);
+  const narrowMarker = matchesAny(text, NARROW_DECISION_REQUESTS);
 
   // Priority 1 — a named candidate plus a complete marker is a complete list
   // for THAT candidate. It is not gated behind broad-information phrasing
@@ -742,6 +873,30 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   // guard.
   if (completeMarker && named && !allMarker) {
     return { kind: "complete_single_candidate", candidate: named, source };
+  }
+  // A request to compare all candidates is synthesis, not a request to dump
+  // every trait. Explicit list/notes wording above still keeps inventory
+  // requests on the established complete-list path.
+  if (narrowMarker) {
+    return {
+      kind: "narrow_decision_request",
+      candidate: null,
+      candidates: mentionedCandidates,
+      source: "known_profile",
+    };
+  }
+  if (compareMarker) {
+    return {
+      kind: "compare_request",
+      candidate: named,
+      candidates: mentionedCandidates,
+      source:
+        KNOWN_PROFILE_REQUEST_SCOPE.test(text) ||
+        (mentionedCandidates.length === 1 &&
+          COLLABORATIVE_SINGLE_CANDIDATE_COMPARISON.test(text))
+          ? "known_profile"
+          : "visible_board",
+    };
   }
   // Priority 2 — whole-field requests.
   if (allMarker || (completeMarker && mentions.size > 1)) {
@@ -911,9 +1066,13 @@ function requestScopeFromIntent(input: {
   revealStats: any;
   language: "en" | "ko";
   intent: RequestIntent;
+  semanticFocus?: Cand | null;
 }): { block: string; guard?: RouteOutputScopeGuard } | null {
   if (input.routeKind !== "address" && input.routeKind !== "followup") return null;
   const { intent } = input;
+  const contextualFocus = input.semanticFocus !== undefined ? input.semanticFocus :
+    currentTopicCandidate(input.window.map((message) => ({ sender: message.speaker, content: message.content }))) ??
+    lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
 
   if (intent.kind === "complete_all_candidates") {
     return {
@@ -925,10 +1084,7 @@ function requestScopeFromIntent(input: {
   if (intent.kind === "complete_single_candidate") {
     const focus =
       intent.candidate ??
-      currentTopicCandidate(
-        input.window.map((message) => ({ sender: message.speaker, content: message.content })),
-      ) ??
-      lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
+      contextualFocus;
     if (!focus) {
       return {
         block:
@@ -971,14 +1127,82 @@ function requestScopeFromIntent(input: {
     };
   }
 
-  if (intent.kind === "new_information_request") {
-    const transcriptFocus = currentTopicCandidate(
-      input.window.map((message) => ({ sender: message.speaker, content: message.content })),
+  if (intent.kind === "compare_request") {
+    const candidates = intent.candidates?.length ? intent.candidates : CANDIDATES;
+    if (candidates.length === 1) {
+      const candidate = candidates[0]!;
+      const factualIds =
+        intent.source === "known_profile"
+          ? new Set(ALEX_Z_IDS.filter((id) => TRAIT_BY_ID.get(id)?.candidate === candidate))
+          : new Set(
+              [...allSurfacedIds(input.revealStats), ...humanConfirmedIds(input.revealStats)].filter(
+                (id) => TRAIT_BY_ID.get(id)?.candidate === candidate,
+              ),
+            );
+      return {
+        block: [
+          "Question mode (server-derived): REQUESTED_WITHIN_CANDIDATE_COMPARISON.",
+          `The group explicitly invited Alex into a comparison of the requested information for Candidate ${candidate}. This is a responsive participation turn, not a discretionary one-point build-on and not a comparison of Candidate ${candidate} against itself.`,
+          intent.source === "known_profile"
+            ? "Contribute Alex's part from Alex's own Candidate profile. Follow the requested aspect in the root and recent messages (for example, matches first); do not add a different candidate."
+            : "Align the requested aspect using only the visible discussion board; do not introduce an unsurfaced private note or a different candidate.",
+          "It is acceptable to repeat the relevant items here because the team's explicit task is to align and compare members' information. Answer that task directly before any condition-permitted question.",
+          `Authoritative Candidate ${candidate} facts for this response:\n${formatCoverageFromIds(factualIds, false)}`,
+        ].join("\n"),
+      };
+    }
+    const factualIds =
+      intent.source === "known_profile"
+        ? knownTraitIds(input.revealStats)
+        : new Set([
+            ...allSurfacedIds(input.revealStats),
+            ...humanConfirmedIds(input.revealStats),
+          ]);
+    const coverage = formatCoverageFromIds(
+      new Set(
+        [...factualIds].filter((id) => {
+          const candidate = TRAIT_BY_ID.get(id)?.candidate;
+          return candidate ? candidates.includes(candidate) : false;
+        }),
+      ),
+      false,
     );
+    return {
+      block: [
+        "Question mode (server-derived): REQUESTED_COMPARISON.",
+        `The participant explicitly asked Alex or the group to compare ${candidates.length === 4 ? "the whole field" : `Candidates ${candidates.join(", ")}`}. This is a responsive task turn, not a discretionary one-point build-on.`,
+        intent.source === "known_profile"
+          ? "Use Alex's complete known profile: Alex's own notes plus facts shared in the conversation."
+          : "Use only the visible discussion board below. Do not introduce an unsurfaced private note.",
+        "Answer the comparison itself first. Synthesize the meaningful profile differences under the equal-weight rule; do not merely dump traits, redirect the agenda, or replace the answer with a question.",
+        `Authoritative comparison facts:\n${coverage}`,
+      ].join("\n"),
+    };
+  }
+
+  if (intent.kind === "narrow_decision_request") {
+    const candidates = intent.candidates?.length ? intent.candidates : CANDIDATES;
+    return {
+      block: [
+        "Question mode (server-derived): REQUESTED_NARROWING.",
+        `The participant explicitly asked Alex or the group to narrow ${candidates.length === 4 ? "the whole field" : `Candidates ${candidates.join(", ")}`}. This is a responsive task turn, not a discretionary build-on.`,
+        "Use the supplied scoped preference cue as Alex's current read and the visible board below as the only factual support stated aloud. Give a concise shortlist or narrowing conclusion before any condition-permitted question. Do not decide on behalf of the team, expand beyond the requested candidates, or introduce an unsurfaced private trait.",
+        "Keep the complete answer to at most two concise sentences and about 70 words unless the participant explicitly asks for a full factual inventory.",
+        `Visible discussion board:\n${formatVisibleBoardCoverage(input.revealStats)}`,
+      ].join("\n"),
+      guard: {
+        candidate: null,
+        reason: "requested_narrowing",
+        maxTraitIds: 0,
+        allowedTraitIds: [],
+      },
+    };
+  }
+
+  if (intent.kind === "new_information_request") {
     const focus =
       intent.candidate ??
-      transcriptFocus ??
-      lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
+      contextualFocus;
     if (!focus) {
       return {
         block:
@@ -1022,11 +1246,8 @@ function requestScopeFromIntent(input: {
   }
 
   if (intent.kind === "scoped_information_request") {
-    const transcriptFocus = currentTopicCandidate(
-      input.window.map((message) => ({ sender: message.speaker, content: message.content })),
-    );
     const focus =
-      transcriptFocus ?? lastHumanDiscussionCandidate(input.revealStats, input.window[0]?.seq ?? 0);
+      intent.candidate ?? contextualFocus;
     if (!focus) {
       return {
         block:
@@ -1069,6 +1290,21 @@ function routePrimaryGoal(routeKind: RouteKind): string {
   }
 }
 
+export interface SelectedOpportunityGenerationContext {
+  focusCandidate?: Cand | null;
+  requestIntent?: RequestIntent;
+  id: string;
+  kind: "direct_question" | "invitation" | "group_request" | "uptake";
+  expectation: "required" | "invited" | "optional";
+  sourceSeq: number;
+  currentTriggerSeq: number;
+  threadId: string;
+  targets: string[];
+  requestedAction: string;
+  sourceContent: string;
+  evidenceSeqs: number[];
+}
+
 export function buildRouteUserContext(input: {
   routeKind: RouteKind;
   conditionCode: ConditionCode;
@@ -1082,14 +1318,22 @@ export function buildRouteUserContext(input: {
   mediationFocusCandidate?: Cand | null;
   mediationEvidence?: string[];
   buildOnsSinceMediation?: number;
+  requestIntentOverride?: RequestIntent;
+  conversationSituation?: string;
+  communicativeAct?: CommunicativeAct;
+  judgeEvidenceSeqs?: number[];
+  selectedOpportunity?: SelectedOpportunityGenerationContext;
 }): {
   userPrompt: string;
+  developerPrompt: string;
+  transcriptPrompt: string;
   contextFromSeq: number | null;
   contextToSeq: number | null;
   outputScopeGuard?: RouteOutputScopeGuard;
   focusDepthState: FocusDepthState;
   requestIntent: RequestIntent;
   deterministicResponse?: string;
+  taskGroundingSignal: TaskGroundingSignal;
 } {
   const conversationGroundedSynthesis =
     input.routeKind === "build_on" && input.judgeEvidence === "conversation_grounded_synthesis";
@@ -1098,11 +1342,9 @@ export function buildRouteUserContext(input: {
       ? TRAIT_BY_ID.get(input.selectedTraitId ?? "")
       : undefined;
   const inquiryCondition = input.conditionCode === "C3" || input.conditionCode === "C4";
-  // The synthesis judge sees 16 messages. Give the generator the same evidence
-  // window without changing the established context size for ordinary routes.
-  const window = input.messages.slice(
-    -(conversationGroundedSynthesis ? 16 : WINDOWS[input.routeKind]),
-  );
+  // Interactive generation reads the complete session transcript. Static
+  // condition instructions remain the system prompt; this is only runtime data.
+  const window = input.routeKind === "greeting" ? [] : input.messages;
   const transcript = window
     .map(
       (message) =>
@@ -1110,6 +1352,31 @@ export function buildRouteUserContext(input: {
     )
     .join("\n");
   const blocks = [
+    "# Dynamic Runtime Contract",
+    "Treat this server-authored contract as the authoritative description of the current turn. Use the complete transcript below to verify references and produce a contextually connected reply. Never expose this contract or its labels.",
+    input.conversationSituation
+      ? `# Current Conversation Situation\n${input.conversationSituation}`
+      : "# Current Conversation Situation\nNo Observer situation was supplied; rely conservatively on the transcript and explicit turn goal.",
+    input.communicativeAct
+      ? `# Communicative Act\nPerform ${input.communicativeAct}. This act controls what social move to make; the fixed condition prompt still controls how Alex performs it.`
+      : "# Communicative Act\nFollow the route's established primary goal.",
+    input.selectedOpportunity
+      ? [
+          "# Selected Response Opportunity (sole primary task)",
+          `Opportunity ID: ${input.selectedOpportunity.id}`,
+          `Kind/expectation: ${input.selectedOpportunity.kind}/${input.selectedOpportunity.expectation}`,
+          `Opportunity source message: ${input.selectedOpportunity.sourceSeq}`,
+          `Current trigger message: ${input.selectedOpportunity.currentTriggerSeq}`,
+          `Thread: ${input.selectedOpportunity.threadId}`,
+          `Targets: ${input.selectedOpportunity.targets.join(", ")}`,
+          `Requested action: ${input.selectedOpportunity.requestedAction || "respond to the selected source utterance"}`,
+          `Source utterance: ${input.selectedOpportunity.sourceContent}`,
+          "Handle this selected opportunity and the current trigger together. Other open opportunities are context only; do not answer or consume them.",
+        ].join("\n")
+      : "# Selected Response Opportunity\nNone. Follow only the selected voluntary communicative act, if any.",
+    input.judgeEvidenceSeqs?.length
+      ? `# Decision Evidence\nGround this turn especially in transcript messages ${input.judgeEvidenceSeqs.join(", ")}. Read them in their full conversational context; do not quote sequence numbers.`
+      : "# Decision Evidence\nNo specific evidence messages were selected.",
     "# Turn Metadata",
     `Route kind: ${input.routeKind}`,
     `Primary goal: ${routePrimaryGoal(input.routeKind)}`,
@@ -1206,11 +1473,14 @@ export function buildRouteUserContext(input: {
   // drives the focus-control override, the preference cue, and the scope block.
   const requestBundle = requestBundleForAnchor(window, input.anchorSeq);
   const anchor = requestBundle.anchor;
+  const groundingSignal = taskGroundingSignal(requestBundle.content);
   const requestIntent =
     input.routeKind === "address" || input.routeKind === "followup"
-      ? classifyRequestIntent(requestBundle.content)
+      ? (input.selectedOpportunity
+          ? (input.selectedOpportunity.requestIntent ?? NO_REQUEST_INTENT)
+          : (input.requestIntentOverride ?? classifyRequestIntent(requestBundle.content)))
       : NO_REQUEST_INTENT;
-  const focusControlOverridden = requestOverridesFocusControl(
+  const focusControlOverridden = Boolean(input.selectedOpportunity) || requestOverridesFocusControl(
     input.routeKind,
     anchor,
     requestIntent,
@@ -1224,14 +1494,21 @@ export function buildRouteUserContext(input: {
   const preferenceCueWanted =
     input.routeKind === "closing" ||
     ((input.routeKind === "address" || input.routeKind === "followup") &&
-      ["preference_request", "preference_reason_request", "insight_request"].includes(
+      (["preference_request", "preference_reason_request", "insight_request"].includes(
         requestIntent.kind,
-      )) ||
+      ) ||
+        requestIntent.kind === "narrow_decision_request")) ||
     (input.routeKind === "build_on" &&
       !isLeaderCondition(input.conditionCode) &&
       peerBuildOnPreferenceRelevant(anchor));
   if (preferenceCueWanted) {
-    blocks.push(formatPreferenceDecision(input.revealStats));
+    blocks.push(
+      requestIntent.kind === "narrow_decision_request" &&
+        requestIntent.candidates &&
+        requestIntent.candidates.length >= 2
+        ? formatScopedPreferenceDecision(input.revealStats, requestIntent.candidates)
+        : formatPreferenceDecision(input.revealStats),
+    );
   }
   const requestScope = requestScopeFromIntent({
     routeKind: input.routeKind,
@@ -1240,16 +1517,22 @@ export function buildRouteUserContext(input: {
     revealStats: input.revealStats,
     language: input.language,
     intent: requestIntent,
+    semanticFocus: input.selectedOpportunity ? (input.selectedOpportunity.focusCandidate ?? null) : undefined,
   });
   const resolvedRequestCandidate =
     requestIntent.candidate ??
-    currentTopicCandidate(
-      window.map((message) => ({ sender: message.speaker, content: message.content })),
-    ) ??
-    lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0);
+    (input.selectedOpportunity ? (input.selectedOpportunity.focusCandidate ?? null) :
+      currentTopicCandidate(window.map((message) => ({ sender: message.speaker, content: message.content }))) ??
+      lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0));
   const completeRequestCandidate =
     requestIntent.kind === "complete_single_candidate" ? resolvedRequestCandidate : null;
   const deterministicResponse =
+    deterministicTaskGroundingResponse({
+      signal: groundingSignal,
+      conditionCode: input.conditionCode,
+      language: input.language,
+      content: requestBundle.content,
+    }) ??
     deterministicCompleteResponse({
       language: input.language,
       intent: requestIntent,
@@ -1283,8 +1566,13 @@ export function buildRouteUserContext(input: {
       "Notation (server-derived): the + and − signs exist only for reading your notes. In your visible message never write '+', '−', or a plus/minus list — describe each trait in words as a match or a miss.",
     );
   }
-  if (transcript) blocks.push(`Recent conversation:\n${transcript}`);
-  blocks.push("Return only Alex's next visible chat message.");
+  const developerPrompt = blocks.join("\n\n");
+  const transcriptPrompt = [
+    "# Complete Conversation Transcript",
+    transcript || "No visible conversation messages.",
+    "",
+    "Return only Alex's next visible chat message. Do not mention runtime metadata or sequence numbers.",
+  ].join("\n");
   const focusGuard: RouteOutputScopeGuard | undefined =
     focusControl && focusDepthState.candidate
       ? {
@@ -1329,12 +1617,17 @@ export function buildRouteUserContext(input: {
     mediationNoNewTraitsGuard ??
     focusGuard;
   return {
-    userPrompt: blocks.join("\n\n"),
+    // Kept as a combined audit/test view. Model calls use the separated
+    // developerPrompt + transcriptPrompt fields below.
+    userPrompt: `${developerPrompt}\n\n${transcriptPrompt}`,
+    developerPrompt,
+    transcriptPrompt,
     contextFromSeq: window[0]?.seq ?? null,
     contextToSeq: window.at(-1)?.seq ?? null,
     outputScopeGuard,
     focusDepthState,
     requestIntent,
     deterministicResponse,
+    taskGroundingSignal: groundingSignal,
   };
 }

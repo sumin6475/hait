@@ -1,0 +1,47 @@
+cases:
+  - id: U1
+    desc: "Humans already reached the answer, so Alex stays silent"
+    question: "How do A and B compare on safety?"
+    responses:
+      - { seq: 11, speaker: "Participant X", text: "A looks safer than B." }
+      - {
+          seq: 12,
+          speaker: "Participant Y",
+          text: "I agree that A is safer, so that settles it for me.",
+        }
+    eligibleTraitIds: []
+    expect:
+      decision: silent
+      evidence: humans_resolved
+
+  - id: U2
+    desc: "A material difference across two responses permits one synthesis"
+    question: "How do A and B compare overall?"
+    responses:
+      - { seq: 11, speaker: "Participant X", text: "A looks safer because of danger awareness." }
+      - {
+          seq: 12,
+          speaker: "Participant Y",
+          text: "B seems steadier because B keeps a cool head in crises.",
+        }
+      - {
+          seq: 13,
+          speaker: "Participant X",
+          text: "Those are our two views; the tradeoff remains unresolved, and we have nothing else to add.",
+        }
+    eligibleTraitIds: []
+    expect:
+      decision: contribute
+      evidenceOneOf: [unresolved_difference, cross_response_synthesis]
+
+  - id: U3
+    desc: "An eligible note must be selected exactly when used"
+    question: "Does A have another relevant strength?"
+    responses:
+      - { seq: 11, speaker: "Participant X", text: "I only have A's danger awareness." }
+      - { seq: 12, speaker: "Participant Y", text: "Same, I do not have another point." }
+    eligibleTraitIds: [A_p4]
+    expect:
+      decision: contribute
+      evidence: relevant_unsurfaced_information
+      selectedTraitId: A_p4

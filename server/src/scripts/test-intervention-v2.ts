@@ -2,11 +2,25 @@ import assert from "node:assert/strict";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import {
   detectDirectAddress,
+  detectExplicitAlexDefer,
   detectMediationEvidence,
   evaluateLongSilenceGate,
+  humanArrivalAction,
   mediationBuildOnCountAfterSuccessfulRoute,
+  postGenerationEvaluationReady,
   resolveRoute,
 } from "../lib/interventionRoutingV2.js";
+import {
+  describeConversationSituation,
+  normalizeConversationObservation,
+  observerNeedsReview,
+  pendingAlexObligationFromObservation,
+  pendingAlexQuestion,
+  reduceConversationStateAfter,
+  reduceQuestionThread,
+  strictCandidateMentions,
+  type ConversationObserverResult,
+} from "../lib/conversationObserver.js";
 import { buildFollowupCandidateTranscript } from "../lib/followupJudge.js";
 import {
   buildRouteUserContext,
@@ -18,8 +32,10 @@ import {
   formatDeterministicSummary,
   formatLongSilenceContinuity,
   formatPreferenceDecision,
+  formatScopedPreferenceDecision,
   formatVisibleBoardCoverage,
   preferredCandidateFromKnownCoverage,
+  taskGroundingSignal,
 } from "../lib/routeContext.js";
 import { getRoutePrompt, listRoutePromptKeys } from "../lib/routePromptRegistry.js";
 import {
@@ -38,36 +54,82 @@ import {
 } from "../lib/routeScopedGeneration.js";
 import { validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
 import {
+  blocksConsecutiveAITurn,
   deterministicGreetingContent,
   routeGenerationGuard,
   routeGenerationLimits,
 } from "../lib/routeTurn.js";
-import { validateJudgeDecisionSelection } from "../lib/interventionJudge.js";
+import {
+  alignUnifiedJudgeActWithObserver,
+  validateJudgeDecisionSelection,
+  validateUnifiedJudgeDecision,
+} from "../lib/interventionJudge.js";
+import { ledgerRouteKindForAct } from "../lib/interventionEngine.js";
+import { validateQuestionUptakeDecision } from "../lib/questionUptakeJudge.js";
 import { TRAIT_DB } from "../lib/traitData.js";
 import { AIIntervention } from "../models/AIIntervention.js";
+import { ConversationObservation } from "../models/ConversationObservation.js";
+import { Session } from "../models/Session.js";
 
 const keys = listRoutePromptKeys();
+assert.deepEqual(strictCandidateMentions("Each attribute of a candidate matters. Candidate C is out."), ["C"]);
+assert.deepEqual(strictCandidateMentions("Compare Candidate A, B, and 후보 D."), ["A", "B", "D"]);
+assert.deepEqual(strictCandidateMentions("adaptability and communication are important"), []);
+const normalizedAvailableFloor = normalizeConversationObservation(
+  {
+    speechAct: "other",
+    addressees: [],
+    replyToSeq: null,
+    activeCandidates: [],
+    mentionedCandidates: [],
+    scopeCandidates: [],
+    focusCandidate: null,
+    focusBasis: "none",
+    threadGoal: "other",
+    requestExplicitness: "none",
+    requestedScope: "none",
+    expectedHumanResponder: null,
+    transitionState: "transition_available",
+    relationToPendingAlexQuestion: "unrelated",
+    alexRelation: "unrelated",
+    alexRelevance: "not_relevant",
+    conversationPhase: "deliberation",
+    activeThread: null,
+    floor: { holder: "humanY", expectedNext: [], transition: "available" },
+    opportunityTransitions: [],
+    fieldConfidence: { threading: 1, addressee: 1, floor: 1, alexRelation: 1 },
+    confidence: 1,
+  },
+  false,
+  "humanX",
+);
+assert.deepEqual(normalizedAvailableFloor.floor, {
+  holder: "open",
+  expectedNext: [],
+  transition: "available",
+});
+assert.equal(observerNeedsReview(normalizedAvailableFloor), false);
 assert.equal(keys.length, 30);
 assert.equal(keys.filter((key) => key.startsWith("C1.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C2.")).length, 9);
 assert.equal(keys.filter((key) => key.startsWith("C3.")).length, 6);
 assert.equal(keys.filter((key) => key.startsWith("C4.")).length, 9);
-assert.equal(
-  deterministicGreetingContent("C1", "en"),
-  deterministicGreetingContent("C3", "en"),
-);
-assert.equal(
-  deterministicGreetingContent("C2", "en"),
-  deterministicGreetingContent("C4", "en"),
-);
-assert.equal(
-  deterministicGreetingContent("C1", "ko"),
-  deterministicGreetingContent("C3", "ko"),
-);
-assert.equal(
-  deterministicGreetingContent("C2", "ko"),
-  deterministicGreetingContent("C4", "ko"),
-);
+for (const condition of ["C1", "C2", "C3", "C4"] as const) {
+  const prompts = keys
+    .filter((key) => key.startsWith(`${condition}.`))
+    .map((key) =>
+      getRoutePrompt(condition, key.split(".")[1] as Parameters<typeof getRoutePrompt>[1]),
+    );
+  assert.equal(
+    new Set(prompts.map((prompt) => prompt.promptHash)).size,
+    1,
+    `${condition} must retain one condition prompt across every runtime route`,
+  );
+}
+assert.equal(deterministicGreetingContent("C1", "en"), deterministicGreetingContent("C3", "en"));
+assert.equal(deterministicGreetingContent("C2", "en"), deterministicGreetingContent("C4", "en"));
+assert.equal(deterministicGreetingContent("C1", "ko"), deterministicGreetingContent("C3", "ko"));
+assert.equal(deterministicGreetingContent("C2", "ko"), deterministicGreetingContent("C4", "ko"));
 assert.match(deterministicGreetingContent("C1", "en"), /^Hi everyone/);
 assert.match(deterministicGreetingContent("C2", "en"), /^Let's get started/);
 assert.doesNotMatch(deterministicGreetingContent("C1", "en"), /Candidate [ABCD]|\?/);
@@ -82,6 +144,30 @@ const ordinaryIntervention = new AIIntervention({
 });
 assert.equal(ordinaryIntervention.validateSync(), undefined);
 assert.equal(ordinaryIntervention.toObject().repairAudit, undefined);
+
+const observationDocument = new ConversationObservation({
+  sessionId: "64b000000000000000000000",
+  anchorSeq: 12,
+  conversationEpoch: 7,
+  mode: "shadow",
+  addressees: ["humanX"],
+  speechAct: "answer",
+  activeCandidates: ["A", "B"],
+  mentionedCandidates: ["A", "B"],
+  scopeCandidates: ["A", "B"],
+  focusCandidate: null,
+  focusBasis: "multiple_explicit",
+  threadGoal: "compare",
+  requestedScope: "none",
+  requestExplicitness: "none",
+  transitionState: "mid_thread",
+  relationToPendingAlexQuestion: "related_addition",
+  confidence: 0.9,
+});
+assert.equal(observationDocument.validateSync(), undefined);
+const sessionWithEpoch = new Session({ sessionCode: "T-C1-999", conditionCode: "C1" });
+assert.equal(sessionWithEpoch.get("aiState.conversationEpoch"), 0);
+assert.equal(sessionWithEpoch.get("aiState.interactionServedThroughEpoch"), 0);
 
 assert.deepEqual(
   validateJudgeDecisionSelection(
@@ -302,10 +388,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   assert.match(unified, /never treat one transition as required/i);
   assert.match(unified, /address or followup must begin with the substantive answer/i);
   assert.doesNotMatch(unified, /introduce it with ‘also’ or ‘from my notes’/i);
-  assert.match(
-    unified,
-    /address and followup turns, begin with the substantive answer/is,
-  );
+  assert.match(unified, /address and followup turns, begin with the substantive answer/is);
   assert.match(unified, /On build_on turns, engage the latest human reasoning/i);
   assert.match(unified, /separate fact rather than the same fact/i);
   assert.match(unified, /On mediation turns, briefly state where the discussion stands/i);
@@ -363,6 +446,593 @@ assert.equal(
   ).addressed,
   true,
 );
+assert.deepEqual(detectExplicitAlexDefer("Alex, wait, let X respond first."), {
+  deferred: true,
+  evidence: "alex_wait",
+});
+assert.equal(detectDirectAddress("Alex, wait, let X respond first.").addressed, false);
+assert.equal(detectExplicitAlexDefer("Let's hear from Y first, Alex.").deferred, true);
+assert.equal(detectDirectAddress("Let's hear from Y first, Alex.").addressed, false);
+assert.equal(detectExplicitAlexDefer("알렉스, 잠깐 기다려. X가 먼저 답하게 하자.").deferred, true);
+assert.equal(detectDirectAddress("알렉스, 잠깐 기다려. X가 먼저 답하게 하자.").addressed, false);
+assert.equal(detectExplicitAlexDefer("Alex, what do you think about B?").deferred, false);
+assert.equal(
+  humanArrivalAction({ floorWaiting: true, generating: false }),
+  "cancel_floor_then_evaluate",
+);
+assert.equal(
+  humanArrivalAction({ floorWaiting: false, generating: true }),
+  "finish_generation_then_reevaluate",
+);
+assert.equal(humanArrivalAction({ floorWaiting: false, generating: false }), "evaluate_now");
+assert.equal(
+  postGenerationEvaluationReady({ pendingSeq: 12, pooledThroughSeq: 11, generating: false }),
+  false,
+);
+assert.equal(
+  postGenerationEvaluationReady({ pendingSeq: 12, pooledThroughSeq: 12, generating: false }),
+  true,
+);
+assert.equal(
+  postGenerationEvaluationReady({ pendingSeq: 12, pooledThroughSeq: 12, generating: true }),
+  false,
+);
+assert.equal(blocksConsecutiveAITurn({ lastSenderRole: "ai", routeKind: "build_on" }), true);
+assert.equal(
+  blocksConsecutiveAITurn({
+    lastSenderRole: "ai",
+    routeKind: "build_on",
+    postGenerationReevaluation: true,
+  }),
+  false,
+);
+
+const alexQuestionTranscript = [
+  { seq: 10, senderRole: "ai", speaker: "Alex", content: "How do A and B compare?" },
+  { seq: 11, senderRole: "humanX", speaker: "X", content: "A seems more reliable." },
+];
+assert.deepEqual(pendingAlexQuestion(alexQuestionTranscript, 11), {
+  seq: 10,
+  content: "How do A and B compare?",
+  candidates: ["A", "B"],
+});
+
+const observerBase: ConversationObserverResult = {
+  addressees: ["alex"],
+  replyToSeq: 10,
+  speechAct: "answer",
+  activeCandidates: ["A", "B"],
+  mentionedCandidates: ["A", "B"],
+  scopeCandidates: ["A", "B"],
+  focusCandidate: null,
+  focusBasis: "multiple_explicit",
+  threadGoal: "answer_question",
+  requestedScope: "none",
+  requestExplicitness: "none",
+  transitionState: "mid_thread",
+  relationToPendingAlexQuestion: "direct_answer",
+  expectedHumanResponder: null,
+  conversationPhase: "comparison",
+  alexRelation: "response_to_alex",
+  alexRelevance: "relevant",
+  activeThread: {
+    threadId: "thread-10",
+    rootSeq: 10,
+    status: "open",
+    goal: "answer_question",
+    requestedAction: "compare Candidates A and B",
+    requestedScope: "multiple_candidates",
+    candidates: ["A", "B"],
+    participants: ["alex", "humanX"],
+    expectedResponders: ["alex"],
+    alexParticipation: "relevant",
+    evidenceSeqs: [10, 11],
+  },
+  floor: { holder: "open", expectedNext: ["alex"], transition: "available" },
+  fieldConfidence: { threading: 0.95, addressee: 0.95, floor: 0.9, alexRelation: 0.95 },
+  confidence: 0.95,
+};
+assert.equal(
+  normalizeConversationObservation(
+    {
+      ...observerBase,
+      addressees: ["humanY"],
+      speechAct: "question",
+      expectedHumanResponder: "humanY",
+      transitionState: "transition_available",
+      relationToPendingAlexQuestion: "related_addition",
+    },
+    false,
+  ).transitionState,
+  "mid_thread",
+);
+assert.equal(
+  normalizeConversationObservation(observerBase, false).relationToPendingAlexQuestion,
+  "unrelated",
+);
+assert.equal(
+  normalizeConversationObservation(
+    {
+      ...observerBase,
+      addressees: ["alex", "humanY"],
+      speechAct: "question",
+      expectedHumanResponder: "humanY",
+      alexRelation: "about_alex",
+    },
+    false,
+    "humanX",
+  ).expectedHumanResponder,
+  "humanY",
+);
+const normalizedSingleCandidateGroup = normalizeConversationObservation(
+  {
+    ...observerBase,
+    addressees: ["group"],
+    speechAct: "proposal",
+    activeCandidates: ["A", "B", "C", "D"],
+    threadGoal: "compare",
+    requestedScope: "whole_board",
+    requestExplicitness: "explicit",
+    alexRelation: "group_participant",
+  },
+  false,
+  "humanY",
+  "Let's compare Candidate A's attributes together.",
+  32,
+  new Set([32]),
+);
+assert.deepEqual(normalizedSingleCandidateGroup.activeCandidates, ["A", "B", "C", "D"]);
+assert.equal(normalizedSingleCandidateGroup.requestedScope, "whole_board");
+
+const tc4022Base: ConversationObserverResult = {
+  ...observerBase,
+  addressees: [],
+  speechAct: "answer",
+  activeCandidates: ["A", "C"],
+  mentionedCandidates: ["A", "C"],
+  scopeCandidates: ["A", "C"],
+  focusCandidate: "A",
+  focusBasis: "current_explicit",
+  threadGoal: "decide",
+  requestedScope: "none",
+  alexRelation: "group_participant",
+  alexRelevance: "required",
+  activeThread: {
+    threadId: "thread-1",
+    rootSeq: 1,
+    status: "open",
+    goal: "compare_information",
+    requestedAction: "discuss candidates A, B, C, D",
+    requestedScope: "whole_board",
+    candidates: ["A", "C"],
+    participants: ["alex", "humanX", "humanY"],
+    expectedResponders: ["humanX"],
+    alexParticipation: "required",
+    evidenceSeqs: [],
+  },
+};
+const tc4022Seq2 = normalizeConversationObservation(
+  { ...tc4022Base, mentionedCandidates: ["C"], focusCandidate: "C" },
+  false,
+  "humanY",
+  "Each and every attribute of a candidate is important. Candidate C has only 3 matches.",
+  2,
+  new Set([1, 2]),
+);
+assert.deepEqual(tc4022Seq2.mentionedCandidates, ["C"]);
+assert.deepEqual(tc4022Seq2.scopeCandidates, ["A", "B", "C", "D"]);
+assert.deepEqual(tc4022Seq2.activeThread?.candidates, ["A", "B", "C", "D"]);
+assert.equal(tc4022Seq2.focusCandidate, "C");
+let tc4022State = reduceConversationStateAfter({
+  anchorSeq: 2,
+  conversationEpoch: 1,
+  observation: tc4022Seq2,
+});
+const normalizeTc4022 = (content: string, seq: number, focusCandidate: "A" | "B" | "C" | "D" | null) => {
+  const normalized = normalizeConversationObservation(
+    { ...tc4022Base, activeCandidates: ["A", "B", "C", "D"], focusCandidate },
+    false,
+    seq % 2 ? "humanX" : "humanY",
+    content,
+    seq,
+    new Set(Array.from({ length: seq }, (_, index) => index + 1)),
+    tc4022State,
+  );
+  tc4022State = reduceConversationStateAfter({
+    previous: tc4022State,
+    anchorSeq: seq,
+    conversationEpoch: seq - 1,
+    observation: normalized,
+  });
+  return normalized;
+};
+assert.equal(normalizeTc4022("Communication is key and is not verbally skillful.", 7, "C").focusCandidate, "C");
+assert.equal(normalizeTc4022("Candidate A is organized and B is good at multitasking.", 10, null).focusCandidate, null);
+assert.equal(normalizeTc4022("Even Candidate D is deemed not fit to lead.", 11, "D").focusCandidate, "D");
+assert.equal(normalizeTc4022("This makes D a good candidate.", 12, "D").focusCandidate, "D");
+assert.equal(normalizeTc4022("But D is deemed not fit to lead?", 13, "D").focusCandidate, "D");
+const observerSnapshotForTest = {
+  anchorSeq: 11,
+  conversationEpoch: 2,
+  observation: observerBase,
+  stateAfter: reduceConversationStateAfter({
+    anchorSeq: 11,
+    conversationEpoch: 2,
+    observation: observerBase,
+  }),
+  questionThreadAfter: null,
+};
+const observerSituation = describeConversationSituation(observerSnapshotForTest);
+assert.match(observerSituation, /thread-10/);
+assert.match(observerSituation, /Candidates A and B|candidates: A, B/i);
+assert.doesNotMatch(observerSituation, /alexRelation|activeThread|fieldConfidence/);
+assert.equal(
+  alignUnifiedJudgeActWithObserver(
+    {
+      decision: "speak",
+      act: "answer",
+      evidence: "conversation_grounded_synthesis",
+      selectedTraitId: null,
+      targetThreadRootSeq: null,
+      evidenceSeqs: [11],
+    },
+    observerSnapshotForTest,
+  ).act,
+  "follow",
+);
+assert.ok(
+  validateUnifiedJudgeDecision(
+    {
+      decision: "speak",
+      act: "contribute",
+      evidence: "relevant_unsurfaced_information",
+      selectedTraitId: "A_p4",
+      targetThreadRootSeq: 10,
+      evidenceSeqs: [10, 11],
+    },
+    ["A_p4"],
+  ),
+);
+assert.deepEqual(
+  alignUnifiedJudgeActWithObserver(
+    {
+      decision: "speak",
+      act: "answer",
+      evidence: "conversation_grounded_synthesis",
+      selectedTraitId: null,
+      targetThreadRootSeq: null,
+      evidenceSeqs: [11],
+    },
+    observerSnapshotForTest,
+  ),
+  {
+    decision: "speak",
+    act: "follow",
+    evidence: "response_to_alex",
+    selectedTraitId: null,
+    targetThreadRootSeq: 10,
+    evidenceSeqs: [11],
+  },
+);
+assert.equal(
+  validateUnifiedJudgeDecision(
+    {
+      decision: "silent",
+      act: "answer",
+      evidence: "no_useful_move",
+      selectedTraitId: null,
+      targetThreadRootSeq: null,
+      evidenceSeqs: [11],
+    },
+    [],
+  ),
+  null,
+);
+assert.equal(
+  normalizeConversationObservation(
+    { ...observerBase, requestedScope: "whole_board", requestExplicitness: "none" },
+    false,
+  ).requestedScope,
+  "none",
+);
+
+
+const explicitGroupCompare: ConversationObserverResult = {
+  ...observerBase,
+  addressees: ["group"],
+  replyToSeq: null,
+  speechAct: "proposal",
+  threadGoal: "compare",
+  requestedScope: "whole_board",
+  requestExplicitness: "explicit",
+  transitionState: "mid_thread",
+  relationToPendingAlexQuestion: "unrelated",
+};
+assert.deepEqual(
+  pendingAlexObligationFromObservation({
+    anchorSeq: 21,
+    conversationEpoch: 9,
+    observation: explicitGroupCompare,
+  }),
+  {
+    rootSeq: 21,
+    rootEpoch: 9,
+    kind: "compare_request",
+    requestedScope: "whole_board",
+    candidates: ["A", "B"],
+  },
+);
+assert.equal(
+  pendingAlexObligationFromObservation({
+    anchorSeq: 21,
+    conversationEpoch: 9,
+    observation: { ...explicitGroupCompare, requestExplicitness: "implicit" },
+  }),
+  null,
+);
+assert.equal(
+  pendingAlexObligationFromObservation({
+    anchorSeq: 21,
+    conversationEpoch: 9,
+    observation: {
+      ...explicitGroupCompare,
+      addressees: ["humanX"],
+      expectedHumanResponder: "humanX",
+    },
+  }),
+  null,
+);
+
+// T-C2-026: content scope and participation scope are independent. A request
+// can concern one candidate while still inviting the whole group, including
+// Alex, into a shared comparison thread. The named human owns the next floor;
+// that delays Alex but does not erase the thread.
+const singleCandidateGroupCompare: ConversationObserverResult = {
+  ...explicitGroupCompare,
+  activeCandidates: ["A"],
+  requestedScope: "single_candidate",
+  expectedHumanResponder: "humanX",
+};
+const singleCandidateRoot = reduceConversationStateAfter({
+  anchorSeq: 32,
+  conversationEpoch: 21,
+  observation: singleCandidateGroupCompare,
+});
+assert.deepEqual(singleCandidateRoot.pendingAlexObligation, {
+  rootSeq: 32,
+  rootEpoch: 21,
+  kind: "compare_request",
+  requestedScope: "single_candidate",
+  candidates: ["A"],
+});
+const refinedSingleCandidateRoot = reduceConversationStateAfter({
+  previous: singleCandidateRoot,
+  anchorSeq: 33,
+  conversationEpoch: 22,
+  observation: {
+    ...singleCandidateGroupCompare,
+    replyToSeq: 32,
+    speechAct: "answer",
+    requestedScope: "single_point",
+    requestExplicitness: "none",
+  },
+});
+assert.equal(refinedSingleCandidateRoot.pendingAlexObligation?.rootSeq, 32);
+assert.equal(
+  refinedSingleCandidateRoot.pendingAlexObligation?.requestedScope,
+  "single_candidate",
+);
+const boundedFloorOpportunity = reduceConversationStateAfter({
+  previous: refinedSingleCandidateRoot,
+  anchorSeq: 35,
+  conversationEpoch: 24,
+  observation: {
+    ...observerBase,
+    addressees: ["group"],
+    replyToSeq: 34,
+    speechAct: "other",
+    activeCandidates: ["A"],
+    threadGoal: "compare",
+    transitionState: "mid_thread",
+    relationToPendingAlexQuestion: "unrelated",
+  },
+});
+
+// A semantically addressed Alex question is an answer obligation even when it
+// is not phrased as an imperative and another recipient may also be present.
+const missedAlexQuestion = reduceConversationStateAfter({
+  previous: boundedFloorOpportunity,
+  anchorSeq: 39,
+  conversationEpoch: 28,
+  observation: {
+    ...observerBase,
+    addressees: ["alex", "humanY"],
+    replyToSeq: null,
+    speechAct: "question",
+    activeCandidates: ["A"],
+    threadGoal: "compare",
+    requestedScope: "none",
+    requestExplicitness: "none",
+    expectedHumanResponder: "humanY",
+    relationToPendingAlexQuestion: "unrelated",
+  },
+});
+assert.equal(missedAlexQuestion.pendingAlexObligation?.kind, "answer_request");
+assert.equal(missedAlexQuestion.pendingAlexObligation?.rootSeq, 39);
+assert.equal(missedAlexQuestion.pendingAlexObligation?.rootEpoch, 28);
+
+const compareRootState = reduceConversationStateAfter({
+  anchorSeq: 21,
+  conversationEpoch: 9,
+  observation: explicitGroupCompare,
+});
+const compareHumansCarrying = reduceConversationStateAfter({
+  previous: compareRootState,
+  anchorSeq: 22,
+  conversationEpoch: 10,
+  observation: {
+    ...observerBase,
+    addressees: ["humanX"],
+    replyToSeq: 21,
+    speechAct: "answer",
+    threadGoal: "compare",
+    transitionState: "mid_thread",
+    relationToPendingAlexQuestion: "unrelated",
+  },
+});
+const compareTransition = reduceConversationStateAfter({
+  previous: compareHumansCarrying,
+  anchorSeq: 23,
+  conversationEpoch: 11,
+  observation: {
+    ...observerBase,
+    addressees: ["group"],
+    replyToSeq: 22,
+    speechAct: "agreement",
+    threadGoal: "compare",
+    transitionState: "transition_available",
+    relationToPendingAlexQuestion: "unrelated",
+  },
+});
+const compareClosed = reduceConversationStateAfter({
+  previous: compareTransition,
+  anchorSeq: 24,
+  conversationEpoch: 12,
+  observation: {
+    ...observerBase,
+    addressees: ["group"],
+    replyToSeq: 23,
+    speechAct: "topic_shift",
+    activeCandidates: ["C"],
+    threadGoal: "other",
+    transitionState: "transition_available",
+    relationToPendingAlexQuestion: "unrelated",
+  },
+});
+assert.equal(compareClosed.pendingAlexObligation, undefined);
+assert.equal(compareClosed.obligationCloseReason, "topic_shift");
+
+const afterXAnswer = reduceQuestionThread({
+  pendingRoot: { seq: 10, candidates: ["A", "B"] },
+  anchorSeq: 11,
+  senderRole: "humanX",
+  observation: observerBase,
+});
+assert.deepEqual(afterXAnswer, {
+  rootSeq: 10,
+  state: "collecting_answers",
+  candidates: ["A", "B"],
+  evidenceSeqs: [11],
+  responders: ["humanX"],
+  closeReason: undefined,
+});
+const afterYAddition = reduceQuestionThread({
+  previous: afterXAnswer,
+  pendingRoot: { seq: 10, candidates: ["A", "B"] },
+  anchorSeq: 12,
+  senderRole: "humanY",
+  observation: {
+    ...observerBase,
+    addressees: ["humanX"],
+    replyToSeq: 11,
+    relationToPendingAlexQuestion: "related_addition",
+  },
+});
+assert.equal(afterYAddition?.state, "collecting_answers");
+assert.deepEqual(afterYAddition?.evidenceSeqs, [11, 12]);
+assert.deepEqual(afterYAddition?.responders, ["humanX", "humanY"]);
+const afterClosure = reduceQuestionThread({
+  previous: afterYAddition,
+  pendingRoot: { seq: 10, candidates: ["A", "B"] },
+  anchorSeq: 13,
+  senderRole: "humanX",
+  observation: {
+    ...observerBase,
+    addressees: ["group"],
+    replyToSeq: 12,
+    speechAct: "closure",
+    transitionState: "transition_available",
+    relationToPendingAlexQuestion: "uncertain",
+  },
+});
+assert.equal(afterClosure?.state, "uptake_eligible");
+assert.equal(
+  validateQuestionUptakeDecision(
+    {
+      decision: "contribute",
+      evidence: "relevant_unsurfaced_information",
+      selectedTraitId: "A_p4",
+    },
+    ["A_p4"],
+  ),
+  true,
+);
+assert.equal(
+  validateQuestionUptakeDecision(
+    {
+      decision: "contribute",
+      evidence: "relevant_unsurfaced_information",
+      selectedTraitId: "B_p4",
+    },
+    ["A_p4"],
+  ),
+  false,
+);
+assert.equal(
+  validateQuestionUptakeDecision(
+    { decision: "silent", evidence: "humans_resolved", selectedTraitId: "A_p4" },
+    ["A_p4"],
+  ),
+  false,
+);
+let carryingThread: ReturnType<typeof reduceQuestionThread> = afterYAddition;
+for (const anchorSeq of [13, 14]) {
+  carryingThread = reduceQuestionThread({
+    previous: carryingThread,
+    pendingRoot: { seq: 10, candidates: ["A", "B"] },
+    anchorSeq,
+    senderRole: anchorSeq === 13 ? "humanX" : "humanY",
+    observation: {
+      ...observerBase,
+      relationToPendingAlexQuestion: "related_addition",
+    },
+  });
+}
+assert.equal(carryingThread?.state, "collecting_answers");
+assert.equal(carryingThread?.closeReason, undefined);
+const closedByTopicShift = reduceQuestionThread({
+  previous: afterYAddition,
+  pendingRoot: { seq: 10, candidates: ["A", "B"] },
+  anchorSeq: 13,
+  senderRole: "humanX",
+  observation: {
+    ...observerBase,
+    speechAct: "topic_shift",
+    activeCandidates: ["C"],
+    relationToPendingAlexQuestion: "unrelated",
+  },
+});
+assert.equal(closedByTopicShift?.state, "closed");
+assert.equal(closedByTopicShift?.closeReason, "topic_shift");
+const stillOpenUnansweredQuestion = reduceQuestionThread({
+  previous: {
+    rootSeq: 10,
+    state: "waiting_for_answer",
+    candidates: ["A"],
+    evidenceSeqs: [],
+    responders: [],
+  },
+  pendingRoot: { seq: 10, candidates: ["A"] },
+  anchorSeq: 14,
+  senderRole: "humanY",
+  observation: {
+    ...observerBase,
+    activeCandidates: ["C"],
+    relationToPendingAlexQuestion: "unrelated",
+  },
+});
+assert.equal(stillOpenUnansweredQuestion?.state, "waiting_for_answer");
+assert.equal(stillOpenUnansweredQuestion?.closeReason, undefined);
 
 // Trait pooling accepts only a specific affirmative source span. Generic
 // preference language, questions, and contextual responsibility cannot create
@@ -643,6 +1313,17 @@ assert.equal(
   }).routeKind,
   "build_on",
 );
+
+// The ledger Judge is condition-neutral, so the final act-to-route mapping
+// must enforce the manipulation boundary for every Peer condition too.
+for (const conditionCode of ["C1", "C3"] as const) {
+  assert.equal(ledgerRouteKindForAct("mediate", conditionCode), "build_on");
+}
+for (const conditionCode of ["C2", "C4"] as const) {
+  assert.equal(ledgerRouteKindForAct("mediate", conditionCode), "mediation");
+}
+assert.equal(ledgerRouteKindForAct("contribute", "C1"), "build_on");
+assert.equal(ledgerRouteKindForAct("follow", "C3"), "followup");
 assert.deepEqual(
   detectMediationEvidence([
     "Let's just pick Candidate A.",
@@ -733,15 +1414,14 @@ assert.match(fullBoardSummary, /Candidate D — 4 matches · 6 misses/);
 assert.match(fullBoardSummary, /All candidates have at least one confirmed point on the table/);
 assert.ok(fullBoardSummary.length > 800);
 assert.equal(preferredCandidateFromKnownCoverage(separatedInformationStats), null);
-assert.equal(
-  decidePreferenceFromKnownCoverage(separatedInformationStats).reason,
-  "top_ratio_tie",
-);
+assert.equal(decidePreferenceFromKnownCoverage(separatedInformationStats).reason, "top_ratio_tie");
 assert.equal(decidePreferenceFromKnownCoverage(separatedInformationStats).scope, "full");
-assert.deepEqual(
-  decidePreferenceFromKnownCoverage(separatedInformationStats).comparedCandidates,
-  ["A", "B", "C", "D"],
-);
+assert.deepEqual(decidePreferenceFromKnownCoverage(separatedInformationStats).comparedCandidates, [
+  "A",
+  "B",
+  "C",
+  "D",
+]);
 assert.match(formatPreferenceDecision(separatedInformationStats), /CURRENT_CO_PREFERENCE/i);
 assert.match(formatPreferenceDecision(separatedInformationStats), /own notes.*team.*shared/i);
 
@@ -757,10 +1437,7 @@ const minimalPreferenceStats = {
   aiSurfacedIds: [],
 };
 assert.equal(preferredCandidateFromKnownCoverage(minimalPreferenceStats), "C");
-assert.equal(
-  decidePreferenceFromKnownCoverage(minimalPreferenceStats).reason,
-  "unique_top_ratio",
-);
+assert.equal(decidePreferenceFromKnownCoverage(minimalPreferenceStats).reason, "unique_top_ratio");
 
 const uniquePreferenceStats = {
   byCandidate: {
@@ -789,10 +1466,7 @@ const tiedPreferenceStats = {
 assert.equal(preferredCandidateFromKnownCoverage(tiedPreferenceStats), "C");
 assert.deepEqual(decidePreferenceFromKnownCoverage(tiedPreferenceStats).leaders, ["C"]);
 assert.equal(decidePreferenceFromKnownCoverage(tiedPreferenceStats).reason, "unique_top_ratio");
-assert.match(
-  formatPreferenceDecision(tiedPreferenceStats),
-  /CURRENT_PREFERENCE — Candidate C/,
-);
+assert.match(formatPreferenceDecision(tiedPreferenceStats), /CURRENT_PREFERENCE — Candidate C/);
 
 // Human and Alex disclosures extend the complete Z-profile used for preference.
 const alexVisiblePreferenceStats = {
@@ -839,7 +1513,7 @@ const summaryContext = buildRouteUserContext({
   language: "en",
   anchorSeq: 45,
 });
-assert.equal(summaryContext.contextFromSeq, 6);
+assert.equal(summaryContext.contextFromSeq, 1);
 assert.equal(summaryContext.contextToSeq, 45);
 assert.match(summaryContext.userPrompt, /Visible on-table coverage/);
 assert.match(summaryContext.userPrompt, /human and Alex disclosures/i);
@@ -854,7 +1528,40 @@ const backchannelContext = buildRouteUserContext({
   language: "en",
   anchorSeq: 45,
 });
-assert.equal(backchannelContext.contextFromSeq, 42);
+assert.equal(backchannelContext.contextFromSeq, 1);
+const runtimeContractContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C4",
+  messages,
+  revealStats,
+  language: "en",
+  anchorSeq: 45,
+  conversationSituation: observerSituation,
+  communicativeAct: "participate",
+  judgeEvidenceSeqs: [10, 11],
+  selectedOpportunity: {
+    id: "opp:11:group_request:alex+humanX+humanY",
+    kind: "group_request",
+    expectation: "required",
+    sourceSeq: 11,
+    currentTriggerSeq: 45,
+    threadId: "thread-10",
+    targets: ["alex", "humanX", "humanY"],
+    requestedAction: "compare Candidates A and B",
+    sourceContent: "Could everyone compare A and B?",
+    evidenceSeqs: [11],
+  },
+});
+assert.match(runtimeContractContext.developerPrompt, /# Current Conversation Situation/);
+assert.match(runtimeContractContext.developerPrompt, /Perform participate/);
+assert.match(runtimeContractContext.developerPrompt, /messages 10, 11/);
+assert.match(runtimeContractContext.developerPrompt, /sole primary task/);
+assert.match(runtimeContractContext.developerPrompt, /Opportunity source message: 11/);
+assert.match(runtimeContractContext.developerPrompt, /Current trigger message: 45/);
+assert.match(runtimeContractContext.developerPrompt, /Could everyone compare A and B\?/);
+assert.match(runtimeContractContext.transcriptPrompt, /\[1\].*Message 1/);
+assert.match(runtimeContractContext.transcriptPrompt, /\[45\].*Message 45/);
+assert.doesNotMatch(runtimeContractContext.transcriptPrompt, /# Turn Metadata/);
 
 const earlyChoiceContext = buildRouteUserContext({
   routeKind: "address",
@@ -1151,6 +1858,69 @@ assert.equal(
 );
 assert.equal(classifyRequestIntent("Alex, who is best?").kind, "preference_request");
 assert.equal(classifyRequestIntent("Which one would you pick?").kind, "preference_request");
+assert.deepEqual(
+  classifyRequestIntent(
+    "Alex, who would you pick between Candidate A and Candidate B, and why?",
+  ),
+  {
+    kind: "narrow_decision_request",
+    candidate: null,
+    candidates: ["A", "B"],
+    source: "known_profile",
+  },
+);
+const scopedABPreference = formatScopedPreferenceDecision(tC2030PreferenceStats, ["A", "B"]);
+assert.match(scopedABPreference, /requested set/);
+assert.doesNotMatch(scopedABPreference, /Candidate D/);
+const scopedABContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 1,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Alex, who would you pick between Candidate A and Candidate B, and why?",
+    },
+  ],
+  revealStats: tC2030PreferenceStats,
+  language: "en",
+  anchorSeq: 1,
+});
+assert.equal(scopedABContext.outputScopeGuard?.reason, "requested_narrowing");
+assert.equal(
+  routeGenerationGuard("address", scopedABContext.outputScopeGuard)?.reason,
+  "requested_narrowing",
+);
+assert.equal(
+  outputScopeViolation(
+    "Candidate A has excellent spatial awareness.",
+    ["A_p4"],
+    scopedABContext.outputScopeGuard!,
+    [],
+  ),
+  "trait_outside_selected_contribution",
+);
+assert.deepEqual(classifyRequestIntent("Let's compare Candidate A's matches with each other."), {
+  kind: "compare_request",
+  candidate: "A",
+  candidates: ["A"],
+  source: "known_profile",
+});
+assert.deepEqual(classifyRequestIntent("우리 Candidate A의 matches를 비교해보자."), {
+  kind: "compare_request",
+  candidate: "A",
+  candidates: ["A"],
+  source: "known_profile",
+});
+assert.equal(
+  classifyRequestIntent("Let's compare all four candidates side by side.").kind,
+  "compare_request",
+);
+assert.equal(
+  classifyRequestIntent("Let's narrow all four candidates to two.").kind,
+  "narrow_decision_request",
+);
 assert.deepEqual(classifyRequestIntent("Alex, why do you think Candidate D is best?"), {
   kind: "preference_reason_request",
   candidate: "D",
@@ -1206,6 +1976,34 @@ assert.deepEqual(
     source: "alex_notes",
   },
 );
+
+const withinCandidateComparisonContexts = (["C1", "C2", "C3", "C4"] as const).map(
+  (conditionCode) =>
+    buildRouteUserContext({
+      routeKind: "address",
+      conditionCode,
+      messages: [
+        {
+          seq: 32,
+          senderRole: "humanY",
+          speaker: "Participant Y",
+          content: "Let's compare Candidate A's matches with each other.",
+        },
+      ],
+      revealStats: separatedInformationStats,
+      language: "en",
+      anchorSeq: 32,
+    }),
+);
+for (const context of withinCandidateComparisonContexts) {
+  assert.equal(context.requestIntent.kind, "compare_request");
+  assert.equal(context.requestIntent.source, "known_profile");
+  assert.deepEqual(context.requestIntent.candidates, ["A"]);
+  assert.match(context.userPrompt, /REQUESTED_WITHIN_CANDIDATE_COMPARISON/);
+  assert.match(context.userPrompt, /responsive participation turn/i);
+  assert.match(context.userPrompt, /acceptable to repeat.*explicit task/is);
+  assert.doesNotMatch(context.userPrompt, /Conversational target:/);
+}
 const lateNewInformationContext = buildRouteUserContext({
   routeKind: "address",
   conditionCode: "C2",
@@ -2002,6 +2800,69 @@ const preferenceAddressContext = buildRouteUserContext({
 });
 assert.doesNotMatch(preferenceAddressContext.userPrompt, /Internal conversation control/);
 assert.equal(preferenceAddressContext.outputScopeGuard, undefined);
+
+assert.equal(
+  taskGroundingSignal("I feel the captain should be able to communicate properly and handle stress."),
+  "task_standard_drift",
+);
+assert.equal(
+  taskGroundingSignal("I want qualities that are more human and that an autopilot cannot do."),
+  "task_standard_drift",
+);
+assert.equal(
+  taskGroundingSignal("Each and every attribute is equally important."),
+  "none",
+);
+assert.equal(
+  taskGroundingSignal("I don't have the misses you have on my list. Do you know why?"),
+  "distributed_information_question",
+);
+const distributedInformationContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C4",
+  messages: [{
+    seq: 32,
+    senderRole: "humanY",
+    speaker: "Participant Y",
+    content: "I don't have the misses you have on my list. Do you know why?",
+  }],
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 32,
+});
+assert.equal(distributedInformationContext.taskGroundingSignal, "distributed_information_question");
+assert.match(distributedInformationContext.deterministicResponse!, /files are distributed across the board/i);
+const equalWeightCorrectionContext = buildRouteUserContext({
+  routeKind: "mediation",
+  conditionCode: "C4",
+  messages: [{
+    seq: 3,
+    senderRole: "humanX",
+    speaker: "Participant X",
+    content: "For this captain role, communication should be more important.",
+  }],
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 3,
+});
+assert.equal(equalWeightCorrectionContext.taskGroundingSignal, "task_standard_drift");
+assert.match(equalWeightCorrectionContext.deterministicResponse!, /Communication is one item/i);
+assert.match(equalWeightCorrectionContext.deterministicResponse!, /Which other parts/i);
+const peerTaskDriftContext = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C3",
+  messages: [{
+    seq: 11,
+    senderRole: "humanY",
+    speaker: "Participant Y",
+    content: "I want qualities that are more human and that an autopilot cannot do.",
+  }],
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 11,
+});
+assert.equal(peerTaskDriftContext.taskGroundingSignal, "task_standard_drift");
+assert.equal(peerTaskDriftContext.deterministicResponse, undefined, "peer conditions do not mediate task framing");
 
 const comparisonFocusState = deriveFocusDepthState({
   routeKind: "build_on",

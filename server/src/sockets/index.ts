@@ -4,16 +4,20 @@ import type { ConditionCode, ParticipantRole } from "../types.js";
 import { Session } from "../models/Session.js";
 import { Participant } from "../models/Participant.js";
 import { Message } from "../models/Message.js";
-import { allocSeq } from "../lib/seq.js";
+import { allocHumanSeq } from "../lib/seq.js";
 import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
 import { updateRevealStats } from "../lib/poolingTally.js";
 import { aiDisplayName } from "../lib/labels.js";
 import { log } from "../lib/log.js";
+import { startTurnTrace, traceTurnEvent } from "../lib/turnTrace.js";
 import {
+  noteHumanMessageArrival,
   onHumanMessage,
   pauseInterventionSession,
   startInterventionSession,
 } from "../lib/interventionEngine.js";
+import { enqueueConversationObservation } from "../lib/conversationObserver.js";
+import { detectExplicitAlexDefer } from "../lib/interventionRoutingV2.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type AppSocket = Socket<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
@@ -248,7 +252,8 @@ export function registerSocketHandlers(io: IO) {
         }
         if (conditionCode !== "CTRL") ledgerTurn = reserveLedgerTurn(sessionId);
 
-        const nextSeq = await allocSeq(sessionId);
+        const humanTurn = await allocHumanSeq(sessionId);
+        const nextSeq = humanTurn.seq;
         const savedMessage = await Message.create({
           sessionId,
           sender: participantCode,
@@ -264,7 +269,24 @@ export function registerSocketHandlers(io: IO) {
           content: savedMessage.content,
           createdAt: savedMessage.createdAt.toISOString(),
         });
-        log.info(`[socket] message saved: ${sessionCode} seq=${nextSeq} role=${role}`);
+        if (conditionCode !== "CTRL") {
+          startTurnTrace({
+            sessionId: sessionId.toString(),
+            sessionCode,
+            seq: nextSeq,
+            role,
+            content: trimmed,
+          });
+        }
+
+        if (conditionCode !== "CTRL") {
+          await noteHumanMessageArrival({
+            sessionCode,
+            messageSeq: nextSeq,
+            conversationEpoch: humanTurn.conversationEpoch,
+            content: trimmed,
+          });
+        }
 
         await ledgerTurn?.waitForPrior;
         if (conditionCode !== "CTRL" && trimmed.length >= 15) {
@@ -283,9 +305,11 @@ export function registerSocketHandlers(io: IO) {
                 : Promise.resolve(),
             ]);
             if (ids.length) {
-              log.info(
-                `[pooling] surfaced=${ids.length} new=${newCount} role=${role} seq=${nextSeq} session=${sessionCode}`,
-              );
+              traceTurnEvent({
+                sessionId: sessionId.toString(),
+                seq: nextSeq,
+                detail: `coverage: surfaced ${ids.length}, newly recorded ${newCount}`,
+              });
             }
           } catch (error) {
             log.error("[pooling] extract error:", error);
@@ -294,9 +318,21 @@ export function registerSocketHandlers(io: IO) {
         ledgerTurn?.release();
         ledgerTurn = undefined;
         if (conditionCode !== "CTRL") {
-          void onHumanMessage({ sessionCode, messageSeq: nextSeq, content: trimmed }).catch(
-            (error) => log.error("[push-v2] turn error:", error),
-          );
+          const explicitDefer = detectExplicitAlexDefer(trimmed);
+          enqueueConversationObservation({
+            sessionId,
+            anchorSeq: nextSeq,
+            conversationEpoch: humanTurn.conversationEpoch,
+            explicitAlexDefer: explicitDefer.deferred,
+            explicitAlexDeferEvidence:
+              explicitDefer.evidence === "none" ? undefined : explicitDefer.evidence,
+          });
+          void onHumanMessage({
+            sessionCode,
+            messageSeq: nextSeq,
+            conversationEpoch: humanTurn.conversationEpoch,
+            content: trimmed,
+          }).catch((error) => log.error("[push-v2] turn error:", error));
         }
       } catch (error) {
         log.error("[socket] send-message error:", error);

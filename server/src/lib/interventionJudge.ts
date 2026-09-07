@@ -4,6 +4,18 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
 import type { MainJudgeSignal } from "./routeContext.js";
 import { TRAIT_BY_ID } from "./traitData.js";
+import type {
+  ConversationObserverSnapshot,
+  ObserverTranscriptMessage,
+} from "./conversationObserver.js";
+import { describeConversationSituation } from "./conversationObserver.js";
+import type { CommunicativeAct } from "../types.js";
+import {
+  describeConversationLedger,
+  opportunityMayBypassCooldown,
+  type ConversationLedgerState,
+  type OpportunityKind,
+} from "./conversationLedger.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 const JUDGE_MODEL = "gpt-4o-mini";
@@ -139,3 +151,558 @@ export async function judgeIntervention(
 }
 
 export const JUDGE_WINDOW_SIZE = JUDGE_WINDOW;
+
+const UnifiedJudgeSchema = z.object({
+  decision: z.enum(["speak", "silent", "reobserve"]),
+  act: z
+    .enum(["answer", "participate", "follow", "contribute", "acknowledge", "mediate"])
+    .nullable(),
+  evidence: z.enum([
+    "direct_interaction",
+    "group_participation",
+    "response_to_alex",
+    "relevant_unsurfaced_information",
+    "factual_correction",
+    "conversation_grounded_synthesis",
+    "social_uptake",
+    "human_floor_held",
+    "cooldown",
+    "no_useful_move",
+    "observer_conflict",
+  ]),
+  selectedTraitId: z.string().nullable(),
+  targetThreadRootSeq: z.number().int().nullable(),
+  evidenceSeqs: z.array(z.number().int()).max(12),
+});
+
+export type UnifiedJudgeDecision = z.infer<typeof UnifiedJudgeSchema>;
+
+const UNIFIED_JUDGE_SYSTEM = `You are the condition-blind turn-taking judge for Alex, an AI participant in a small live group discussion. You receive a cumulative Observer state, a deterministic English rendering of that state, infrastructure availability, exact eligible private facts, and the complete transcript.
+
+Decide whether Alex should speak now and, if so, choose exactly one communicative act. Do not write Alex's message and do not infer leader/peer or XAI/ACI condition.
+
+Acts:
+- answer: directly satisfy a question or request addressed specifically to Alex.
+- participate: take Alex's part in an explicit group-inclusive comparison, information-sharing, evaluation, or narrowing task.
+- follow: respond to or acknowledge human material that answers, challenges, or continues an open Alex-initiated thread.
+- contribute: voluntarily add one relevant non-redundant fact, factual correction, or conversation-grounded synthesis.
+- acknowledge: a brief social uptake with no new candidate fact or agenda change.
+- mediate: reserved for an explicit unresolved process blockage recorded in the supplied state; ordinary procedural language is not enough.
+
+Interaction obligations (answer, participate, follow) are distinct from voluntary interventions. They may bypass ordinary cooldown, but they must wait when a specifically invited human clearly holds the floor. A latest human-to-human addressee does not erase Alex from an ongoing group or Alex-initiated thread. Conversely, merely talking about Alex in the third person is not an interaction obligation.
+The "already served" flag applies to the previously recorded request obligation. It does not suppress a fresh current response_to_alex turn; evaluate that new uptake opportunity from the current anchor and floor.
+
+Act selection must follow the Observer relation: explicit_addressee with a current question/request maps to answer; group_participant in an open group task maps to participate; response_to_alex after the humans yield the floor maps to follow. Do not call a response to Alex's own question an answer by Alex.
+
+For voluntary contribute or acknowledge, cooldown must be available. Select relevant_unsurfaced_information only with exactly one eligible trait id. A conversation-grounded synthesis must add a concrete relation, tension, implication, or unresolved distinction from already-visible human points; generic agreement, recap, praise, or a broad prompt is insufficient. Use acknowledge sparingly.
+
+When cooldown is available and one listed eligible private fact directly answers the substantive issue in the current exchange, choose speak/contribute with relevant_unsurfaced_information and that exact id unless the fact is already visible. This preserves the ordinary build-on behavior; do not suppress it merely because the humans could continue talking.
+Merely mentioning, questioning, or proposing a criterion does not surface the candidate fact. A fact is already visible only when a participant has affirmatively stated that the candidate has or lacks that trait.
+
+Choose reobserve only when the Observer state conflicts materially with the transcript or with itself in a way that changes whether Alex is involved or who holds the floor. Do not use reobserve merely because confidence is imperfect.
+
+Evidence sequence numbers must point to transcript messages that support the decision. targetThreadRootSeq is the active thread root when the decision concerns a thread, otherwise null. Output JSON only.`;
+
+export function validateUnifiedJudgeDecision(
+  decision: UnifiedJudgeDecision,
+  eligibleTraitIds: readonly string[],
+): UnifiedJudgeDecision | null {
+  if (decision.decision === "speak" && !decision.act) return null;
+  if (decision.decision !== "speak" && decision.act !== null) return null;
+  if (decision.evidence === "relevant_unsurfaced_information") {
+    if (!decision.selectedTraitId || !eligibleTraitIds.includes(decision.selectedTraitId)) {
+      return null;
+    }
+  } else if (decision.selectedTraitId !== null) {
+    return null;
+  }
+  return decision;
+}
+
+export function alignUnifiedJudgeActWithObserver(
+  decision: UnifiedJudgeDecision,
+  snapshot: ConversationObserverSnapshot,
+): UnifiedJudgeDecision {
+  if (decision.decision !== "speak") return decision;
+  const relation = snapshot.stateAfter.alexRelation ?? snapshot.observation.alexRelation;
+  const thread = snapshot.stateAfter.activeThread ?? snapshot.observation.activeThread;
+  if (relation === "explicit_addressee") {
+    return {
+      ...decision,
+      act: "answer",
+      evidence: "direct_interaction",
+      selectedTraitId: null,
+      targetThreadRootSeq: thread?.rootSeq ?? decision.targetThreadRootSeq,
+    };
+  }
+  if (
+    relation === "group_participant" &&
+    thread &&
+    (thread.status === "open" || thread.status === "waiting") &&
+    (thread.alexParticipation === "required" || thread.alexParticipation === "invited")
+  ) {
+    return {
+      ...decision,
+      act: "participate",
+      evidence: "group_participation",
+      selectedTraitId: null,
+      targetThreadRootSeq: thread.rootSeq,
+    };
+  }
+  if (relation === "response_to_alex") {
+    return {
+      ...decision,
+      act: "follow",
+      evidence: "response_to_alex",
+      selectedTraitId: null,
+      targetThreadRootSeq: thread?.rootSeq ?? decision.targetThreadRootSeq,
+    };
+  }
+  return decision;
+}
+
+export async function judgeConversationTurn(input: {
+  messages: ObserverTranscriptMessage[];
+  snapshot: ConversationObserverSnapshot;
+  messagesSinceAlex: number;
+  cooldownAvailable: boolean;
+  backchannelAvailable: boolean;
+  postGenerationReevaluation: boolean;
+  interactionAlreadyServed: boolean;
+  eligibleTraitIds: string[];
+}): Promise<UnifiedJudgeDecision | null> {
+  const transcript = input.messages
+    .map((message) => `[${message.seq}] ${message.speaker}: ${message.content}`)
+    .join("\n");
+  const eligible = input.eligibleTraitIds
+    .map((id) => {
+      const trait = TRAIT_BY_ID.get(id);
+      return trait ? `${id} | ${trait.valence === "pos" ? "MATCH" : "MISS"} | ${trait.text}` : null;
+    })
+    .filter((value): value is string => Boolean(value));
+  const baseUser = `Current situation:\n${describeConversationSituation(input.snapshot)}\n\nStructured Observer state:\n${JSON.stringify(input.snapshot.stateAfter)}\n\nInfrastructure availability:\n- Messages since Alex: ${input.messagesSinceAlex}\n- Ordinary cooldown available: ${input.cooldownAvailable}\n- Backchannel interval available: ${input.backchannelAvailable}\n- This is a post-generation epoch re-evaluation: ${input.postGenerationReevaluation}\n- The currently recorded interaction obligation was already served: ${input.interactionAlreadyServed}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nComplete transcript:\n${transcript}\n\nReturn the turn decision as JSON only.`;
+  let firstValidDecision: UnifiedJudgeDecision | null = null;
+  let relevanceAudit = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const user = relevanceAudit
+      ? `${baseUser}\n\nFocused review: a first pass chose silent even though exact unsurfaced facts are available for the single active candidate. Re-check only whether one listed fact directly resolves the substantive issue raised in the latest exchange. If yes, choose speak/contribute with relevant_unsurfaced_information and that id. If none directly fits, preserve silent. Do not relax floor or cooldown rules.`
+      : baseUser;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const response = await client.responses.parse(
+        {
+          model: JUDGE_MODEL,
+          temperature: 0,
+          max_output_tokens: 220,
+          input: [
+            { role: "system", content: UNIFIED_JUDGE_SYSTEM },
+            { role: "user", content: user },
+          ],
+          text: { format: zodTextFormat(UnifiedJudgeSchema, "unified_turn_decision") },
+        },
+        { signal: controller.signal },
+      );
+      clearTimeout(timeout);
+      if (!response.output_parsed) continue;
+      const validated = validateUnifiedJudgeDecision(
+        response.output_parsed,
+        input.eligibleTraitIds,
+      );
+      if (validated) {
+        const aligned = alignUnifiedJudgeActWithObserver(validated, input.snapshot);
+        const relation =
+          input.snapshot.stateAfter.alexRelation ?? input.snapshot.observation.alexRelation;
+        const activeCandidates = input.snapshot.observation.activeCandidates;
+        const shouldAuditRelevantFact =
+          !relevanceAudit &&
+          aligned.decision === "silent" &&
+          aligned.evidence === "no_useful_move" &&
+          input.cooldownAvailable &&
+          !input.postGenerationReevaluation &&
+          !input.snapshot.stateAfter.expectedHumanResponder &&
+          relation !== "explicit_addressee" &&
+          relation !== "group_participant" &&
+          relation !== "response_to_alex" &&
+          activeCandidates.length === 1 &&
+          input.eligibleTraitIds.length > 0;
+        if (shouldAuditRelevantFact) {
+          firstValidDecision = aligned;
+          relevanceAudit = true;
+          continue;
+        }
+        return aligned;
+      }
+    } catch (error: any) {
+      clearTimeout(timeout);
+      console.error(
+        `[judge] unified call failed attempt=${attempt + 1}: ${error?.message ?? String(error)}`,
+      );
+      if (firstValidDecision) return firstValidDecision;
+    }
+  }
+  return firstValidDecision;
+}
+
+export function legacyDecisionForAct(
+  act: CommunicativeAct | null,
+): "contribute" | "acknowledge" | "silent" {
+  if (act === "acknowledge") return "acknowledge";
+  if (act) return "contribute";
+  return "silent";
+}
+
+const ConversationLedgerJudgeSchema = z.object({
+  decision: z.enum(["speak", "silent", "reobserve"]),
+  act: z
+    .enum(["answer", "participate", "follow", "contribute", "acknowledge", "mediate"])
+    .nullable(),
+  selectedOpportunityId: z.string().nullable(),
+  evidence: z.enum([
+    "selected_open_opportunity",
+    "relevant_unsurfaced_information",
+    "factual_correction",
+    "conversation_grounded_synthesis",
+    "social_uptake",
+    "human_floor_held",
+    "cooldown",
+    "no_useful_move",
+    "observer_conflict",
+  ]),
+  selectedTraitId: z.string().nullable(),
+  evidenceSeqs: z.array(z.number().int()).max(12),
+});
+
+export type ConversationLedgerJudgeDecision = z.infer<typeof ConversationLedgerJudgeSchema>;
+export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v3";
+export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
+  "conversation-ledger-judge-prompt-v3";
+export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
+  "conversation-ledger-judge-schema-v2";
+export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
+export const CONVERSATION_LEDGER_JUDGE_PARAMETERS = Object.freeze({
+  temperature: 0,
+  maxOutputTokens: 260,
+  timeoutMs: 12_000,
+  maxAttempts: 2,
+  seed: null,
+  seedSupported: false,
+});
+
+export interface ConversationLedgerJudgeCallAttempt {
+  attempt: number;
+  status: "accepted" | "output_parsed_null" | "validation_failed" | "error";
+  responseId?: string;
+  model: string;
+  latencyMs: number;
+  error?: string;
+  parsedOutput?: ConversationLedgerJudgeDecision;
+  ruleCodes?: string[];
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    cachedInputTokens: number;
+  };
+}
+
+export interface ConversationLedgerJudgeCallResult {
+  decision: ConversationLedgerJudgeDecision | null;
+  attempts: ConversationLedgerJudgeCallAttempt[];
+}
+
+const LEDGER_JUDGE_SYSTEM = `You are the condition-blind Main Judge for Alex, an AI participant in a small live group discussion.
+
+Use the complete transcript as the source of truth and the structured ledger as a correctable projection. Decide one of: select exactly one open response opportunity, choose one useful voluntary act, remain silent, or request re-observation for a material state conflict. Do not write Alex's message. Never infer or use an experimental condition.
+
+Opportunity acts are fixed by identity:
+- direct_question -> answer
+- invitation or group_request -> participate
+- uptake -> follow
+
+Only select an opportunity whose exact id is listed with status open. Deferred and terminal opportunities cannot be handled now. An invited opportunity is selectable only when its evidence includes the current trigger message; do not answer an older invited turn after the conversation has moved on. Required opportunities may remain pending across turns. Do not substitute a thread root for the current trigger. Do not combine or consume multiple opportunities.
+
+Voluntary acts have no selectedOpportunityId:
+- contribute adds a relevant non-redundant fact, factual correction, or concrete synthesis.
+- acknowledge is brief social uptake without a new fact or agenda change.
+- mediate is reserved for an explicit unresolved process blockage.
+
+Opportunity acts may bypass ordinary cooldown but never an explicitly held human floor. Voluntary acts require ordinary cooldown. Choose reobserve only for a material conflict affecting target, opportunity identity/lifecycle, thread assignment, or floor. Low confidence alone is not enough.
+When an open required opportunity was opened on the current trigger and no human floor is held, select it. Remaining silent in that state is invalid.
+
+For every selected opportunity, use exactly: decision=speak, the act fixed above for its kind, evidence=selected_open_opportunity, and selectedTraitId=null. A selected invited opportunity does not automatically bypass cooldown. Without ordinary cooldown, only a required opportunity or the current foreground uptake cluster with current-trigger evidence may be selected.
+
+For relevant_unsurfaced_information, select exactly one supplied eligible trait id. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
+
+const ACT_FOR_OPPORTUNITY_KIND: Record<OpportunityKind, CommunicativeAct> = {
+  direct_question: "answer",
+  invitation: "participate",
+  group_request: "participate",
+  uptake: "follow",
+};
+
+export interface ConversationLedgerJudgeValidation {
+  ok: boolean;
+  value?: ConversationLedgerJudgeDecision;
+  ruleCodes: string[];
+}
+
+export function validateConversationLedgerJudgeDecision(input: {
+  decision: ConversationLedgerJudgeDecision;
+  state: ConversationLedgerState;
+  eligibleTraitIds: readonly string[];
+  transcriptSeqs: ReadonlySet<number>;
+  cooldownAvailable?: boolean;
+}): ConversationLedgerJudgeValidation {
+  const { decision, state } = input;
+  const ruleCodes: string[] = [];
+  if (!decision.evidenceSeqs.every((seq) => input.transcriptSeqs.has(seq))) {
+    ruleCodes.push("evidence_seq_not_in_transcript");
+  }
+  const currentRequiredOpportunityIds = new Set(
+    state.opportunities
+      .filter(
+        (opportunity) =>
+          opportunity.status === "open" &&
+          state.threads.some((thread) => thread.id === opportunity.threadId && (thread.status === "open" || thread.status === "waiting")) &&
+          opportunity.expectation === "required" &&
+          opportunity.targets.includes("alex") &&
+          (opportunity.openedAtSeq ?? opportunity.opportunitySourceSeq) === state.currentTriggerSeq,
+      )
+      .map((opportunity) => opportunity.id),
+  );
+  const humanFloorHeld =
+    state.floor.transition === "held" &&
+    state.floor.holder !== "alex" &&
+    state.floor.holder !== "open" &&
+    state.floor.holder !== "unclear";
+  if (
+    currentRequiredOpportunityIds.size > 0 &&
+    !humanFloorHeld &&
+    !(
+      (decision.decision === "speak" &&
+        decision.selectedOpportunityId !== null &&
+        currentRequiredOpportunityIds.has(decision.selectedOpportunityId)) ||
+      (decision.decision === "reobserve" && decision.evidence === "observer_conflict")
+    )
+  ) {
+    ruleCodes.push("current_required_opportunity_not_selected");
+  }
+  if (decision.decision !== "speak") {
+    if (decision.act !== null) ruleCodes.push("non_speak_has_act");
+    if (decision.selectedOpportunityId !== null) ruleCodes.push("non_speak_has_opportunity");
+  } else if (!decision.act) {
+    ruleCodes.push("speak_missing_act");
+  }
+  if (decision.decision === "reobserve" && decision.evidence !== "observer_conflict") {
+    ruleCodes.push("reobserve_without_conflict");
+  }
+  if (
+    decision.decision === "speak" &&
+    ["human_floor_held", "cooldown", "no_useful_move", "observer_conflict"].includes(
+      decision.evidence,
+    )
+  ) {
+    ruleCodes.push("speak_with_silence_evidence");
+  }
+  if (decision.selectedOpportunityId) {
+    const opportunity = state.opportunities.find(
+      (candidate) => candidate.id === decision.selectedOpportunityId,
+    );
+    if (!opportunity || opportunity.status !== "open" || !opportunity.targets.includes("alex")) {
+      ruleCodes.push("selected_opportunity_not_open_for_alex");
+    }
+    if (opportunity && !state.threads.some((thread) => thread.id === opportunity.threadId &&
+      (thread.status === "open" || thread.status === "waiting"))) {
+      ruleCodes.push("selected_opportunity_thread_not_live");
+    }
+    if (opportunity && (decision.decision !== "speak" || decision.act !== ACT_FOR_OPPORTUNITY_KIND[opportunity.kind])) {
+      ruleCodes.push("act_does_not_match_opportunity_kind");
+    }
+    if (
+      opportunity?.expectation === "invited" &&
+      !opportunity.evidenceSeqs.includes(state.currentTriggerSeq)
+    ) {
+      ruleCodes.push("selected_invited_opportunity_not_current");
+    }
+    if (decision.evidence !== "selected_open_opportunity" || decision.selectedTraitId !== null) {
+      ruleCodes.push("opportunity_evidence_contract_invalid");
+    }
+    if (
+      opportunity &&
+      input.cooldownAvailable === false &&
+      !opportunityMayBypassCooldown(state, opportunity)
+    ) {
+      ruleCodes.push("selected_opportunity_requires_cooldown");
+    }
+  } else if (
+    decision.decision === "speak" &&
+    (decision.act === "answer" || decision.act === "participate" || decision.act === "follow")
+  ) {
+    ruleCodes.push("interaction_act_missing_opportunity");
+  }
+  if (!decision.selectedOpportunityId && decision.decision === "speak") {
+    const validVoluntaryEvidence =
+      decision.act === "contribute"
+        ? [
+            "relevant_unsurfaced_information",
+            "factual_correction",
+            "conversation_grounded_synthesis",
+          ].includes(decision.evidence)
+        : decision.act === "acknowledge"
+          ? decision.evidence === "social_uptake"
+          : decision.act === "mediate"
+            ? decision.evidence === "conversation_grounded_synthesis"
+            : false;
+    if (!validVoluntaryEvidence) ruleCodes.push("voluntary_act_evidence_invalid");
+  }
+  if (decision.evidence === "relevant_unsurfaced_information") {
+    if (
+      decision.act !== "contribute" ||
+      !decision.selectedTraitId ||
+      !input.eligibleTraitIds.includes(decision.selectedTraitId)
+    ) {
+      ruleCodes.push("relevant_fact_trait_invalid");
+    }
+  } else if (decision.selectedTraitId !== null) {
+    ruleCodes.push("trait_present_for_non_trait_evidence");
+  }
+  if (
+    state.degradedMode &&
+    decision.decision === "speak" &&
+    ((decision.selectedOpportunityId &&
+      state.opportunities.find((item) => item.id === decision.selectedOpportunityId)?.kind !== "direct_question") ||
+      (!decision.selectedOpportunityId && decision.evidence !== "relevant_unsurfaced_information"))
+  ) {
+    ruleCodes.push("degraded_mode_disallows_inferred_speech");
+  }
+  return ruleCodes.length ? { ok: false, ruleCodes } : { ok: true, value: decision, ruleCodes: [] };
+}
+
+export async function judgeConversationLedgerTurn(input: {
+  messages: ObserverTranscriptMessage[];
+  state: ConversationLedgerState;
+  messagesSinceAlex: number;
+  cooldownAvailable: boolean;
+  backchannelAvailable: boolean;
+  eligibleTraitIds: string[];
+}): Promise<ConversationLedgerJudgeCallResult> {
+  // Open invited opportunities without current-trigger evidence are historical
+  // context, not choices. Remove them from the decision projection so the
+  // model cannot keep selecting an id that deterministic validation rejects.
+  const decisionState: ConversationLedgerState = {
+    ...input.state,
+    opportunities: input.state.opportunities.filter(
+      (opportunity) =>
+        opportunity.status !== "open" ||
+        opportunity.expectation !== "invited" ||
+        opportunity.evidenceSeqs.includes(input.state.currentTriggerSeq),
+    ),
+  };
+  const transcript = input.messages
+    .filter((message) => message.seq <= input.state.contextThroughSeq)
+    .map((message) => `[${message.seq}] ${message.speaker}: ${message.content}`)
+    .join("\n");
+  const eligible = input.eligibleTraitIds
+    .map((id) => {
+      const trait = TRAIT_BY_ID.get(id);
+      return trait ? `${id} | ${trait.valence === "pos" ? "MATCH" : "MISS"} | ${trait.text}` : null;
+    })
+    .filter((value): value is string => Boolean(value));
+  const foreground = decisionState.foregroundThreadId
+    ? decisionState.threads.find((thread) => thread.id === decisionState.foregroundThreadId)
+    : undefined;
+  const openOpportunities = decisionState.opportunities.filter((item) => item.status === "open");
+  const user = `Current selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nInfrastructure availability:\n- Messages since Alex: ${input.messagesSinceAlex}\n- Ordinary cooldown available: ${input.cooldownAvailable}\n- Backchannel interval available: ${input.backchannelAvailable}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nComplete transcript:\n${transcript}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  const attempts: ConversationLedgerJudgeCallAttempt[] = [];
+  let priorRuleCodes: string[] = [];
+  let priorDecisionJson = "none";
+  for (let attempt = 0; attempt < CONVERSATION_LEDGER_JUDGE_PARAMETERS.maxAttempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      CONVERSATION_LEDGER_JUDGE_PARAMETERS.timeoutMs,
+    );
+    const started = Date.now();
+    try {
+      const response = await client.responses.parse(
+        {
+          model: JUDGE_MODEL,
+          temperature: CONVERSATION_LEDGER_JUDGE_PARAMETERS.temperature,
+          max_output_tokens: CONVERSATION_LEDGER_JUDGE_PARAMETERS.maxOutputTokens,
+          input: [
+            { role: "system", content: LEDGER_JUDGE_SYSTEM },
+            {
+              role: "user",
+              content:
+                attempt > 0 && priorRuleCodes.length
+                  ? `${user}\n\nYour previous decision was ${priorDecisionJson}. It violated: ${priorRuleCodes.join(", ")}. Correct the rejected output fields while keeping the transcript and ledger facts fixed. For a selected opportunity, evidence must be selected_open_opportunity and selectedTraitId must be null.`
+                  : user,
+            },
+          ],
+          text: {
+            format: zodTextFormat(
+              ConversationLedgerJudgeSchema,
+              "conversation_ledger_turn_decision",
+            ),
+          },
+        },
+        { signal: controller.signal },
+      );
+      clearTimeout(timeout);
+      const baseAttempt = {
+        attempt: attempt + 1,
+        responseId: response.id,
+        model: response.model ?? JUDGE_MODEL,
+        latencyMs: Date.now() - started,
+        ...(response.usage
+          ? {
+              usage: {
+                inputTokens: response.usage.input_tokens,
+                outputTokens: response.usage.output_tokens,
+                totalTokens: response.usage.total_tokens,
+                cachedInputTokens: response.usage.input_tokens_details.cached_tokens,
+              },
+            }
+          : {}),
+      };
+      if (!response.output_parsed) {
+        attempts.push({ ...baseAttempt, status: "output_parsed_null" });
+        continue;
+      }
+      const validation = validateConversationLedgerJudgeDecision({
+        decision: response.output_parsed,
+        state: decisionState,
+        eligibleTraitIds: input.eligibleTraitIds,
+        transcriptSeqs: new Set(input.messages.map((message) => message.seq)),
+        cooldownAvailable: input.cooldownAvailable,
+      });
+      if (validation.ok && validation.value) {
+        attempts.push({ ...baseAttempt, status: "accepted" });
+        return { decision: validation.value, attempts };
+      }
+      attempts.push({
+        ...baseAttempt,
+        status: "validation_failed",
+        parsedOutput: response.output_parsed,
+        ruleCodes: validation.ruleCodes,
+      });
+      priorRuleCodes = validation.ruleCodes;
+      priorDecisionJson = JSON.stringify(response.output_parsed);
+    } catch (error: any) {
+      clearTimeout(timeout);
+      const message = error?.message ?? String(error);
+      attempts.push({
+        attempt: attempt + 1,
+        status: "error",
+        model: JUDGE_MODEL,
+        latencyMs: Date.now() - started,
+        error: message,
+      });
+      console.error(
+        `[judge] ledger call failed attempt=${attempt + 1}: ${message}`,
+      );
+    }
+  }
+  return { decision: null, attempts };
+}

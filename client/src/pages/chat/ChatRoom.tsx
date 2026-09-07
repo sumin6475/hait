@@ -144,7 +144,7 @@ const ChatRoom = () => {
       });
     });
 
-    // [Tier 1, Step 1.3] AI 작성 중 표시 — floor 대기/LLM 생성 중 true, 발화/침묵 완료 시 false
+    // AI 작성 중 표시 — floor 대기에는 숨기고 실제 생성이 시작된 뒤에만 true.
     socket.on("ai-typing", ({ isTyping }) => {
       setAiTyping(isTyping);
     });

@@ -132,6 +132,8 @@ export type AIStructuredResult =
 
 interface CallAIStructuredOptions {
   systemPrompt: string;
+  /** Server-authored, per-turn control/state. Kept separate from the human transcript. */
+  developerPrompt?: string;
   userPrompt: string;
   model?: string;
   timeoutMs?: number;
@@ -142,6 +144,7 @@ interface CallAIStructuredOptions {
 
 export async function callAIStructured({
   systemPrompt,
+  developerPrompt,
   userPrompt,
   model = "gpt-5-mini", // U-M GPT Toolkit 카탈로그명 (파일럿의 gpt-5.4-mini에서 교체 — golden 재실행 필요)
   timeoutMs = 30_000,
@@ -174,6 +177,9 @@ export async function callAIStructured({
           ...(cap === null ? {} : { max_output_tokens: cap }),
           input: [
             { role: "system", content: systemPrompt },
+            ...(developerPrompt
+              ? ([{ role: "developer" as const, content: developerPrompt }] as const)
+              : []),
             { role: "user", content: userPrompt },
           ],
           text: {

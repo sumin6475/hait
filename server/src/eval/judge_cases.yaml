@@ -1,115 +1,92 @@
-# =====================================================================
-# judge_cases.yaml — judge(개입 게이트) tripwire 셋
-# 작성 2026-06-16. 대상: interventionJudge.ts (gpt-4o-mini 분류기).
-# =====================================================================
-# 목적
-#   judge의 *출력*(speak + reason)만 검사한다. golden(생성된 Alex 턴의
-#   행동)과 별개 — 여기선 AI 발화를 생성하지 않고, judgeIntervention의
-#   분류 결정만 대조한다. judge가 조용히 망가지는 걸 잡는 그물.
-#
-# 범위 (중요)
-#   - judge는 condition-blind → 케이스도 조건 무관. speak/reason만 본다.
-#   - 빈도(도미넌스)·peer mediation 차단은 cooldown/sockets 책임이라
-#     이 셋이 아니라 sockets 통합 테스트에서 검증한다. (아래 NON-JUDGE 메모)
-#
-# 양방향 가드 (둘 다 회귀를 잡아야 함)
-#   - 과소침묵 가드: J5·J6·J7 은 반드시 speak=true (풀링/교착에서 빠지지 마).
-#   - 과발화 가드:   J1·J4·J8·J9 는 반드시 speak=false (끼어들지 마).
-#
-# 판정 규칙
-#   - mini 흔들림 흡수: 케이스당 ×3 호출, ≥2/3 일치면 pass.
-#   - speak 은 항상 대조. reason 은 expect에 있을 때만 대조(speak=false면 생략).
-#
-# msgs_since_alex
-#   judgeIntervention 2번째 인자로 그대로 전달. Alex가 스니펫에 없으면 99(=직후 아님).
-#   값은 transcript의 마지막 Alex 라인 이후 사람 메시지 수와 맞춰 둠.
-# ---------------------------------------------------------------------
+# V2 Main Judge tripwire set.
+# Direct address, followup, cooldown, mediation cadence, summary, and closing
+# are intentionally absent: the runtime handles them outside Main Judge.
+# Each case supplies the same compact signal that production supplies.
 
 cases:
-  # ── 과발화 가드 ──────────────────────────────────────────────
   - id: J1
-    desc: "첫 인사 — Alex 미발화. 인사에 끼지 않는다."
+    desc: "Greeting/logistics with no candidate focus stays silent"
     msgs_since_alex: 99
     context:
       - { speaker: "Participant X", text: "Hello" }
-      - { speaker: "Participant Y", text: "Hi" }
-    expect: { speak: false }
+      - { speaker: "Participant Y", text: "Did the timer start?" }
+    signal:
+      focusCandidate: null
+      exchangeClass: procedural
+      privateContributionIds: []
+    expect: { decision: silent, evidence: none, selectedTraitId: null }
 
-  - id: J4
-    desc: "★옆사람에게 향한 질문 — Alex가 가로채지 않는다(Y가 답하게)."
-    msgs_since_alex: 2
-    context:
-      - { speaker: "Alex", text: "D looks a touch stronger than A to me on steadiness." }
-      - { speaker: "Participant X", text: "ok" }
-      - { speaker: "Participant X", text: "Y, how about Candidate B?" }
-    expect: { speak: false } # 현재 코드는 directed_followup=true로 실패 → 수신자 가드 패치가 통과시킴
-
-  - id: J8
-    desc: "후보 무관 잡담/로지스틱 — 침묵(가장 흔한 케이스)."
-    msgs_since_alex: 99
-    context:
-      - { speaker: "Participant X", text: "did the timer start ok?" }
-      - { speaker: "Participant Y", text: "yeah I see about 18 min" }
-      - { speaker: "Participant X", text: "cool" }
-    expect: { speak: false }
-
-  - id: J9
-    desc: "저신호 동의(새 정보 없음) — 끼어들지 않는다."
-    msgs_since_alex: 2
-    context:
-      - { speaker: "Alex", text: "A's danger-awareness is a real plus for this role." }
-      - { speaker: "Participant Y", text: "I have it too" }
-      - { speaker: "Participant X", text: "yeah same" }
-    expect: { speak: false } # over-speak watch 지점
-
-  # ── case 1: Alex에게 온 것 ───────────────────────────────────
   - id: J2
-    desc: "이름+사회적. ※판정: directed_followup으로 발화(인사라도 task로 답함=수용, social 보류)."
-    msgs_since_alex: 99
+    desc: "A human-directed question is not converted into an ordinary contribution"
+    msgs_since_alex: 2
     context:
-      - { speaker: "Participant X", text: "Hello" }
-      - { speaker: "Participant Y", text: "Hi" }
-      - { speaker: "Participant X", text: "Alex, how are you?" }
-    expect: { speak: true, reason: "directed_followup" }
+      - { speaker: "Participant X", text: "A seems reliable." }
+      - { speaker: "Participant X", text: "Y, what do you have for B?" }
+    signal:
+      focusCandidate: B
+      exchangeClass: unclear
+      privateContributionIds: []
+    expect: { decision: silent, evidence: none, selectedTraitId: null }
 
   - id: J3
-    desc: "이름+과제질문 — Alex가 답한다."
-    msgs_since_alex: 99
+    desc: "A relevant unsurfaced private fact produces one selected contribution"
+    msgs_since_alex: 3
     context:
-      - { speaker: "Participant X", text: "I'm leaning toward A." }
-      - { speaker: "Participant X", text: "Alex, what's your read on B?" }
-    expect: { speak: true, reason: "directed_followup" }
+      - { speaker: "Participant X", text: "A seems calm under pressure." }
+      - { speaker: "Participant Y", text: "We should check whether A has any safety weaknesses." }
+    signal:
+      focusCandidate: A
+      exchangeClass: substantive
+      privateContributionIds: [A_p4]
+    expect:
+      decision: contribute
+      evidence: relevant_unsurfaced_information
+      selectedTraitId: A_p4
 
-  # ── 과소침묵 가드 (case 2 / case 3) ──────────────────────────
-  - id: J5
-    desc: "두 사람이 trait 풀링 중 — build_on으로 참여."
-    msgs_since_alex: 2
+  - id: J4
+    desc: "A preference alone does not justify intervention"
+    msgs_since_alex: 3
     context:
-      - { speaker: "Alex", text: "I'd put A and D close on the positives so far." }
-      - { speaker: "Participant X", text: "let's keep going" }
-      - { speaker: "Participant Y", text: "A has danger-aware" }
-    expect: { speak: true, reason: "build_on" }
+      - { speaker: "Participant X", text: "I think B is best." }
+      - { speaker: "Participant Y", text: "I'm leaning B too." }
+    signal:
+      focusCandidate: B
+      exchangeClass: preference
+      privateContributionIds: []
+    expect: { decision: silent, evidence: none, selectedTraitId: null }
+
+  - id: J5
+    desc: "A human-to-human low-signal acknowledgment does not require Alex uptake"
+    msgs_since_alex: 3
+    context:
+      - { speaker: "Participant X", text: "That covers the main point on C." }
+      - { speaker: "Participant Y", text: "Got it, thanks." }
+    signal:
+      focusCandidate: C
+      exchangeClass: acknowledgment
+      privateContributionIds: []
+    expect: { decision: silent, evidence: none, selectedTraitId: null }
 
   - id: J6
-    desc: "그룹에 trait 공유 + 더 있냐는 열린 질문 — build_on."
-    msgs_since_alex: 2
+    desc: "No focus and no private contribution defaults to silent"
+    msgs_since_alex: 5
     context:
-      - { speaker: "Alex", text: "We've mostly covered A so far." }
-      - { speaker: "Participant X", text: "B keeps a cool head in crises." }
-      - { speaker: "Participant Y", text: "B is reliable too — anyone have more on B?" }
-    expect: { speak: true, reason: "build_on" }
+      - { speaker: "Participant X", text: "We have several things to consider." }
+      - { speaker: "Participant Y", text: "Yes, let's keep going." }
+    signal:
+      focusCandidate: null
+      exchangeClass: substantive
+      privateContributionIds: []
+    expect: { decision: silent, evidence: none, selectedTraitId: null }
 
   - id: J7
-    desc: "조기 축소/교착(A·B로만 좁히려 함) — mediation."
-    msgs_since_alex: 2
+    desc: "Post-generation re-evaluation does not repeat a point Alex just covered"
+    msgs_since_alex: 0
     context:
-      - { speaker: "Alex", text: "There's still C and D we've barely touched." }
-      - { speaker: "Participant X", text: "I'd be fine with either A or B." }
-      - { speaker: "Participant Y", text: "Yeah same, A or B works for me." }
-    expect: { speak: true, reason: "mediation" }
-
-# ---------------------------------------------------------------------
-# NON-JUDGE (이 파일 밖, sockets 통합 테스트에서 검증):
-#   - cooldown: Alex 발화 직후 풀링이 와도 매 턴 답하지 않음(COOLDOWN_MIN_MSGS).
-#   - peer mediation: C1/C3에서 judge가 mediation을 내도 sockets가 침묵 처리.
-# ---------------------------------------------------------------------
+      - { speaker: "Participant X", text: "A looks safer because of danger awareness." }
+      - { speaker: "Alex", text: "A's danger awareness does support the safety case." }
+    signal:
+      focusCandidate: A
+      exchangeClass: substantive
+      privateContributionIds: []
+    expect: { decision: silent, evidence: none, selectedTraitId: null }

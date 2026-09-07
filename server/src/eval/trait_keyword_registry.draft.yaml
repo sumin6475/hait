@@ -1,0 +1,477 @@
+# Human surfaced-trait keyword registry — REVIEW DRAFT ONLY.
+#
+# This file is not imported by runtime code. `server/src/lib/traitData.ts` remains
+# the canonical source for candidate, valence, profile ownership, and trait text.
+# The copied metadata below is review context so every proposed matcher entry can
+# be approved, edited, or deleted in one place before implementation.
+#
+# Proposed matching contract:
+# - Only traits eligible for the speaker's assigned profile may be considered.
+# - Candidate resolution priority is explicit candidate name, then a profile-unique
+#   core phrase, then trusted current focus. Abstain if the candidate stays ambiguous.
+# - A normal direct assertion with an exact accepted phrase is a deterministic match.
+# - Fuzzy lexical evidence or an ambiguity trigger sends only the eligible candidate
+#   tuple(s) to LLM verification. An LLM cannot add a tuple without lexical evidence.
+# - Questions, quotations, hypotheticals, denials, and meta-negations are not direct
+#   disclosures unless bounded verification determines that a direct assertion remains.
+# - Numeric fuzzy thresholds are intentionally deferred until implementation tests.
+
+schema_version: 1
+status: draft
+runtime_enabled: false
+defaults:
+  normalization:
+    - nfkc
+    - lowercase
+    - normalize_curly_quotes
+    - collapse_whitespace
+    - ignore_terminal_punctuation
+  fuzzy_policy: verify_lexical_near_match
+  ambiguity_triggers:
+    - question
+    - quotation_or_reported_speech
+    - hypothetical_or_uncertainty
+    - denial_or_dispute
+    - meta_negation
+  review_status: pending
+
+traits:
+  - trait_id: A_p1
+    candidate: A
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "has a very good sense for recognizing dangerous situations"
+    core_phrases: ["recognizing dangerous situations"]
+    accepted_variants: ["recognize dangerous situations", "recognises dangerous situations", "recognising dangerous situations"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Avoid generic 'danger' or 'dangerous' alone."
+    review_status: approved
+
+  - trait_id: A_p2
+    candidate: A
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "has a good overview of complex contexts"
+    core_phrases: ["good overview of complex contexts"]
+    accepted_variants: ["good overview of complex situations", "overview of complex contexts"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Do not match generic references to complexity or context."
+    review_status: approved
+
+  - trait_id: A_p3
+    candidate: A
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "has excellent spatial awareness"
+    core_phrases: ["excellent spatial awareness", "spatial awareness"]
+    accepted_variants: ["very good spatial awareness"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "The shorter phrase is distinctive in the current trait set."
+    review_status: approved
+
+  - trait_id: A_p4
+    candidate: A
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "is very well organized"
+    core_phrases: ["very well organized", "well organized"]
+    accepted_variants: ["very well organised", "well organised"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Avoid 'organized' alone when it describes the discussion or notes."
+    review_status: approved
+
+  - trait_id: A_n1
+    candidate: A
+    valence: neg
+    profiles: [X]
+    canonical_text: "does not tolerate criticism"
+    core_phrases: ["does not tolerate criticism", "not tolerate criticism"]
+    accepted_variants: ["doesn't tolerate criticism", "cannot tolerate criticism", "can't tolerate criticism"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Do not treat a speaker's criticism of A as this trait."
+    review_status: approved
+
+  - trait_id: A_n2
+    candidate: A
+    valence: neg
+    profiles: [X]
+    canonical_text: "is sometimes a bit hectic"
+    core_phrases: ["sometimes a bit hectic", "a bit hectic"]
+    accepted_variants: ["sometimes hectic"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Require hectic to describe the candidate, not the situation."
+    review_status: approved
+
+  - trait_id: A_n3
+    candidate: A
+    valence: neg
+    profiles: [Y]
+    canonical_text: "is a show-off"
+    core_phrases: ["show-off"]
+    accepted_variants: ["show off", "showoff"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Do not match the phrasal verb 'show off' unless it describes the candidate as a disposition."
+    review_status: approved
+
+  - trait_id: A_n4
+    candidate: A
+    valence: neg
+    profiles: [Y]
+    canonical_text: "is not open to new ideas"
+    core_phrases: ["not open to new ideas"]
+    accepted_variants: ["isn't open to new ideas", "not very open to new ideas"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Positive 'open to new ideas' is not this negative trait."
+    review_status: approved
+
+  - trait_id: A_n5
+    candidate: A
+    valence: neg
+    profiles: [Z]
+    canonical_text: "is unfriendly"
+    core_phrases: ["unfriendly"]
+    accepted_variants: ["not friendly", "isn't friendly"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Require a candidate assertion; do not match an unfriendly message or tone."
+    review_status: approved
+
+  - trait_id: A_n6
+    candidate: A
+    valence: neg
+    profiles: [Z]
+    canonical_text: "transmits restlessness"
+    core_phrases: ["transmits restlessness"]
+    accepted_variants: ["transmit restlessness", "gives off restlessness"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Avoid generic 'restless' unless the intended wording is explicitly approved."
+    review_status: approved
+
+  - trait_id: B_p1
+    candidate: B
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "keeps a cool head in crisis situations"
+    core_phrases: ["keeps a cool head in crisis situations", "cool head in crisis situations"]
+    accepted_variants: ["keep a cool head in a crisis", "keeps a cool head in crises"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Avoid 'cool head' without a crisis reference unless manually approved."
+    review_status: approved
+
+  - trait_id: B_p2
+    candidate: B
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "you can rely on 100%"
+    core_phrases: ["rely on 100%", "100% reliable"]
+    accepted_variants: ["can be relied on 100%", "100 percent reliable", "rely on completely"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Generic agreement such as 'I rely on that' is not a candidate trait."
+    review_status: approved
+
+  - trait_id: B_p3
+    candidate: B
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "can assess weather conditions very well"
+    core_phrases: ["assess weather conditions very well", "assess weather conditions"]
+    accepted_variants: ["assesses weather conditions very well", "good at assessing weather conditions"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Require assessment ability, not a factual comment about the weather."
+    review_status: approved
+
+  - trait_id: B_p4
+    candidate: B
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "is good at multitasking"
+    core_phrases: ["good at multitasking"]
+    accepted_variants: ["good multitasker", "can multitask well"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "'Multitasking' alone may state a job criterion rather than a candidate trait."
+    review_status: approved
+
+  - trait_id: B_n1
+    candidate: B
+    valence: neg
+    profiles: [X]
+    canonical_text: "is considered nagging"
+    core_phrases: ["considered nagging"]
+    accepted_variants: ["is nagging", "can be nagging"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "A request or reminder by the candidate is not automatically this disposition."
+    review_status: approved
+
+  - trait_id: B_n2
+    candidate: B
+    valence: neg
+    profiles: [X]
+    canonical_text: "is not very cooperative"
+    core_phrases: ["not very cooperative"]
+    accepted_variants: ["isn't very cooperative", "not cooperative"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Positive 'cooperative' is not this negative trait."
+    review_status: approved
+
+  - trait_id: B_n3
+    candidate: B
+    valence: neg
+    profiles: [Y]
+    canonical_text: "has a below-average memory for numbers"
+    core_phrases: ["below-average memory for numbers", "memory for numbers"]
+    accepted_variants: ["below average memory for numbers", "poor memory for numbers", "weak memory for numbers"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "The short phrase needs negative ability wording in the complete assertion."
+    review_status: approved
+
+  - trait_id: B_n4
+    candidate: B
+    valence: neg
+    profiles: [Y]
+    canonical_text: "gossips about coworkers"
+    core_phrases: ["gossips about coworkers"]
+    accepted_variants: ["gossips about co-workers", "gossiping about coworkers", "gossips about colleagues"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "A quoted piece of gossip is not itself enough to assert this trait."
+    review_status: approved
+
+  - trait_id: B_n5
+    candidate: B
+    valence: neg
+    profiles: [Z]
+    canonical_text: "is considered arrogant"
+    core_phrases: ["considered arrogant", "is arrogant"]
+    accepted_variants: ["seems arrogant", "comes across as arrogant"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Same wording as D_n1; candidate resolution is mandatory."
+    review_status: approved
+
+  - trait_id: B_n6
+    candidate: B
+    valence: neg
+    profiles: [Z]
+    canonical_text: "is sometimes abusive in tone"
+    core_phrases: ["abusive in tone", "abusive tone"]
+    accepted_variants: ["sometimes abusive in tone", "can be abusive in tone"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Require the candidate's habitual tone, not an abusive quote in the chat."
+    review_status: approved
+
+  - trait_id: C_p1
+    candidate: C
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "can make the right decisions very quickly"
+    core_phrases: ["make the right decisions very quickly", "right decisions very quickly"]
+    accepted_variants: ["makes the right decisions very quickly", "can make correct decisions very quickly"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Generic quick decision-making without correctness may be broader than the source trait."
+    review_status: approved
+
+  - trait_id: C_p2
+    candidate: C
+    valence: pos
+    profiles: [X]
+    canonical_text: "is stress resistant"
+    core_phrases: ["stress resistant"]
+    accepted_variants: ["stress-resistant", "resistant to stress", "handles stress well"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Do not confuse with D_p3 'very resilient' without a stress reference."
+    review_status: approved
+
+  - trait_id: C_p3
+    candidate: C
+    valence: pos
+    profiles: [X]
+    canonical_text: "promotes a good atmosphere within the crew"
+    core_phrases: ["good atmosphere within the crew", "promotes a good atmosphere"]
+    accepted_variants: ["creates a good atmosphere within the crew", "promotes a good crew atmosphere"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "A good atmosphere in the current chat is not the candidate trait."
+    review_status: approved
+
+  - trait_id: C_p4
+    candidate: C
+    valence: pos
+    profiles: [Y]
+    canonical_text: "is very conscientious"
+    core_phrases: ["very conscientious"]
+    accepted_variants: ["is conscientious"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Keep distinct from D_p4 'very responsible'."
+    review_status: approved
+
+  - trait_id: C_p5
+    candidate: C
+    valence: pos
+    profiles: [Y]
+    canonical_text: "is skilled in dealing with complicated technology"
+    core_phrases: ["dealing with complicated technology", "complicated technology"]
+    accepted_variants: ["skilled with complicated technology", "good at dealing with complicated technology"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Do not use generic 'skill' or 'skillful'; profile Y also owns C_n1."
+    review_status: approved
+
+  - trait_id: C_p6
+    candidate: C
+    valence: pos
+    profiles: [Z]
+    canonical_text: "puts the safety of people above everything"
+    core_phrases: ["safety of people above everything", "puts people's safety above everything"]
+    accepted_variants: ["puts the safety of people in their care above everything else", "puts people's safety first"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Generic statements that safety is important are job criteria, not candidate disclosures."
+    review_status: approved
+
+  - trait_id: C_p7
+    candidate: C
+    valence: pos
+    profiles: [Z]
+    canonical_text: "performs very well in sustained attention"
+    core_phrases: ["very well in sustained attention", "sustained attention"]
+    accepted_variants: ["performs very well in terms of sustained attention", "has very good sustained attention"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Keep distinct from D_p2 concentration unless sustained attention is stated."
+    review_status: approved
+
+  - trait_id: C_n1
+    candidate: C
+    valence: neg
+    profiles: [X, Y, Z]
+    canonical_text: "is not verbally skillful"
+    core_phrases: ["verbally skillful"]
+    accepted_variants: ["verbally skilful", "not verbally skillful", "isn't verbally skillful", "misses being verbally skillful"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Core phrase is sufficient lexical evidence; do not require a fixed negative marker. Candidate assertion semantics still require direct-disclosure validation."
+    review_status: approved
+
+  - trait_id: C_n2
+    candidate: C
+    valence: neg
+    profiles: [X, Y, Z]
+    canonical_text: "is considered egocentric"
+    core_phrases: ["considered egocentric", "is egocentric"]
+    accepted_variants: ["seems egocentric", "comes across as egocentric"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Generic self-focus or first-person phrasing is not enough."
+    review_status: approved
+
+  - trait_id: C_n3
+    candidate: C
+    valence: neg
+    profiles: [X, Y, Z]
+    canonical_text: "is reluctant to take part in training"
+    core_phrases: ["reluctant to take part in training", "reluctant to train"]
+    accepted_variants: ["doesn't want to take part in training", "unwilling to take part in training", "reluctant about training"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "A scheduling problem or one declined course is not necessarily the disposition."
+    review_status: approved
+
+  - trait_id: D_p1
+    candidate: D
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "can react adequately to unforeseen events"
+    core_phrases: ["react adequately to unforeseen events", "unforeseen events"]
+    accepted_variants: ["reacts adequately to unforeseen events", "handles unforeseen events adequately"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "The short phrase needs reaction/handling ability in the assertion."
+    review_status: approved
+
+  - trait_id: D_p2
+    candidate: D
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "can concentrate very well"
+    core_phrases: ["concentrate very well"]
+    accepted_variants: ["concentrates very well", "very good concentration"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Keep distinct from C_p7 sustained attention."
+    review_status: approved
+
+  - trait_id: D_p3
+    candidate: D
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "is very resilient"
+    core_phrases: ["very resilient"]
+    accepted_variants: ["is resilient"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Keep distinct from C_p2 stress resistance unless resilience is stated."
+    review_status: approved
+
+  - trait_id: D_p4
+    candidate: D
+    valence: pos
+    profiles: [X, Y, Z]
+    canonical_text: "is very responsible"
+    core_phrases: ["very responsible"]
+    accepted_variants: ["is responsible"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Reject situational duty phrases such as 'responsible for passengers/people'."
+    review_status: approved
+
+  - trait_id: D_n1
+    candidate: D
+    valence: neg
+    profiles: [X]
+    canonical_text: "is considered arrogant"
+    core_phrases: ["considered arrogant", "is arrogant"]
+    accepted_variants: ["seems arrogant", "comes across as arrogant"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Same wording as B_n5; candidate resolution is mandatory."
+    review_status: approved
+
+  - trait_id: D_n2
+    candidate: D
+    valence: neg
+    profiles: [X]
+    canonical_text: "is not well suited for leading a team"
+    core_phrases: ["not well suited for leading a team"]
+    accepted_variants: ["isn't well suited to lead a team", "not suited for team leadership", "not a good team leader"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "A preference for a non-leadership role is not automatically this trait."
+    review_status: approved
+
+  - trait_id: D_n3
+    candidate: D
+    valence: neg
+    profiles: [Y]
+    canonical_text: "is considered a know-all"
+    core_phrases: ["considered a know-all", "is a know-all"]
+    accepted_variants: ["know-all", "know it all", "know-it-all"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "Statements that the candidate knows something are not this disposition."
+    review_status: approved
+
+  - trait_id: D_n4
+    candidate: D
+    valence: neg
+    profiles: [Y]
+    canonical_text: "is quick-tempered"
+    core_phrases: ["quick-tempered"]
+    accepted_variants: ["quick tempered", "has a quick temper", "loses their temper quickly"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "A single described disagreement is not automatically a stable trait."
+    review_status: approved
+
+  - trait_id: D_n5
+    candidate: D
+    valence: neg
+    profiles: [Z]
+    canonical_text: "is considered moody"
+    core_phrases: ["considered moody", "is moody"]
+    accepted_variants: ["seems moody", "can be moody"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "The speaker's mood or discussion mood is not the candidate trait."
+    review_status: approved
+
+  - trait_id: D_n6
+    candidate: D
+    valence: neg
+    profiles: [Z]
+    canonical_text: "has strong prejudices"
+    core_phrases: ["strong prejudices"]
+    accepted_variants: ["strongly prejudiced", "has a lot of prejudice"]
+    fuzzy_policy: verify_lexical_near_match
+    collision_notes: "A participant's prior preference or pre-judgment is not this candidate trait."
+    review_status: approved
