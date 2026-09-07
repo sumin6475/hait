@@ -23,6 +23,9 @@ import {
 } from "../lib/conversationObserver.js";
 import { buildFollowupCandidateTranscript } from "../lib/followupJudge.js";
 import {
+  layoutRequestSignal,
+  collationRequestSignal,
+  candidateLetterAddressSignal,
   buildRouteUserContext,
   classifyRequestIntent,
   decidePreferenceFromKnownCoverage,
@@ -344,7 +347,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.7.2");
+    assert.equal(resolvedPrompt.promptVersion, "1.8.0");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
@@ -3290,4 +3293,95 @@ assert.equal(TRIGGER_CONFIG.LONG_SILENCE_MIN_INTERVAL_MS, 5 * 60 * 1_000);
 assert.equal(TRIGGER_CONFIG.LONG_SILENCE_MIN_HUMAN_MSGS_SINCE_AI, 2);
 assert.equal(TRIGGER_CONFIG.BACKCHANNEL_RATE, 1);
 assert.equal(TRIGGER_CONFIG.DISCUSSION_DURATION_MS, 30 * 60 * 1_000);
+// ─────────────────────────────────────────────────────────────────────────────
+// [Decline + label reservation] Measured on T-C1-027. Four consecutive direct
+// requests were answered with another clarifying question — asked for a table,
+// Alex asked compact-or-full; told "full row", it asked which order; given the
+// order, it asked exact-phrases-or-labels — until the participant said they had
+// hoped the AI could just make the table. Separately, asked whether to call it
+// "C" or "Alex", Alex answered that either works, adopting a candidate label as
+// its own name in the middle of a board those letters index.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Layout requests, including the follow-up fragment that carried the request.
+assert.equal(layoutRequestSignal("Alex, can you make a table of the attributes across all candidates?"), true);
+assert.equal(layoutRequestSignal("Alex can you give the table in the alphabetical order A, B, C, D?"), true);
+assert.equal(layoutRequestSignal("full row"), true, "the follow-up fragment is still a layout request");
+assert.equal(layoutRequestSignal("Alex, what are your negatives for candidate A?"), false);
+assert.equal(layoutRequestSignal("I think A is the strongest so far."), false);
+
+// Collation requests. The single-candidate complete request must NOT match: that
+// one Alex can and should answer in full from its own notes.
+assert.equal(
+  collationRequestSignal("Can we all just copy and paste all the items for the candidates and alex can arrange then in matches and misses?"),
+  true,
+);
+assert.equal(collationRequestSignal("Alex, can you organize all our attributes together?"), true);
+assert.equal(
+  collationRequestSignal("Alex, can you add all your attributes for candidate A indicating which are matches and which are misses."),
+  false,
+  "a request for Alex's own complete list for one candidate is answerable, not a collation",
+);
+assert.equal(collationRequestSignal("Let's do one candidate at a time...starting with A."), false);
+
+// A candidate letter used as Alex's name.
+assert.equal(candidateLetterAddressSignal("Alex, do you respond to C or just Alex?"), true);
+assert.equal(candidateLetterAddressSignal('C, what does your negative comments indicate for "A"?'), true);
+assert.equal(
+  candidateLetterAddressSignal("Candidate C was my least favorite."),
+  false,
+  "discussing a candidate is not addressing Alex by a letter",
+);
+assert.equal(candidateLetterAddressSignal("Alex, what are your negatives listed for candidate C?"), false);
+
+const declineContext = (conditionCode: "C1" | "C2", content: string) =>
+  buildRouteUserContext({
+    routeKind: "address",
+    conditionCode,
+    language: "en",
+    anchorSeq: 9,
+    messages: [{ seq: 9, senderRole: "humanX", speaker: "Participant X", content }],
+    revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+  } as any).userPrompt;
+
+const declineLayout = declineContext("C1", "Alex, can you make a table of the attributes across all candidates?");
+assert.match(declineLayout, /Requested output form \(server-derived\)/);
+assert.match(declineLayout, /Do not ask a clarification question this turn/);
+// The standing rule the refusal must not break: never attribute a refusal to a
+// rule, prompt, or scope. Both refusals are true in character instead.
+assert.doesNotMatch(declineLayout, /Requested output form[^]{0,400}(?:policy|not allowed|rule forbids)/i);
+
+const collationText = "Can we all just copy and paste all the items for the candidates and alex can arrange then in matches and misses?";
+assert.match(declineContext("C1", collationText), /Requested collation \(server-derived\)/);
+assert.match(declineContext("C1", collationText), /hold only your own notes/);
+assert.doesNotMatch(
+  declineContext("C2", collationText),
+  /Requested collation \(server-derived\)/,
+  "a leader may assemble the board — the refusal is a Peer property, not a global one",
+);
+
+assert.match(
+  declineContext("C1", "Alex, do you respond to C or just Alex?"),
+  /Name \(server-derived\)/,
+);
+assert.doesNotMatch(
+  declineContext("C1", "Alex, what are your negatives listed for candidate C?"),
+  /Name \(server-derived\)/,
+);
+
+// The frozen prompt carries both rules too, so they hold on turns no detector
+// fires on. A/B/C/D are reserved, and an unanswerable request is declined rather
+// than deferred.
+const declinePrompt = getRoutePrompt("C1", "address").systemPrompt;
+assert.match(declinePrompt, /candidate labels and nothing else/i);
+assert.match(declinePrompt, /Never accept, adopt, or agree to answer to a candidate letter/i);
+assert.match(declinePrompt, /A request you cannot carry out is not an ambiguous one/i);
+assert.match(declinePrompt, /never answer two requests in a row with a question/i);
+assert.match(declinePrompt, /cannot lay it out that way/i);
+assert.match(declinePrompt, /only hold your own notes and cannot put together everyone/i);
+assert.match(
+  declinePrompt,
+  /Both refusals are about what you have and how you write, never about a rule/i,
+);
+
 console.log("intervention-v2 checks passed");

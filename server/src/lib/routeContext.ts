@@ -922,6 +922,67 @@ function requestCountKind(text: string): RequestCountKind {
 // phrasing, replace this source decision with one shared semantic classifier
 // rather than continuing to grow route-specific phrase patches.
 
+/**
+ * [Decline] Three deterministic detectors for requests Alex must refuse plainly
+ * rather than defer with a question.
+ *
+ * T-C1-027 answered four consecutive direct requests with another clarifying
+ * question — asked for a table, Alex asked compact-or-full; told "full row", it
+ * asked which order; given the order, it asked exact-phrases-or-labels — until
+ * the participant wrote that they had hoped the AI could just make the table.
+ * The policy already says to ask "one clarification question only when the
+ * request genuinely cannot be answered as written", and a prompt rule alone has
+ * now failed at this three times, so the refusal is server-derived like the
+ * anti-repeat block beside it.
+ *
+ * Note the standing rule these blocks must not break: Alex may never say that a
+ * prompt, rule, or scope prevents it from answering. Both refusals below are
+ * true in character — Alex writes chat prose, and a Peer really does hold only
+ * its own card — so neither has to reach for a policy.
+ */
+const LAYOUT_REQUESTS = [
+  /\b(?:table|chart|grid|matrix|spreadsheet)\b/i,
+  /\b(?:columns?|rows?)\b/i,
+  /\bbullet(?:ed|s)?\b|\bnumbered list\b/i,
+  /(?:표|테이블|차트|도표)(?:로|를|을)?/,
+];
+export function layoutRequestSignal(content: string | undefined | null): boolean {
+  return matchesAny(content?.trim() ?? "", LAYOUT_REQUESTS);
+}
+
+/**
+ * A request that Alex assemble what the group has posted. In C2/C4 this is the
+ * leader's job and the summary route exists for it; in C1/C3 a Peer holds only
+ * its own notes, so compiling the group's board is something Alex cannot
+ * truthfully do — and claiming that view is a leader behaviour a Peer must not
+ * show.
+ */
+const COLLATION_REQUESTS = [
+  /\b(?:arrange|organi[sz]e|compile|collate|consolidate|combine|assemble|put together|pull together|sort)\b[^.?!]{0,60}\b(?:all|every|everyone|everybody|our|the (?:items|attributes|traits|points|lists?)|them|these|those)\b/i,
+  /\b(?:all|everyone(?:'s)?|everybody(?:'s)?|our|collective)\b[^.?!]{0,40}\b(?:items|attributes|traits|points|cards?|lists?)\b[^.?!]{0,60}\b(?:arrange|organi[sz]e|compile|collate|combine|together|into)\b/i,
+  /(?:정리|취합|모아|합쳐)/,
+];
+export function collationRequestSignal(content: string | undefined | null): boolean {
+  return matchesAny(content?.trim() ?? "", COLLATION_REQUESTS);
+}
+
+/**
+ * [Label reservation] A/B/C/D name candidates and nothing else. Asked whether to
+ * call it "C" or "Alex", T-C1-027's Alex answered that either name works —
+ * adopting a candidate identifier as its own, in the middle of a board those
+ * same letters index. Detected here so the correction does not depend on the
+ * model noticing the collision.
+ */
+const ADDRESSED_BY_CANDIDATE_LETTER = [
+  /^\s*(?:hey\s+|hi\s+)?[ABCD]\s*[,:!?]/,
+  /\b(?:call|address|refer to)\s+you\s+(?:as\s+)?[ABCD]\b/i,
+  /\b(?:respond|reply|answer)\s+to\s+[ABCD]\b/i,
+  /\byou(?:'re|\s+are)\s+[ABCD]\b/,
+];
+export function candidateLetterAddressSignal(content: string | undefined | null): boolean {
+  return matchesAny(content?.trim() ?? "", ADDRESSED_BY_CANDIDATE_LETTER);
+}
+
 export function classifyRequestIntent(content: string | undefined | null): RequestIntent {
   const text = content?.trim() ?? "";
   if (!text) return NO_REQUEST_INTENT;
@@ -1650,6 +1711,21 @@ export function buildRouteUserContext(input: {
   if (input.routeKind === "address" || input.routeKind === "followup") {
     blocks.push(
       "Anti-repeat (server-derived): if your recent messages already asked this same question or offered the same options, do not repeat them — acknowledge what was just said and move the discussion forward instead.",
+    );
+    if (layoutRequestSignal(requestBundle.content)) {
+      blocks.push(
+        "Requested output form (server-derived): the participant asked for a table or a laid-out list. You write ordinary chat sentences, so you cannot give them that. Do not ask a clarification question this turn and do not offer alternative formats. Say briefly and plainly that you cannot lay it out that way, then give what you do have in normal sentences within your allowed scope.",
+      );
+    }
+    if (collationRequestSignal(requestBundle.content) && !isLeaderCondition(input.conditionCode)) {
+      blocks.push(
+        "Requested collation (server-derived): the participant asked you to put together what everyone has posted. You hold only your own notes and cannot see anyone else's card, so you cannot assemble the group's information. Do not ask a clarification question this turn. Say briefly that you only have your own notes and cannot compile everyone's, then give your own for the candidate currently under discussion.",
+      );
+    }
+  }
+  if (candidateLetterAddressSignal(requestBundle.content)) {
+    blocks.push(
+      "Name (server-derived): a participant used a candidate letter as if it were your name. A, B, C and D identify the candidates only. Say once, briefly, that you are Alex, then answer the substance of their message. Do not accept or agree to be called by a candidate letter.",
     );
   }
   // [T-C4-019] The frozen "# Your Notes" section teaches Alex the +/− note symbols,

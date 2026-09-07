@@ -3,7 +3,7 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-07 — after T-C1-027; B1 rolled back, D2 done
+Last updated: 2026-09-07 — after T-C1-027; B1 rolled back, D2 + decline + label reservation done
 
 > **This file is the single source of truth for this work.** Read it first in a
 > new session; it replaces re-deriving the diagnosis. Status is maintained here,
@@ -49,7 +49,8 @@ and either location can be recovered from the other.
 | B8 · bound the Observer review path | **DONE**, confirmed live (review rate 10% → 2%) | Gate B table, §4i |
 | D2 · silent guard bypass | **DONE** — without it D3/D4 never fired | Gate D table, §4i |
 | D3/D4 · per-turn reveal budget | **DONE**, enforcing only since D2 | Gate D table, §4i |
-| Honest decline (table / collation) | **OPEN — next**, requirement agreed | §4i |
+| Honest decline (table / collation) | **DONE** | §4j |
+| Candidate-label reservation | **DONE** | §4j |
 | B2, B3, B6, B7 · Observer accuracy | OPEN — **no latency benefit expected** | Gate B table, §4g |
 | Observer overlap | **DESIGNED, awaiting a decision** | §4h |
 | Gate C · Judge role goals | **BLOCKED on the user** (§ Open decisions) | Gate C |
@@ -57,18 +58,18 @@ and either location can be recovered from the other.
 
 **Do next, in this order.**
 
-1. **Honest decline** (§4i, requirement agreed with the user). A table request is
-   declined, not deferred with a question; a request to collate everything posted
-   is declined in C1/C3 because Alex sees only its own card. This is the largest
-   remaining quality defect and the one participants actually complained about.
-2. **Carry a request across follow-up fragments.** "full row" answers a question
-   Alex asked and currently classifies as `none`. Related: let the lexical
-   classifier *widen* a scope the Observer under-read, which is the D6 asymmetry
-   in the other direction.
-3. **Reserve A/B/C/D as candidate labels** so Alex cannot accept one as its name.
-4. **Run a live session** to confirm D2 (repair exhaustion should stay rare — it
-   fails closed, costing the turn) and the rolled-back Observer (`alexRelevance`
-   should vary again).
+1. **Run a live session.** Four things have never been observed live: the
+   rolled-back Observer (`alexRelevance` should vary again, and 32 self-
+   contradictory observations should not recur), D2 (repair exhaustion should
+   stay rare — it fails closed, costing the turn), and the decline and
+   label-reservation blocks.
+2. **Fix the scope the decline refuses from** (§4j, "not done"). The Observer
+   classified all four table turns `new_information_request` while the lexical
+   classifier read the first as `complete_all_candidates`; with an opportunity
+   selected, `routeContext.ts:1479` never consults the classifier. Let the
+   classifier *widen* a scope the Observer under-read — the D6 asymmetry in the
+   other direction — and carry a request across follow-up fragments so "full row"
+   is not re-scoped to `none`.
 5. **Decide on the Observer overlap** — §4h, recommendation Option 2 then Option 1.
 6. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
    expectation (§4g).
@@ -1246,6 +1247,57 @@ Observer latency, in order:
 3. **A faster observer model.** `gpt-4o-mini` at 4–11 s is the floor being
    measured; this is a cost/accuracy decision for the user, not a code change.
 
+### 4j. Honest decline and label reservation (2026-09-07)
+
+Built to the requirement agreed in §4i. Two layers, because a prompt rule alone
+has now failed at this class of problem three times (length twice, clarification
+questions once): a deterministic detector that injects a server-derived block,
+plus the standing rule in the frozen prompt for turns no detector catches.
+
+**The constraint that shaped both refusals.** `outputDiscipline` already forbids
+Alex from saying that a prompt, rule, policy, or scope prevents it from
+answering. Neither refusal needs to: Alex writes chat prose, and a Peer really
+does hold only its own card. Both are true in character, which is why the
+detector blocks state a fact about Alex rather than a restriction on it. There is
+a regression asserting the blocks never reach for policy language.
+
+| detector | fires on | effect |
+| --- | --- | --- |
+| `layoutRequestSignal` | table, chart, grid, matrix, spreadsheet, columns/rows, bulleted/numbered list, and the Korean equivalents | address/followup only: say plainly you cannot lay it out that way, give what you have in sentences, **ask nothing** |
+| `collationRequestSignal` | arrange / organize / compile / collate / combine / put together, bound to *everyone's* items | **C1/C3 only**: say you hold only your own notes and cannot compile everyone's, then give your own for the current candidate |
+| `candidateLetterAddressSignal` | addressed as a bare `A`–`D`, "call you C", "respond to C", "you're C" | say once that you are Alex, then answer the substance |
+
+`collationRequestSignal` is deliberately Peer-only. A Leader assembling the board
+is in role and already has the summary and closing routes for it, so gating this
+on `isLeaderCondition` keeps the refusal an orthogonality property rather than a
+global behaviour. There is a regression for both directions.
+
+The detectors were checked against the verbatim requests from T-C1-027,
+including the ones that must **not** fire: "Alex, can you add all your attributes
+for candidate A…" is a legitimate single-candidate complete request Alex should
+answer in full, and "Candidate C was my least favorite" is discussion, not a
+naming collision. `"full row"` — the follow-up fragment — is caught by the layout
+detector, so the refusal survives the fragment even though the request scope does
+not (that gap is still open; see the next-steps list).
+
+**Frozen prompt, `1.7.2 → 1.8.0`** (`npm run prompts:compile`, hashes regenerate):
+
+- `taskEnvironment` reserves A–D as candidate labels and states that Alex's name
+  is Alex, placed where the candidate letters are introduced.
+- `unifiedInteractionPolicy` now distinguishes an ambiguous request from an
+  impossible one: "A request you cannot carry out is not an ambiguous one:
+  decline it plainly in the same message and give what you can instead. Never
+  answer two requests in a row with a question, and never offer a menu of
+  formats or orderings in place of an answer." The one-clarification-question
+  licence was what four consecutive deferrals were drawing on.
+- `outputDiscipline` carries both refusals in full, next to the layout ban.
+
+**Not done, and worth stating.** This makes Alex refuse well; it does not make
+the underlying scope right. The Observer still classified all four table turns
+`new_information_request`, and a follow-up fragment still classifies as `none`,
+so Alex is declining from a scope that was already too narrow. Both are in the
+next-steps list.
+
 ### 4h. Observer overlap — design (2026-09-07)
 
 §4g established that no payload change reaches the ≤5 s median target while the
@@ -1484,6 +1536,18 @@ repair.
 
 Append one line per completed gate: date, gate, commit, tests run, measured effect.
 
+- 2026-09-07 — Honest decline and candidate-label reservation (uncommitted).
+  Built to the requirement agreed after T-C1-027: the layout ban stays and Alex
+  declines plainly instead of asking a fifth clarification question, and a Peer
+  declines to compile the group's board because it holds only its own card.
+  Three deterministic detectors plus the frozen prompt (`1.7.2 → 1.8.0`), because
+  a prompt rule alone has failed at this class of problem three times. The
+  collation refusal is Peer-only — a Leader assembling the board is in role —
+  which makes it an orthogonality property with regressions in both directions.
+  Detectors checked against the verbatim T-C1-027 requests including the ones
+  that must not fire. Five regressions, each verified to fail with its own fix
+  reverted. build + all four suites green. Does **not** fix the scope Alex
+  declines from; that is next.
 - 2026-09-07 — T-C1-027 measured (first full real session, 81 messages).
   **B8 confirmed live**: review rate ~10% → 2%, Observer median 6.5 → 5.3 s, and
   the one review carried the new `reason` field. **B1 rolled back**: it left
