@@ -579,6 +579,41 @@ export function validateConversationLedgerJudgeDecision(input: {
   return ruleCodes.length ? { ok: false, ruleCodes } : { ok: true, value: decision, ruleCodes: [] };
 }
 
+/**
+ * The exact set of opportunities the Main Judge is allowed to see and choose
+ * from on this turn.
+ *
+ * Unselectable opportunities are historical context, not choices. Two classes
+ * are removed. Terminal opportunities used to be serialized into the prompt's
+ * `Exact structured decision ledger` even though the prose summary above it
+ * listed only open ones; the model read the JSON, selected a consumed id,
+ * failed deterministic validation, and the retry capitulated to silence. Open
+ * invited opportunities without current-trigger evidence are stale for the same
+ * reason. Deferred opportunities stay, matching the prose summary, which
+ * reports them as context the Judge may not act on.
+ *
+ * The prose summary and the serialized ledger must be built from this same
+ * projection so the two can never disagree again.
+ */
+export function conversationLedgerDecisionProjection(
+  state: ConversationLedgerState,
+): ConversationLedgerState {
+  return {
+    ...state,
+    opportunities: state.opportunities.filter((opportunity) => {
+      if (opportunity.status !== "open" && opportunity.status !== "deferred") return false;
+      if (
+        opportunity.status === "open" &&
+        opportunity.expectation === "invited" &&
+        !opportunity.evidenceSeqs.includes(state.currentTriggerSeq)
+      ) {
+        return false;
+      }
+      return true;
+    }),
+  };
+}
+
 export async function judgeConversationLedgerTurn(input: {
   messages: ObserverTranscriptMessage[];
   state: ConversationLedgerState;
@@ -587,18 +622,7 @@ export async function judgeConversationLedgerTurn(input: {
   backchannelAvailable: boolean;
   eligibleTraitIds: string[];
 }): Promise<ConversationLedgerJudgeCallResult> {
-  // Open invited opportunities without current-trigger evidence are historical
-  // context, not choices. Remove them from the decision projection so the
-  // model cannot keep selecting an id that deterministic validation rejects.
-  const decisionState: ConversationLedgerState = {
-    ...input.state,
-    opportunities: input.state.opportunities.filter(
-      (opportunity) =>
-        opportunity.status !== "open" ||
-        opportunity.expectation !== "invited" ||
-        opportunity.evidenceSeqs.includes(input.state.currentTriggerSeq),
-    ),
-  };
+  const decisionState = conversationLedgerDecisionProjection(input.state);
   const transcript = input.messages
     .filter((message) => message.seq <= input.state.contextThroughSeq)
     .map((message) => `[${message.seq}] ${message.speaker}: ${message.content}`)

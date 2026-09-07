@@ -319,7 +319,19 @@ export function observerDeltaFromTurn(input: {
     ]),
   };
 
-  const directlyAddressesAlex = input.observation.addressees.includes("alex");
+  // The observer can mark Alex the explicit addressee while leaving `addressees`
+  // empty; the prompt states the addressees -> alexRelation rule in one direction
+  // only, and normalization keeps the model's alexRelation when addressees omits
+  // Alex. Dispatching on `addressees` alone sent an explicit request that the
+  // observer had parsed correctly into the inferred thread-continuation branch,
+  // where it merged into an already-consumed id and was never answered. Accept
+  // either signal; `requestsAction` below still gates this on the turn actually
+  // asking for something.
+  const explicitAlexRelationOnly =
+    !input.observation.addressees.includes("alex") &&
+    input.observation.alexRelation === "explicit_addressee";
+  const directlyAddressesAlex =
+    input.observation.addressees.includes("alex") || explicitAlexRelationOnly;
   const addressesGroup = input.observation.addressees.includes("group");
   const requestsAction =
     input.observation.speechAct === "question" || input.observation.speechAct === "proposal";
@@ -421,7 +433,14 @@ export function observerDeltaFromTurn(input: {
       evidenceSeqs: [input.currentTriggerSeq],
     },
     observerConflicts: [...(input.observerConflicts ?? [])],
-    repairCodes: [...(input.repairCodes ?? [])],
+    repairCodes: [
+      ...(input.repairCodes ?? []),
+      // Audit the addressee/relation disagreement that this delta resolved in
+      // Alex's favour, so over-firing stays measurable rather than invisible.
+      ...(explicitAlexRelationOnly && requestsAction
+        ? ["alex_addressee_taken_from_explicit_relation"]
+        : []),
+    ],
     conflictCodes: [...(input.conflictCodes ?? [])],
     degradedMode: input.degradedMode === true,
   };
@@ -598,6 +617,16 @@ export function reduceConversationLedger(
       transition.accepted.push(`opportunity:${id}:created`);
     } else {
       const existing = state.opportunities[existingIndex]!;
+      // A closed opportunity is history, not a live record. Merging fresh
+      // evidence into one grew a terminal entry for the rest of the session and
+      // hid the closure from the observer, which is shown only open
+      // opportunities and therefore kept re-proposing an id that can never be
+      // selected again. Reject instead, so a derivation branch that can only
+      // ever mint one id per session becomes visible in the audit.
+      if (TERMINAL_OPPORTUNITY_STATUSES.has(existing.status)) {
+        transition.rejected.push(`opportunity:${id}:already_terminal`);
+        continue;
+      }
       state.opportunities[existingIndex] = {
         ...existing,
         threadId: proposal.threadId,

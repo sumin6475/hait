@@ -12,7 +12,10 @@ import {
   withProvisionalAlexAddress,
   type ObservedTurnForLedger,
 } from "../lib/conversationLedger.js";
-import { validateConversationLedgerJudgeDecision } from "../lib/interventionJudge.js";
+import {
+  conversationLedgerDecisionProjection,
+  validateConversationLedgerJudgeDecision,
+} from "../lib/interventionJudge.js";
 
 const roster = ["alex", "humanX", "humanY"] as const;
 
@@ -609,6 +612,257 @@ assert.equal(
   }).ok,
   false,
   "speech without an opportunity or useful voluntary-act basis is forbidden",
+);
+
+// --- Gate 1 regressions -----------------------------------------------------
+// Reproduces the three defects observed in session T-C2-034. Shapes are taken
+// from that run's stored observations; no participant text is reproduced.
+
+// Gate 1 / C3. The observer marked Alex the explicit addressee of a request
+// while returning an empty `addressees` array. Dispatching on `addressees`
+// alone routed the request into the inferred thread-continuation branch, where
+// it merged into an already-consumed id and was never answered.
+const explicitRelationOnlyThread = {
+  threadId: "thread-1",
+  rootSeq: 1,
+  status: "open" as const,
+  goal: "compare_information",
+  requestedAction: "discuss candidates",
+  candidates: ["A", "B", "C", "D"] as const,
+  participants: ["alex", "humanX", "humanY"] as const,
+  expectedResponders: ["humanX"] as const,
+  alexParticipation: "invited" as const,
+  evidenceSeqs: [1, 16],
+};
+const explicitRelationOnly = observerDeltaFromTurn({
+  sessionKey: "T-C2-034",
+  observerVersion: "test-observer",
+  roster,
+  sourceRole: "humanY",
+  currentTriggerSeq: 16,
+  contextThroughSeq: 16,
+  alexUptakeRootSeq: 15,
+  observation: observation({
+    speechAct: "proposal",
+    addressees: [],
+    alexRelation: "explicit_addressee",
+    requestExplicitness: "explicit",
+    activeCandidates: ["B", "C"],
+    activeThread: {
+      ...explicitRelationOnlyThread,
+      candidates: [...explicitRelationOnlyThread.candidates],
+      participants: [...explicitRelationOnlyThread.participants],
+      expectedResponders: [...explicitRelationOnlyThread.expectedResponders],
+    },
+  }),
+});
+assert.equal(
+  explicitRelationOnly.opportunityProposals.length,
+  1,
+  "an explicit request still opens an opportunity when addressees is empty",
+);
+assert.deepEqual(
+  explicitRelationOnly.opportunityProposals[0] && {
+    kind: explicitRelationOnly.opportunityProposals[0].kind,
+    expectation: explicitRelationOnly.opportunityProposals[0].expectation,
+    opportunitySourceSeq: explicitRelationOnly.opportunityProposals[0].opportunitySourceSeq,
+    openedAtSeq: explicitRelationOnly.opportunityProposals[0].openedAtSeq,
+    targetBasis: explicitRelationOnly.opportunityProposals[0].targetBasis,
+  },
+  {
+    kind: "invitation",
+    expectation: "invited",
+    opportunitySourceSeq: 16,
+    openedAtSeq: 16,
+    targetBasis: "explicit",
+  },
+  "the request is keyed to the current trigger, not folded into the thread root",
+);
+assert.ok(
+  explicitRelationOnly.repairCodes.includes("alex_addressee_taken_from_explicit_relation"),
+  "resolving the addressee/relation disagreement is auditable",
+);
+
+// The same turn without an explicit Alex relation must stay in the inferred
+// continuation branch, so the repair cannot silently widen Alex's entitlement.
+const groupParticipantSameTurn = observerDeltaFromTurn({
+  sessionKey: "T-C2-034",
+  observerVersion: "test-observer",
+  roster,
+  sourceRole: "humanY",
+  currentTriggerSeq: 16,
+  contextThroughSeq: 16,
+  observation: observation({
+    speechAct: "proposal",
+    addressees: [],
+    alexRelation: "group_participant",
+    activeThread: {
+      ...explicitRelationOnlyThread,
+      candidates: [...explicitRelationOnlyThread.candidates],
+      participants: [...explicitRelationOnlyThread.participants],
+      expectedResponders: [...explicitRelationOnlyThread.expectedResponders],
+    },
+  }),
+});
+assert.equal(
+  groupParticipantSameTurn.opportunityProposals[0]?.opportunitySourceSeq,
+  1,
+  "a turn that does not address Alex keeps the inferred thread-root behaviour",
+);
+assert.equal(
+  groupParticipantSameTurn.repairCodes.includes("alex_addressee_taken_from_explicit_relation"),
+  false,
+  "the addressee repair is recorded only when it actually changed the dispatch",
+);
+
+// Gate 1 / C2. A consumed opportunity must not keep absorbing evidence. In
+// T-C2-034 `opp:1:group_request:alex` was consumed on the first Alex broadcast
+// and then merged evidence from eight later turns, hiding the closure from the
+// observer, which is shown only open opportunities.
+const terminalMergeBase = reduceConversationLedger(
+  createConversationLedgerState({
+    sessionKey: "T-C2-TERMINAL-MERGE",
+    observerVersion: "test-observer",
+    roster,
+  }),
+  observerDeltaFromTurn({
+    sessionKey: "T-C2-TERMINAL-MERGE",
+    observerVersion: "test-observer",
+    roster,
+    sourceRole: "humanY",
+    currentTriggerSeq: 2,
+    contextThroughSeq: 2,
+    observation: observation({
+      speechAct: "answer",
+      addressees: [],
+      alexRelation: "group_participant",
+      activeThread: {
+        threadId: "thread-1",
+        rootSeq: 1,
+        status: "open",
+        goal: "compare_information",
+        requestedAction: "discuss candidates",
+        candidates: [],
+        participants: ["alex", "humanX", "humanY"],
+        expectedResponders: [],
+        alexParticipation: "invited",
+        evidenceSeqs: [2],
+      },
+    }),
+  }),
+).state;
+const terminalMergeId = terminalMergeBase.opportunities[0]!.id;
+assert.equal(terminalMergeBase.opportunities[0]!.status, "open");
+const terminalMergeConsumed = withOpportunityTransition(terminalMergeBase, {
+  opportunityId: terminalMergeId,
+  toStatus: "consumed_by_alex",
+  reason: "alex_broadcast_succeeded",
+  broadcastSucceeded: true,
+  evidenceSeqs: [2],
+  alexBroadcastSeq: 3,
+}).state;
+assert.equal(terminalMergeConsumed.opportunities[0]!.status, "consumed_by_alex");
+const consumedEvidenceBefore = [...terminalMergeConsumed.opportunities[0]!.evidenceSeqs];
+const terminalMergeAttempt = reduceConversationLedger(
+  { ...terminalMergeConsumed, contextThroughSeq: 4, currentTriggerSeq: 4 },
+  observerDeltaFromTurn({
+    sessionKey: "T-C2-TERMINAL-MERGE",
+    observerVersion: "test-observer",
+    roster,
+    sourceRole: "humanY",
+    currentTriggerSeq: 4,
+    contextThroughSeq: 4,
+    observation: observation({
+      speechAct: "answer",
+      addressees: [],
+      alexRelation: "group_participant",
+      activeThread: {
+        threadId: "thread-1",
+        rootSeq: 1,
+        status: "open",
+        goal: "compare_information",
+        requestedAction: "discuss candidates",
+        candidates: [],
+        participants: ["alex", "humanX", "humanY"],
+        expectedResponders: [],
+        alexParticipation: "invited",
+        evidenceSeqs: [4],
+      },
+    }),
+  }),
+);
+assert.ok(
+  terminalMergeAttempt.transition.rejected.includes(`opportunity:${terminalMergeId}:already_terminal`),
+  "evidence cannot be merged into a consumed opportunity",
+);
+assert.deepEqual(
+  terminalMergeAttempt.state.opportunities.find((item) => item.id === terminalMergeId)!.evidenceSeqs,
+  consumedEvidenceBefore,
+  "a consumed opportunity's evidence set stops growing once it is closed",
+);
+assert.equal(
+  terminalMergeAttempt.state.opportunities.filter((item) => item.id === terminalMergeId).length,
+  1,
+  "rejecting the merge does not duplicate or resurrect the closed opportunity",
+);
+
+// Gate 1 / C4. The Judge prompt serialized the whole ledger, so terminal ids
+// stayed visible even though the prose summary listed only open ones. The model
+// selected a consumed id, deterministic validation rejected it, and the retry
+// capitulated to silence. The decision projection must expose exactly what is
+// selectable.
+const projectionState = {
+  ...terminalMergeConsumed,
+  currentTriggerSeq: 20,
+  contextThroughSeq: 20,
+  opportunities: [
+    terminalMergeConsumed.opportunities[0]!,
+    {
+      ...terminalMergeConsumed.opportunities[0]!,
+      id: "opp:18:direct_question:alex",
+      kind: "direct_question" as const,
+      expectation: "required" as const,
+      status: "open" as const,
+      opportunitySourceSeq: 18,
+      originSeq: 18,
+      openedAtSeq: 18,
+      evidenceSeqs: [18],
+    },
+    {
+      ...terminalMergeConsumed.opportunities[0]!,
+      id: "opp:19:uptake:alex",
+      kind: "uptake" as const,
+      expectation: "invited" as const,
+      status: "open" as const,
+      opportunitySourceSeq: 19,
+      originSeq: 19,
+      openedAtSeq: 20,
+      evidenceSeqs: [19],
+    },
+    {
+      ...terminalMergeConsumed.opportunities[0]!,
+      id: "opp:20:uptake:alex",
+      kind: "uptake" as const,
+      expectation: "invited" as const,
+      status: "open" as const,
+      opportunitySourceSeq: 20,
+      originSeq: 20,
+      openedAtSeq: 20,
+      evidenceSeqs: [20],
+    },
+  ],
+};
+assert.deepEqual(
+  conversationLedgerDecisionProjection(projectionState).opportunities.map((item) => item.id),
+  ["opp:18:direct_question:alex", "opp:20:uptake:alex"],
+  "the projection drops terminal ids and stale invited ids, and keeps current ones",
+);
+assert.equal(
+  conversationLedgerDecisionProjection(projectionState).opportunities.some(
+    (item) => item.status === "consumed_by_alex",
+  ),
+  false,
+  "a consumed opportunity is never offered to the Judge as a choice",
 );
 
 console.log("[conversation-ledger] deterministic reducer tests passed");
