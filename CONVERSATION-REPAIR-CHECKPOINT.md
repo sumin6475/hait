@@ -17,13 +17,17 @@ Last updated: 2026-09-07 — after T-C1-027; B1 rolled back, D2 + decline + labe
 
 ## Current state — read this first
 
-**Where the work is.** Five live measurement rounds have been run against the
-repair. Gate A is done and confirmed: T-C1-024 measured A7's tail at 0.2–1.5 s
-against the 2.5–3.5 s it replaced, and superseded turns at 11% against a 39%
-baseline. **The Observer is now the whole of the remaining latency** — 66% of
-mean turn time, 49–86% per turn — which is Gate B. Speech *quality* is the open
-front: Alex is no longer too long, it is too often empty or repetitive, and
-every Alex message in T-C1-024 carried a defect.
+**Where the work is.** Seven live measurement rounds have been run against the
+repair, the last of them a full 81-message session (T-C1-027, §4i). Gate A is
+done and confirmed: T-C1-024 measured A7's tail at 0.2–1.5 s against the
+2.5–3.5 s it replaced, and superseded turns at 11% against a 39% baseline.
+**The Observer remains the largest single cost** — 66% of mean turn time in
+T-C1-024, and B8 has since cut its median 6.5 s → 5.3 s — which is Gate B, but
+§4g disconfirmed that gate's premise and §4h is where the remaining latency now
+lives. Speech *quality* is the open front, and its shape has changed: length is
+solved (mean 34.7 words in T-C1-027, from 138), but Alex answered four
+consecutive turns of one request with another clarifying question, and D3/D4
+were passing vacuously on every turn until D2 closed the bypass.
 
 **Where the code is.** Uncommitted in the root checkout
 (`/Users/jadekim/Documents/Code HQ/HAIT`, branch `main`, never commit there).
@@ -70,8 +74,8 @@ and either location can be recovered from the other.
    classifier *widen* a scope the Observer under-read — the D6 asymmetry in the
    other direction — and carry a request across follow-up fragments so "full row"
    is not re-scoped to `none`.
-5. **Decide on the Observer overlap** — §4h, recommendation Option 2 then Option 1.
-6. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
+3. **Decide on the Observer overlap** — §4h, recommendation Option 2 then Option 1.
+4. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
    expectation (§4g).
 
 **Waiting on the user.** Gate C cannot start until the condition-blind Judge
