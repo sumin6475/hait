@@ -3,7 +3,7 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-07 — after B9 + A7, backup `c20c43e`
+Last updated: 2026-09-07 — after T-C1-024, D6 and B4
 
 > **This file is the single source of truth for this work.** Read it first in a
 > new session; it replaces re-deriving the diagnosis. Status is maintained here,
@@ -17,16 +17,20 @@ Last updated: 2026-09-07 — after B9 + A7, backup `c20c43e`
 
 ## Current state — read this first
 
-**Where the work is.** Four live measurement rounds have been run against the
-repair. Latency work (Gate A) is essentially done; the remaining latency lives
-in the Observer, which is Gate B. Speech *quality* is the open front: Alex is no
-longer too long, it is too often empty, and one deterministic template makes a
-Peer sound like a Leader.
+**Where the work is.** Five live measurement rounds have been run against the
+repair. Gate A is done and confirmed: T-C1-024 measured A7's tail at 0.2–1.5 s
+against the 2.5–3.5 s it replaced, and superseded turns at 11% against a 39%
+baseline. **The Observer is now the whole of the remaining latency** — 66% of
+mean turn time, 49–86% per turn — which is Gate B. Speech *quality* is the open
+front: Alex is no longer too long, it is too often empty or repetitive, and
+every Alex message in T-C1-024 carried a defect.
 
 **Where the code is.** Uncommitted in the root checkout
 (`/Users/jadekim/Documents/Code HQ/HAIT`, branch `main`, never commit there).
 Mirrored as commits on `claude/hait-conversation-system-errors-0f5e58` for
-backup only — latest `c20c43e`.
+backup only. Confirmed 2026-09-07: every tracked file modified in the root
+checkout is byte-identical to the backup branch HEAD, so the mirror is faithful
+and either location can be recovered from the other.
 
 | Item | State | Where |
 | --- | --- | --- |
@@ -37,28 +41,32 @@ backup only — latest `c20c43e`.
 | A1–A4 · burst coalescing, cancellation, cache order | **DONE** | §4c |
 | A5 · `floorMs` | **not needed** — A6 buys the same 2 s free | §4c |
 | A6 · overlap floor with generation | **DONE**, confirmed live in T-C1-023 | §4c |
-| A7 · model call off the broadcast path | **DONE**, effect not yet measured live | §4e |
-| B9 · one "addresses Alex" predicate | **DONE**, effect not yet measured live | Gate B table |
-| B1, B4, B7, B8 · Observer cost and hygiene | **OPEN — next** | Gate B table |
-| B6 · C2 task-grounding regex | OPEN | Gate B table |
+| A7 · model call off the broadcast path | **DONE**, confirmed live in T-C1-024 | §4e, §4f |
+| B9 · one "addresses Alex" predicate | **DONE**, still unverified live (§4f) | Gate B table |
+| D6 · deterministic template under the output contract | **DONE** | Gate D table, §4f |
+| B4 · opportunity lifetime | **DONE** | Gate B table |
+| B1, B8 · Observer cost and hygiene | **OPEN — next** | Gate B table |
+| B2, B3, B6, B7 · Observer accuracy and hygiene | OPEN | Gate B table |
 | Gate C · Judge role goals | **BLOCKED on the user** (§ Open decisions) | Gate C |
-| Gate D · generator length, emptiness, D6 template | OPEN | Gate D |
+| Gate D · D1–D5 generator length, emptiness, anti-repeat | OPEN | Gate D |
 
 **Do next, in this order.**
 
-1. **Run one live session** and measure. A7 and B9 have never been observed
-   live. Expect spoken turns 13.2 s → ~9–10 s, and no repeat of the three
-   consecutive `ledger_router_human_floor_held` silences at the session opening.
-2. **B4 then B1 then B8.** T-C1-023 showed Observer output growing 270 → 531
-   tokens across one session as unclosed opportunities accumulated, so the TTL
-   comes before the schema cut — otherwise B1's saving is eaten by clutter, and
-   B8's review path erases it on the slowest turns.
-3. **Gate D.** Two speech regressions are waiting on it and are documented with
-   verbatim evidence in §4d and §4e. D6 (the deterministic template) is the more
-   visible of the two.
+1. **B1 then B8.** B4 has landed, so the clutter half of the Observer's growth is
+   handled and the schema cut is next. B8 comes straight after because the review
+   path makes a second full call — 12.2 s on one turn in T-C1-022 — and would
+   erase B1's saving on exactly the slowest turns.
+2. **B2 and B3** (literal-candidate regex, focus-vs-salience inversion), which
+   are accuracy rather than cost, then **B7** and **B6**.
+3. **Gate D, D1–D5.** D6 is done. The remaining items are evidenced verbatim in
+   §4d, §4e and §4f; D4 (anti-repeat) has the sharpest evidence — T-C1-024 seq 13
+   contained *zero* new information.
 
 **Waiting on the user.** Gate C cannot start until the condition-blind Judge
 invariant is formally retired (§7, § Open decisions). Nothing else is blocked.
+Note that T-C1-024 makes Gate C more pressing, not less: **every** silence in
+that session was `cooldown`, applied by the router after the Judge had already
+decided to contribute (§4f).
 
 **How to know it worked.** The measurement targets table in §4c, against the
 baselines in §2, §4b, §4d and §4e.
@@ -959,6 +967,88 @@ Regressions in `test-pooling-extractor.ts` on those verbatim messages. **Not
 covered:** that the broadcast now precedes verification — that needs the
 `executeRouteTurn` harness this repository still lacks.
 
+## 4f. Fifth measurement — T-C1-024, first run with A7 and B9 (2026-09-07)
+
+C1 Peer, 14 messages, 9 intervention decisions, 5 spoken (56%).
+
+### A7 is confirmed, and Gate A is done
+
+Per-turn arithmetic still fits `observer + judge + max(floor, generation)`, and
+the constant tail that A7 targeted has collapsed:
+
+| anchor | observer | judge | generation | overlapped | measured | tail |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 3 | 11.22 s | 1.25 s | 0 (deterministic) | 14.48 s | 16.00 s | **1.52 s** |
+| 6 | 10.22 s | 2.98 s | 3.13 s | 16.33 s | 17.60 s | **1.27 s** |
+| 9 | 7.26 s | 1.27 s | 1.62 s | 10.53 s | 11.00 s | **0.47 s** |
+| 12 | 4.15 s | 1.16 s | 1.64 s | 7.31 s | 8.50 s | **1.19 s** |
+
+T-C1-023 measured that tail at 2.5–3.5 s on *every* spoken turn, including one
+whose message was generated deterministically in 0 ms. It is now 0.17–1.52 s
+across all nine decisions. **Superseded turns fell to 1 of 9 (11%)** from 39% in
+T-C1-020, so A1–A2 hold as well.
+
+Median turn latency is **9.6 s** against a ≤5 s target. The gap is entirely the
+Observer: 4.15–11.22 s per call, **66% of mean turn time** and 49–86% per turn.
+
+### B9 was not exercised — it remains unverified
+
+Zero `ledger_router_human_floor_held` silences, but that is not confirmation.
+Every observation in the session reported `floor.holder: open` and
+`expectedHumanResponder: null`, and no observation produced the contradiction B9
+fixes (`alexRelation: explicit_addressee` together with `addressees` excluding
+Alex). **Do not record B9 as live-verified on this run.**
+
+### Cooldown is now the only silence mechanism
+
+All three non-greeting silences were `cooldown`, and in each the Judge had
+already answered `contribute` with real evidence — `relevant_unsurfaced_information`
+twice. Judge contract health is otherwise perfect: 8/8 first-attempt accepts,
+zero `ledger_judge_failure`, zero capitulation, so Gate 3R continues to hold.
+§4b finding 4 is now total rather than partial: **the Judge decides nothing and
+the cooldown counter is the controller.** This is Gate C3, still blocked.
+
+### The Observer's cost grows with the backlog, again
+
+Output tokens rose **384 → 527** monotonically across the session and
+`opp:5:invitation:alex` stayed open from seq 5 to the end. The review path fired
+once, at anchor 3, and made it the second-slowest turn of the session (11.2 s of
+observer in two calls). This is B1, B4 and B8 measured a second time on live
+data. Caching was erratic — `cachedInputTokens` 0 on 4 of 8 turns, including
+three consecutive — which is worth a look but is not on the critical path.
+
+### Every Alex message carried a quality defect
+
+| seq | words | defect |
+| ---: | ---: | --- |
+| 4 | 16 | **D6**, degenerate — see below |
+| 7 | 74 | **D3/D5** — 5 sentences, 4 traits, against a 40-word / 2-sentence / 1-trait contract; `outputScopeRepaired: false` |
+| 10 | 31 | within contract |
+| 13 | 39 | **D4** — see below |
+
+**seq 4 — D6 fired on Alex's first substantive turn, against an empty board.**
+`deterministicCompleteResponse`'s `complete_all_candidates` branch called
+`formatCoverageFromIds(ids)` with nothing surfaced, so `includeUntouched`
+produced a header promising content followed only by an agenda line:
+"Here is what is on the table so far: / Still to cover: A, B, C, D". The existing
+regression asserts exactly this must not happen for a Peer, but only on the
+`complete_single_candidate` path, which passes `includeUntouched: false`. The
+all-candidates branch was condition-blind. **Fixed — see the Gate D table.**
+
+**seq 13 contained zero new information.** Of its four items, `A_p1`, `A_n5` and
+`A_n6` are verbatim repeats of seq 10, and `A_p4` had just been stated by humanX
+at seq 11. This is the cleanest measurement D4 has yet had.
+
+**New finding — reveal ranking ignores information uniqueness.** Checked against
+`traitData`: seq 7's four traits are all `XYZ`, held by every participant. Alex's
+only `Z`-exclusive items for Candidate A (`A_n5` unfriendly, `A_n6` transmits
+restlessness) were spent at seq 10 and then repeated at seq 13. Across the whole
+session Alex disclosed 8 distinct traits, **2 of them hidden-profile-unique**.
+`eligibleTraitIdsForLedgerState` ranks by candidate salience; nothing weights by
+uniqueness, which is the variable the hidden-profile manipulation turns on.
+**Not treated as a defect** — stating shared traits may be intended
+common-ground behaviour. Flagged for the user to adjudicate before any change.
+
 ### Gate B — Observer: read the facts, cheaply and correctly
 
 | # | Change |
@@ -966,7 +1056,7 @@ covered:** that the broadcast now precedes verification — that needs the
 | B1 | **Shrink the output schema.** The model should return only what is judgeable *this turn*: addressees, speechAct, requestIntent, alexRelation, floor, thread status change, focus. Everything else — roster, participants, scopeCandidates, threadId/rootSeq, and `mentionedCandidates` — is derivable deterministically; `mentionedCandidates` is *already* recomputed by regex in the normalizer, so the model is paying ~450 output tokens per turn to emit fields that are then overwritten. Target ~100 tokens. |
 | B2 | **Fix the literal-candidate regex** so a bare `A` is detected in ordinary positions ("lay out A first"). Salience accuracy depends on it. Guard against the English article "a" as the prompt already warns. |
 | B3 | **Invert focus vs salience.** Focus wins only when `focusBasis === "current_explicit"`. A `carried_thread` focus is an inference about an announcement and must not outrank the candidate actually being named. Direct fix for T-C2-039 seq 10. |
-| B4 | **Opportunity TTL, and revisit the Gate 1 deferral.** Expire an unconsumed `invitation` after N turns or one epoch. Gate 1 left the thread-root-keyed inferred opportunity id in place because it had cost no speech in the runs available then; T-C1-022 shows it being selected eight turns after its origin and producing a second greeting, so that attribution no longer holds. |
+| B4 | **DONE (uncommitted).** Two deterministic rules in `reduceConversationLedger`, both pure seq arithmetic over state the reducer already holds, so the Observer/reducer split is untouched. (1) *Alex answering a thread retires that thread's older standing invitations* — in T-C1-024 `opp:5` and `opp:6` were one invitation restated, the Judge selected `opp:6`, and `opp:5` outlived the request it stood for. (2) A TTL backstop (`OPPORTUNITY_TTL_SEQS = 8`) for the case rule 1 cannot reach, where Alex never speaks and no consumption ever retires the backlog — T-C1-020 held one invitation open for 58 turns that way. Neither rule touches a `direct_question` or a `required` expectation: an unanswered obligation is a failure to keep in the record, not clutter to sweep. Verified by replaying T-C1-024's **recorded** ledger deltas and consumption transitions through the reducer: rule 1 fires exactly once, at the seq where Alex answered, and the session ends with 0 live opportunities instead of 1. This also addresses the Gate 1 deferral without changing the keying — a thread-root-keyed id is now retired by the first consumption on its thread. |
 | B5 | **Compact the carried state.** Keep the transcript whole (cache-friendly); pass the previous ledger as a compact delta rather than a full JSON dump. |
 | B6 | *(from retired item 11)* Stop the C2 task-grounding regex from bypassing the Observer snapshot, and give C2 a question-form variant. Re-observed at T-C2-039 seq 5–6. |
 | B7 | **Revise the thread's `requestedAction`.** It is written once when the thread is created and never updated, so a thread rooted at Alex's greeting told the generator "greet participants" for a whole session (T-C1-022, seq 10). It must track what the group is currently doing, or stop being passed to generation as an instruction. |
@@ -999,20 +1089,23 @@ Two prompt-only attempts have failed. Enforce it.
 | D3 | **Per-turn reveal budget as a hard guard.** Give `address` and `followup` a `maxTraitIds`; they currently have none. This is what permitted the 15-trait message. Violations go through the existing repair loop. *(absorbs original item 8 — a permitted brief uptake opener is part of this rewrite)* |
 | D4 | **Deterministic anti-repeat.** Inject `revealStats.aiSurfacedIds` as "already stated by you" and forbid restatement outside an explicit full-list request. C profile was recited 4× and D 3× in T-C1-020. |
 | D5 | **Add a length post-condition** to `outputScopeViolation()` (sentence and word count), and trim the `outputDiscipline` exception clause ("explicitly requested full list or comparison") that is currently firing on ordinary turns. |
-| D6 | **Bring deterministic routes under the output contract.** `server-deterministic-peer-complete` emitted a bulleted board recap ending "Still to cover: B, C, D" — layout the output discipline forbids, and agenda-setting a Peer must not do. It bypasses every generation guard because it is not generated. Either it emits chat prose under the same rules, or Peer conditions do not get an agenda line. Also re-check the `complete_all_candidates` intent that routed to it: the participant asked for Alex's *additional* items. |
+| D6 | **DONE (uncommitted).** Three changes in `routeContext.ts`, each revert-checked. (1) *An empty board is not recited* — the route exists to prevent omissions in a board that exists; with nothing surfaced it returns `undefined` and the turn falls through to generation, under the output contract. This is T-C1-024 seq 4. (2) *"Still to cover" is Leader-only* — it names what the group has yet to do, which is agenda setting; a Peer recites the board and stops. Both conditions still report identical facts. (3) *The deterministic bypass requires both readings of the request to agree* — when an opportunity is selected the intent comes from the Observer and `classifyRequestIntent` is never consulted (`routeContext.ts:1479`), which is how T-C1-023 seq 14's request for *additional* items routed to a full board recap; disagreement now falls through to generation, never to a wider template. **Two classifier corrections came with (3):** a complete/all marker inside a proposal about procedure is not a request that Alex enumerate anything (T-C1-024 seq 3 matched `EXPLICIT_ALL_SCOPE` on "each candidate"), and the same direction requirement had to be applied to `preference_request` — `FOCUS_SCOPE_OVERRIDE` matches a bare "best", so without it the same proposal degraded into a request for Alex's preference instead. Directed requests, including those without a question mark, are untouched. |
 
 ### Measurement targets
 
-| Metric | Now | Target |
-| --- | --- | --- |
-| Median turn latency | 10.2 / 12.7 s | ≤ 5 s |
-| Turns discarded as superseded | 39% (C1) | ≤ 10% |
-| Judge cache hit rate | 0% | ≥ 60% |
-| Observer output tokens | ~450 | ~100 |
-| Alex words per message (mean) | 44 / 56 | ≤ 30 |
-| Max traits per Alex message | 15 | ≤ 2 |
-| Wrong-candidate turns | 2 (both corrected by a participant) | 0 |
-| Directive phrasing, Leader : Peer | 8/11 : 1/18 | unchanged |
+| Metric | T-C1-020 / T-C2-039 | T-C1-024 | Target |
+| --- | --- | --- | --- |
+| Median turn latency | 10.2 / 12.7 s | **9.6 s** | ≤ 5 s |
+| Turns discarded as superseded | 39% (C1) | **11%** | ≤ 10% |
+| Pre-broadcast tail (spoken turns) | 2.5–3.5 s (T-C1-023) | **0.2–1.5 s** | — |
+| Observer share of turn time | — | **66%** | — |
+| Judge cache hit rate | 0% | 0% | structurally impossible, see §4d |
+| Observer output tokens | ~450 | 384 → 527 | ~100 |
+| Alex words per message (mean) | 44 / 56 | **34** | ≤ 30 |
+| Max traits per Alex message | 15 | **4** | ≤ 2 |
+| Wrong-candidate turns | 2 (both corrected by a participant) | 0 | 0 |
+| Alex messages with zero new information | — | 1 of 4 | 0 |
+| Directive phrasing, Leader : Peer | 8/11 : 1/18 | — | unchanged |
 
 ### Open decisions blocking work
 
@@ -1097,6 +1190,23 @@ repair.
 ## 8. Progress log
 
 Append one line per completed gate: date, gate, commit, tests run, measured effect.
+
+- 2026-09-07 — T-C1-024 measured, then D6 and B4 completed (uncommitted in the
+  root checkout). **A7 confirmed live**: the pre-broadcast tail fell from
+  2.5–3.5 s to 0.2–1.5 s and superseded turns from 39% to 11%, which closes
+  Gate A. The Observer is now 66% of turn time and is the whole remaining
+  latency budget. **B9 was not exercised** by this session and stays unverified.
+  Every silence was `cooldown` over a Judge that had already chosen to
+  contribute, which sharpens Gate C3. D6 fixed at three points plus two
+  classifier corrections it exposed; B4 added consumption-supersession and a
+  TTL backstop, verified by replaying T-C1-024's recorded deltas. Nine
+  regressions across `test-intervention-v2` and `test-conversation-ledger`,
+  **each verified to fail with its own fix reverted**; one of them caught an
+  invalid fixture of mine rather than a code defect (an opportunity may only
+  open at the current trigger seq) and was corrected. build + intervention-v2 +
+  ledger + recovery + pooling-extractor green; `git diff --check` clean.
+  New finding recorded in §4f: reveal ranking ignores information uniqueness —
+  2 of 8 disclosed traits were hidden-profile-unique. Flagged, not changed.
 
 - 2026-09-06 — Gate 0 (branch relocation + this checkpoint). Commit `362416b`
   snapshot; work moved off the production `main` checkout. No behavioral change.

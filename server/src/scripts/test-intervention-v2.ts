@@ -2257,6 +2257,124 @@ assert.match(peerTableCompleteContext.deterministicResponse!, /keeps a cool head
 assert.doesNotMatch(peerTableCompleteContext.deterministicResponse!, /Still to cover/i);
 assert.doesNotMatch(peerTableCompleteContext.deterministicResponse!, /\?/);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [D6] The deterministic complete-board route, measured on T-C1-023 seq 14 and
+// T-C1-024 seq 4. It bypasses generation entirely, so every guard the output
+// contract applies — layout, length, Peer/Leader orthogonality — has to be
+// enforced here or not at all.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const d6Opportunity = {
+  id: "opp:3:invitation:alex",
+  kind: "invitation",
+  expectation: "invited",
+  targets: ["alex"],
+  threadId: "thread-1",
+  opportunitySourceSeq: 3,
+  requestedAction: "go through information on each candidate",
+  focusCandidate: null,
+  requestIntent: { kind: "complete_all_candidates", candidate: null, source: "visible_board" },
+} as any;
+const d6Board = (ids: string[]) => ({
+  humanSurfacedIds: ids,
+  aiSurfacedIds: [],
+  humanConfirmedIds: ids,
+});
+const d6Context = (conditionCode: "C1" | "C2", content: string, ids: string[]) =>
+  buildRouteUserContext({
+    routeKind: "address",
+    conditionCode,
+    language: "en",
+    anchorSeq: 9,
+    messages: [{ seq: 9, senderRole: "humanX", speaker: "Participant X", content }],
+    revealStats: d6Board(ids),
+    selectedOpportunity: d6Opportunity,
+  } as any);
+
+// D6a — an empty board is not recited. T-C1-024 seq 4 emitted "Here is what is
+// on the table so far:" followed by nothing but "Still to cover: A, B, C, D" —
+// a header promising content, delivering an agenda. The route protects against
+// omissions in a board that exists; with no board it must hand the turn back to
+// generation.
+assert.equal(
+  d6Context("C1", "Alex, what do you have for all candidates so far?", []).deterministicResponse,
+  undefined,
+);
+assert.equal(
+  d6Context("C2", "Alex, what do you have for all candidates so far?", []).deterministicResponse,
+  undefined,
+);
+
+// D6b — a Peer recites the board and stops; "Still to cover" names what the
+// group has yet to do, which is agenda setting and Leader-only. Both conditions
+// must still report the same facts.
+const d6PeerRecap = d6Context(
+  "C1",
+  "Alex, what do you have for all candidates so far?",
+  ["A_p1", "A_p4", "B_p1"],
+).deterministicResponse!;
+const d6LeaderRecap = d6Context(
+  "C2",
+  "Alex, what do you have for all candidates so far?",
+  ["A_p1", "A_p4", "B_p1"],
+).deterministicResponse!;
+assert.match(d6PeerRecap, /recognizing dangerous situations/i);
+assert.match(d6PeerRecap, /keeps a cool head/i);
+assert.doesNotMatch(d6PeerRecap, /Still to cover/i);
+assert.match(d6LeaderRecap, /recognizing dangerous situations/i);
+assert.match(d6LeaderRecap, /Still to cover: C, D/);
+
+// D6c — when an opportunity is selected the intent comes from the Observer and
+// the lexical classifier is never consulted (routeContext buildRouteUserContext).
+// At T-C1-023 seq 14 the Observer read "do you have any other positives or
+// negatives other than the ones listed?" as complete_all_candidates and Alex
+// answered with a full board recap; the classifier reads it as no list request
+// at all. Disagreement must fall through to generation, never to the template.
+assert.equal(
+  classifyRequestIntent("do you have any other positives or negatives other than the ones listed?")
+    .kind,
+  "none",
+);
+assert.equal(
+  d6Context(
+    "C1",
+    "do you have any other positives or negatives other than the ones listed?",
+    ["A_p1", "A_p4", "B_p1"],
+  ).deterministicResponse,
+  undefined,
+);
+
+// D6d — a complete/all marker inside a proposal about procedure is not a
+// request that Alex enumerate anything. T-C1-024 seq 3 matched EXPLICIT_ALL_SCOPE
+// on "each candidate" and routed to the board recap on the third message of the
+// session. A request put to Alex asks a question or carries a direct-address
+// marker; a first-person statement of what the group should do carries neither.
+assert.equal(
+  classifyRequestIntent(
+    "Hello! I think it would be best to just go through what information we have on each candidate",
+  ).kind,
+  "none",
+);
+assert.equal(classifyRequestIntent("Let's go through each candidate one by one").kind, "none");
+// The same guard covers priority 7: FOCUS_SCOPE_OVERRIDE matches a bare "best",
+// so without it the proposal above degrades into a preference request instead.
+assert.notEqual(
+  classifyRequestIntent("I think it would be best to go through each candidate").kind,
+  "preference_request",
+);
+// Directed requests are untouched, including the ones that carry no question
+// mark and the preference forms the cue depends on.
+assert.equal(
+  classifyRequestIntent("Could you go through all of the candidates for us?").kind,
+  "complete_all_candidates",
+);
+assert.equal(
+  classifyRequestIntent("Alex, list everything you have on all candidates").kind,
+  "complete_all_candidates",
+);
+assert.equal(classifyRequestIntent("Alex, who is best?").kind, "preference_request");
+assert.equal(classifyRequestIntent("Which one would you pick?").kind, "preference_request");
+
 // Split request: a bare direct address inherits the immediately preceding human
 // fragment, so "all traits we've discussed" is not lost when "Alex?" arrives
 // as a separate message.

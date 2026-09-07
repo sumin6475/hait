@@ -761,6 +761,27 @@ const EXPLICIT_COMPLETE_SINGLE = [
 ];
 const EVERYTHING_REQUEST = /\beverything\s+(?:you\s+(?:have|got|know)|you've\s+got|on)\b/i;
 
+// [D6 / T-C1-024 seq 3] "I think it would be best to just go through what
+// information we have on each candidate" is a proposal about procedure, not a
+// request that Alex enumerate the board — but "each candidate" matches
+// EXPLICIT_ALL_SCOPE, so it was classified `complete_all_candidates` and Alex
+// answered with a board recap on the third message of the session.
+// A complete-list request is addressed to Alex: it either asks a question or
+// carries a second-person / direct-address request marker. A first-person
+// statement of what the group should do carries neither, and must fall through
+// to the ordinary cascade (typically `scoped_information_request`) so the turn
+// keeps the normal length and scope rules.
+const REQUEST_DIRECTED_AT_ALEX = [
+  /\?/,
+  /\byou(?:'?re|r)?\b|\byou've\b/i,
+  /\bAlex\b/i,
+  /\b(?:list|give|share|tell|name|show|read)\s+(?:me|us|the\s+(?:team|group))\b/i,
+  /알렉스|주세요|알려|말해|해줘|해주세요/,
+];
+function isRequestDirectedAtAlex(text: string): boolean {
+  return matchesAny(text, REQUEST_DIRECTED_AT_ALEX);
+}
+
 function matchesAny(text: string, patterns: RegExp[]): boolean {
   return patterns.some((pattern) => pattern.test(text));
 }
@@ -858,9 +879,13 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   if (!text) return NO_REQUEST_INTENT;
   const source: RequestSource = VISIBLE_BOARD_SCOPE.test(text) ? "visible_board" : "alex_notes";
   const mentions = candidateMentions(text);
+  // [D6] A complete/all marker only makes this a list request when the message
+  // is actually addressed to Alex; otherwise it is the group proposing how to
+  // proceed and the markers are suppressed.
+  const directed = isRequestDirectedAtAlex(text);
   const completeMarker =
-    matchesAny(text, EXPLICIT_COMPLETE_SINGLE) || EVERYTHING_REQUEST.test(text);
-  const allMarker = matchesAny(text, EXPLICIT_ALL_SCOPE);
+    directed && (matchesAny(text, EXPLICIT_COMPLETE_SINGLE) || EVERYTHING_REQUEST.test(text));
+  const allMarker = directed && matchesAny(text, EXPLICIT_ALL_SCOPE);
   const named = mentions.size === 1 ? [...mentions][0]! : null;
   const mentionedCandidates = [...mentions];
   const compareMarker = matchesAny(text, COMPARE_REQUESTS);
@@ -933,7 +958,11 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   }
   // Priority 7 — preference questions; only these make the preference cue
   // relevant on address/followup routes.
-  if (FOCUS_SCOPE_OVERRIDE.test(text)) {
+  // [D6] FOCUS_SCOPE_OVERRIDE matches a bare "best", so "I think it would be
+  // best to go through each candidate" — a proposal about procedure — read as a
+  // request for Alex's preference. A preference request is by definition put to
+  // Alex, so it carries the same direction requirement as the list markers.
+  if (directed && FOCUS_SCOPE_OVERRIDE.test(text)) {
     return { kind: "preference_request", candidate: null, source };
   }
   return NO_REQUEST_INTENT;
@@ -959,6 +988,7 @@ function deterministicCompleteResponse(input: {
   intent: RequestIntent;
   candidate: Cand | null;
   revealStats: any;
+  conditionCode: ConditionCode;
 }): string | undefined {
   if (
     input.language !== "en" ||
@@ -973,11 +1003,20 @@ function deterministicCompleteResponse(input: {
       ? new Set([...allSurfacedIds(input.revealStats), ...humanConfirmedIds(input.revealStats)])
       : new Set(ALEX_Z_IDS);
   if (input.intent.kind === "complete_all_candidates") {
+    // [D6 / T-C1-024 seq 4] With nothing on the board the recap became a header
+    // promising content followed only by an agenda line ("Here is what is on
+    // the table so far: / Still to cover: A, B, C, D"). The deterministic route
+    // exists to stop omissions and candidate swaps when there IS a board to
+    // recite; with no board there is nothing to protect, so hand the turn back
+    // to generation, which answers under the output contract.
+    if (!ids.size) return undefined;
     const label =
       input.intent.source === "visible_board"
         ? "Here is what is on the table so far:"
         : "Here is everything in my notes:";
-    return `${label}\n\n${formatCoverageFromIds(ids)}`;
+    // [D6] "Still to cover: …" names what the group has yet to do — agenda
+    // setting, which is Leader behaviour. A Peer recites the board and stops.
+    return `${label}\n\n${formatCoverageFromIds(ids, isLeaderCondition(input.conditionCode))}`;
   }
 
   if (!input.candidate) return undefined;
@@ -1533,12 +1572,21 @@ export function buildRouteUserContext(input: {
       language: input.language,
       content: requestBundle.content,
     }) ??
-    deterministicCompleteResponse({
-      language: input.language,
-      intent: requestIntent,
-      candidate: completeRequestCandidate,
-      revealStats: input.revealStats,
-    }) ??
+    // [D6 / T-C1-023 seq 14] When an opportunity is selected the intent comes
+    // from the Observer and the lexical classifier is never consulted, so an
+    // "any other positives or negatives?" turn — which the classifier reads as
+    // no list request at all — routed to the board recap. The deterministic
+    // bypass now requires both readings to agree; disagreement falls through to
+    // generation, never to a wider template.
+    (classifyRequestIntent(requestBundle.content).kind === requestIntent.kind
+      ? deterministicCompleteResponse({
+          language: input.language,
+          intent: requestIntent,
+          candidate: completeRequestCandidate,
+          revealStats: input.revealStats,
+          conditionCode: input.conditionCode,
+        })
+      : undefined) ??
     deterministicKnownCountResponse({
       language: input.language,
       intent: requestIntent,

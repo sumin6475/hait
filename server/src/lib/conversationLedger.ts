@@ -519,6 +519,17 @@ export function isRedundantRejection(code: string): boolean {
   return code.endsWith(":already_terminal");
 }
 
+/**
+ * [B4] How far the conversation may move past an unconsumed, non-required Alex
+ * opportunity before it stops being live, counted in seq (which includes Alex's
+ * own messages). Sized against the observed runs rather than picked round: in
+ * T-C1-024 every invitation Alex took up was consumed one seq after it opened,
+ * and cooldown blocks Alex for at most a turn, so eight leaves generous room for
+ * a blocked turn plus several human exchanges before an invitation is treated as
+ * stale.
+ */
+const OPPORTUNITY_TTL_SEQS = 8;
+
 const TERMINAL_OPPORTUNITY_STATUSES = new Set<OpportunityStatus>([
   "consumed_by_alex",
   "resolved_by_human",
@@ -720,6 +731,7 @@ export function reduceConversationLedger(
     }
   }
 
+  const consumedThisReduction: ResponseOpportunity[] = [];
   for (const proposal of delta.opportunityTransitions) {
     const index = state.opportunities.findIndex(
       (opportunity) => opportunity.id === proposal.opportunityId,
@@ -772,6 +784,7 @@ export function reduceConversationLedger(
       revision: opportunity.revision + 1,
     };
     transition.accepted.push(`transition:${opportunity.id}:${proposal.toStatus}`);
+    if (proposal.toStatus === "consumed_by_alex") consumedThisReduction.push(state.opportunities[index]!);
   }
 
   // Reconcile all threads, including stale open opportunities persisted by older versions.
@@ -783,6 +796,57 @@ export function reduceConversationLedger(
     opportunity.resolutionEvidenceSeqs = uniqueSortedNumbers([...(opportunity.resolutionEvidenceSeqs ?? []), ...thread.evidenceSeqs]);
     opportunity.revision += 1;
     transition.accepted.push(`transition:${opportunity.id}:${opportunity.status}:thread_closed`);
+  }
+
+  // [B4] Opportunities never expired. T-C1-020 ended with three invitations
+  // still open, one of them 58 turns old; T-C1-024 carried `opp:5` from seq 5 to
+  // the end of the session. Every live opportunity is rendered into the Observer
+  // and Judge prompts, so the cost of a turn grows with the backlog — T-C1-024
+  // measured Observer output rising 384 → 527 tokens across nine decisions —
+  // and the Judge is offered invitations the group moved past long ago.
+  //
+  // Both rules below are pure seq arithmetic over what the reducer already
+  // holds: no model call, no rereading of intent, so the Observer/reducer split
+  // in the invariants is untouched.
+  //
+  // Neither rule touches a direct question. An unanswered `direct_question` is a
+  // real obligation on Alex and a failure worth keeping in the record; it is not
+  // clutter to sweep.
+  for (const consumed of consumedThisReduction) {
+    for (const opportunity of state.opportunities) {
+      if (opportunity.status !== "open" && opportunity.status !== "deferred") continue;
+      if (opportunity.kind === "direct_question" || opportunity.expectation === "required") continue;
+      if (opportunity.threadId !== consumed.threadId) continue;
+      if (!opportunity.targets.includes("alex")) continue;
+      // Strictly older only: the opportunity Alex just answered, and anything
+      // raised after it, are untouched.
+      if (opportunity.opportunitySourceSeq >= consumed.opportunitySourceSeq) continue;
+      // Alex has now answered on this thread, so an older standing invitation
+      // describes a request that has just been served. In T-C1-024 `opp:5` and
+      // `opp:6` were one invitation restated ("Since we don't have the full
+      // picture…" then "If that sounds like a plan?"); the Judge selected
+      // `opp:6`, Alex spoke, and `opp:5` outlived the request it stood for.
+      opportunity.status = "superseded";
+      opportunity.resolutionEvidenceSeqs = uniqueSortedNumbers([
+        ...(opportunity.resolutionEvidenceSeqs ?? []),
+        ...(consumed.resolutionEvidenceSeqs ?? []),
+      ]);
+      opportunity.revision += 1;
+      transition.accepted.push(
+        `transition:${opportunity.id}:superseded:answered_by_${consumed.id}`,
+      );
+    }
+  }
+  // Backstop for the case rule 1 cannot reach: Alex never speaks at all, so no
+  // consumption ever retires the backlog.
+  for (const opportunity of state.opportunities) {
+    if (opportunity.status !== "open" && opportunity.status !== "deferred") continue;
+    if (opportunity.kind === "direct_question" || opportunity.expectation === "required") continue;
+    if (!opportunity.targets.includes("alex")) continue;
+    if (delta.contextThroughSeq - opportunity.openedAtSeq <= OPPORTUNITY_TTL_SEQS) continue;
+    opportunity.status = "expired";
+    opportunity.revision += 1;
+    transition.accepted.push(`transition:${opportunity.id}:expired:ttl`);
   }
 
   const invalidFloorActors = [

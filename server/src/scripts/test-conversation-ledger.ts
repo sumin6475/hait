@@ -1379,4 +1379,174 @@ assert.ok(
   "repair never launders a trait id the ledger does not offer",
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [B4] Opportunity lifetime. Measured on T-C1-020 (three invitations still open
+// at the end, one 58 turns old) and T-C1-024 (`opp:5` carried from seq 5 to the
+// end of the session while Observer output grew 384 → 527 tokens).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const b4Thread = {
+  id: "thread-1",
+  threadRootSeq: 1,
+  status: "open" as const,
+  goal: "compare_information",
+  requestedAction: "go through information on each candidate",
+  candidates: [] as Candidate[],
+  scopeCandidates: [] as Candidate[],
+  focusCandidate: null,
+  focusBasis: "none" as const,
+  mentionedCandidates: [] as Candidate[],
+  participants: [...roster],
+  evidenceSeqs: [1],
+};
+const b4Opportunity = (
+  seq: number,
+  overrides: Partial<{ kind: string; expectation: string; targets: string[] }> = {},
+) => ({
+  threadId: "thread-1",
+  kind: "invitation",
+  expectation: "invited",
+  sourceRole: "humanX",
+  opportunitySourceSeq: seq,
+  originActor: "humanX",
+  originSeq: seq,
+  openedAtSeq: seq,
+  targets: ["alex"],
+  targetBasis: "explicit",
+  evidenceSeqs: [seq],
+  ...overrides,
+});
+const b4Delta = (triggerSeq: number, proposals: unknown[]) =>
+  ({
+    ledgerVersion: CONVERSATION_LEDGER_VERSION,
+    observerVersion: "test-observer",
+    sessionKey: "T-C1-024-B4",
+    roster: [...roster],
+    sourceRole: "humanX",
+    currentTriggerSeq: triggerSeq,
+    contextThroughSeq: triggerSeq,
+    foregroundThreadId: "thread-1",
+    threadProposals: [b4Thread],
+    opportunityProposals: proposals,
+    opportunityTransitions: [],
+    floorProposal: {
+      holder: "open",
+      expectedNext: ["alex"],
+      transition: "available",
+      evidenceSeqs: [triggerSeq],
+    },
+    observerConflicts: [],
+    repairCodes: [],
+    conflictCodes: [],
+    degradedMode: false,
+  }) as any;
+const b4Live = (state: { opportunities: { status: string; id: string }[] }) =>
+  state.opportunities.filter((o) => o.status === "open" || o.status === "deferred").map((o) => o.id);
+
+// B4a — Alex answering a thread retires that thread's older standing
+// invitations. In T-C1-024 `opp:5` and `opp:6` were one invitation restated;
+// the Judge selected `opp:6`, Alex spoke, and `opp:5` outlived the request it
+// stood for.
+const b4Seq5 = reduceConversationLedger(null, b4Delta(5, [b4Opportunity(5)])).state;
+const b4Seq6 = reduceConversationLedger(b4Seq5, b4Delta(6, [b4Opportunity(6)])).state;
+assert.deepEqual(
+  b4Live(b4Seq6),
+  ["opp:5:invitation:alex", "opp:6:invitation:alex"],
+  "both invitations are live until Alex answers one of them",
+);
+const b4Answered = withOpportunityTransition(b4Seq6, {
+  opportunityId: "opp:6:invitation:alex",
+  toStatus: "consumed_by_alex",
+  reason: "broadcast",
+  broadcastSucceeded: true,
+  alexBroadcastSeq: 7,
+  evidenceSeqs: [6],
+});
+assert.deepEqual(b4Live(b4Answered.state), [], "answering the thread retires the older invitation");
+assert.equal(
+  b4Answered.state.opportunities.find((o) => o.id === "opp:5:invitation:alex")?.status,
+  "superseded",
+);
+assert.ok(
+  b4Answered.transition.accepted.some((code) =>
+    code.startsWith("transition:opp:5:invitation:alex:superseded:answered_by_"),
+  ),
+  "the supersession names the opportunity that answered the thread",
+);
+
+// A newer invitation is not retired by an older consumption, and a different
+// thread is never touched.
+const b4Newer = reduceConversationLedger(b4Seq6, b4Delta(8, [b4Opportunity(8)])).state;
+const b4NewerAnswered = withOpportunityTransition(b4Newer, {
+  opportunityId: "opp:6:invitation:alex",
+  toStatus: "consumed_by_alex",
+  reason: "broadcast",
+  broadcastSucceeded: true,
+  alexBroadcastSeq: 9,
+  evidenceSeqs: [8],
+});
+assert.deepEqual(
+  b4Live(b4NewerAnswered.state),
+  ["opp:8:invitation:alex"],
+  "an invitation raised after the one Alex answered stays live",
+);
+
+// A direct question is an obligation, not clutter: neither rule may retire it.
+// An opportunity may only be opened at the current trigger seq, so the question
+// is raised on its own turn ahead of the two invitations.
+const b4QuestionSeq4 = reduceConversationLedger(
+  null,
+  b4Delta(4, [b4Opportunity(4, { kind: "direct_question", expectation: "required" })]),
+).state;
+const b4WithQuestion = reduceConversationLedger(
+  reduceConversationLedger(b4QuestionSeq4, b4Delta(5, [b4Opportunity(5)])).state,
+  b4Delta(6, [b4Opportunity(6)]),
+).state;
+assert.deepEqual(
+  b4Live(b4WithQuestion),
+  ["opp:4:direct_question:alex", "opp:5:invitation:alex", "opp:6:invitation:alex"],
+  "the question and both invitations are live before Alex answers",
+);
+const b4QuestionAnswered = withOpportunityTransition(b4WithQuestion, {
+  opportunityId: "opp:6:invitation:alex",
+  toStatus: "consumed_by_alex",
+  reason: "broadcast",
+  broadcastSucceeded: true,
+  alexBroadcastSeq: 7,
+  evidenceSeqs: [6],
+});
+assert.deepEqual(
+  b4Live(b4QuestionAnswered.state),
+  ["opp:4:direct_question:alex"],
+  "the older invitation is retired but the unanswered direct question survives",
+);
+
+// B4b — the TTL backstop, for the case rule 1 cannot reach: Alex never speaks,
+// so no consumption ever retires the backlog. T-C1-020 held one invitation open
+// for 58 turns this way.
+const b4Ttl = (triggerSeq: number) =>
+  b4Live(reduceConversationLedger(b4Seq5, b4Delta(triggerSeq, [])).state);
+assert.deepEqual(
+  b4Ttl(13),
+  ["opp:5:invitation:alex"],
+  "an invitation is still live exactly at the TTL boundary (5 + 8)",
+);
+assert.deepEqual(b4Ttl(14), [], "one seq past the boundary the invitation expires");
+assert.equal(
+  reduceConversationLedger(b4Seq5, b4Delta(14, [])).state.opportunities[0]?.status,
+  "expired",
+);
+const b4TtlQuestion = reduceConversationLedger(
+  reduceConversationLedger(
+    null,
+    b4Delta(5, [b4Opportunity(5, { kind: "direct_question", expectation: "required" })]),
+  ).state,
+  b4Delta(40, []),
+).state;
+assert.deepEqual(
+  b4Live(b4TtlQuestion),
+  ["opp:5:direct_question:alex"],
+  "the TTL never expires a direct question, however far the conversation moves",
+);
+
 console.log("[conversation-ledger] deterministic reducer tests passed");
