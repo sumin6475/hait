@@ -1,0 +1,290 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { mock } from "node:test";
+import { load } from "js-yaml";
+import { Responses } from "openai/resources/responses/responses";
+import {
+  extractHumanTraitsFast,
+  validateExtractedTraitMentions,
+  verifyHumanTraitCandidates,
+} from "../lib/poolingExtractor.js";
+import { TRAIT_KEYWORD_REGISTRY } from "../lib/traitKeywordRegistry.js";
+
+const ids = (messageText: string, assignedProfile?: "X" | "Y" | "Z") =>
+  extractHumanTraitsFast({ messageText, assignedProfile }).acceptedIds;
+
+assert.deepEqual(ids("Candidate B keeps a cool head in crisis situations.", "X"), ["B_p1"]);
+assert.deepEqual(ids("Candidate A is well organised.", "Y"), ["A_p4"]);
+assert.deepEqual(ids("Candidate C is stress resistant.", "Y"), []);
+assert.deepEqual(ids("I think Candidate B has a cool head?", "X"), []);
+assert.deepEqual(ids("If Candidate B had a cool head, that would help.", "X"), []);
+assert.deepEqual(ids('They said Candidate B is "considered arrogant".', "Z"), []);
+assert.deepEqual(ids("Candidate D is very responsible for passengers.", "X"), []);
+assert.deepEqual(ids("Being responsible is important for this job.", "X"), []);
+assert.deepEqual(ids("Candidate A and Candidate D are considered arrogant.", "Z"), []);
+assert.deepEqual(ids("Candidate B has a below-average memory for numbers.", "Y"), ["B_n3"]);
+assert.deepEqual(ids("The pilot is a very conscientious person.", "Y"), ["C_p4"]);
+assert.deepEqual(ids("A very conscientious person would be useful.", "Y"), []);
+assert.deepEqual(ids("We need a well organized person for this job.", "Y"), []);
+assert.deepEqual(ids("The crew was very well organized during the drill.", "Y"), []);
+assert.deepEqual(ids("Candidate A does not tolerate criticism.", "X"), ["A_n1"]);
+assert.deepEqual(ids("Candidate B is not very cooperative.", "X"), ["B_n2"]);
+assert.deepEqual(ids("Candidate A is very  well organized.", "Y"), ["A_p4"]);
+assert.deepEqual(ids("Candidate C isn't verbally skillful.", "Y"), ["C_n1"]);
+assert.deepEqual(ids("Candidate C is verbally skillfull.", "Y"), []);
+assert.deepEqual(
+  ids("For this role we need teamwork, but Candidate A is very well organized.", "Y"),
+  ["A_p4"],
+);
+assert.deepEqual(ids("I prefer B. The same point is 'considered arrogant'.", "X"), []);
+assert.deepEqual(
+  ids("Candidate A cannot assess weather conditions, but Candidate B can assess weather conditions very well.", "X"),
+  ["B_p3"],
+);
+assert.deepEqual(ids("Candidate B cannot assess weather conditions very well.", "X"), []);
+assert.deepEqual(ids("Candidate D is not arrogant.", "X"), []);
+const quotedNote = extractHumanTraitsFast({
+  messageText: 'My note says: "Candidate A is very well organized."',
+  assignedProfile: "Y",
+});
+assert.deepEqual(quotedNote.acceptedIds, []);
+assert.deepEqual(quotedNote.verificationCandidates.map((candidate) => candidate.traitId), ["A_p4"]);
+assert.deepEqual(ids('"Candidate A is very well organized."', "Y"), ["A_p4"]);
+assert.deepEqual(ids("I heard Candidate B is good at multitasking.", "X"), []);
+const typoCandidate = extractHumanTraitsFast({ messageText: "Candidate D is arogant.", assignedProfile: "X" });
+assert.deepEqual(typoCandidate.acceptedIds, []);
+assert.deepEqual(typoCandidate.verificationCandidates, [
+  { traitId: "D_n1", evidenceQuote: "is arogant", reason: "lexical_near_match" },
+]);
+assert.deepEqual(
+  extractHumanTraitsFast({
+    messageText: "Candidate D can react adequately to unforseen events.",
+    assignedProfile: "Y",
+  }).verificationCandidates,
+  [{ traitId: "D_p1", evidenceQuote: "react adequately to unforseen events", reason: "lexical_near_match" }],
+);
+assert.deepEqual(
+  extractHumanTraitsFast({ messageText: "Candidate B is arogant.", assignedProfile: "X" }),
+  { acceptedIds: [], verificationCandidates: [] },
+);
+assert.deepEqual(
+  ids("If we're doing completeness — I've got this: Candidate C is stress-resistant.", "X"),
+  ["C_p2"],
+);
+assert.deepEqual(
+  ids("If Candidate B had a cool head, that would help. Candidate B keeps a cool head in crisis situations.", "X"),
+  ["B_p1"],
+);
+assert.deepEqual(
+  ids("Candidate D is responsible for passengers. Candidate D is very responsible.", "X"),
+  ["D_p4"],
+);
+assert.deepEqual(ids("I have A, which has a good overview of complex context.", "Y"), ["A_p2"]);
+assert.deepEqual(ids("I have B. You can rely on him 100%.", "Y"), ["B_p2"]);
+assert.deepEqual(ids("I have B, which is considered to be nagging.", "X"), ["B_n1"]);
+assert.deepEqual(ids("Candidate B gossips about his co-workers.", "Y"), ["B_n4"]);
+assert.deepEqual(ids("I have C, can make the right decision very quickly.", "X"), ["C_p1"]);
+assert.deepEqual(ids("Candidate D is not very well suited for leading a team.", "X"), ["D_n2"]);
+assert.deepEqual(ids("Candidate C is having 2 misses only.", "X"), []);
+assert.deepEqual(ids("I choose Candidate A because his positive points seem more vital.", "X"), []);
+assert.deepEqual(
+  ids("The pilot's place should be very organized and tidy, so Candidate A can get distracted.", "X"),
+  [],
+);
+assert.deepEqual(ids("No, Candidate D is not moody according to me.", "Z"), []);
+assert.deepEqual(ids("Gossiping doesn't mean Candidate B will not cooperate.", "X"), []);
+assert.deepEqual(ids("Candidate B is both nagging and not cooperative.", "X"), ["B_n1", "B_n2"]);
+assert.deepEqual(ids("Candidate B is cooperative.", "X"), []);
+assert.deepEqual(ids("Candidate A is open to new ideas.", "Y"), []);
+assert.deepEqual(ids("Candidate D is suited to lead a team.", "X"), []);
+const positiveMemory = extractHumanTraitsFast({
+  messageText: "Candidate B has a good memory for numbers.",
+  assignedProfile: "Y",
+});
+assert.deepEqual(positiveMemory.acceptedIds, []);
+assert.deepEqual(positiveMemory.verificationCandidates.map((candidate) => candidate.traitId), ["B_n3"]);
+
+for (const entry of TRAIT_KEYWORD_REGISTRY) {
+  const profile = entry.profiles[0];
+  const phrase = entry.corePhrases[0]!;
+  for (const registeredPhrase of [...entry.corePhrases, ...entry.acceptedVariants]) {
+    const direct = extractHumanTraitsFast({
+      messageText: `Candidate ${entry.candidate} ${registeredPhrase}.`,
+      assignedProfile: profile,
+    });
+    assert.ok(
+      direct.acceptedIds.includes(entry.traitId) ||
+        direct.verificationCandidates.some((candidate) => candidate.traitId === entry.traitId),
+      `${entry.traitId} must remain reachable from registered phrase: ${registeredPhrase}`,
+    );
+  }
+  assert.ok(
+    !extractHumanTraitsFast({
+      messageText: `If Candidate ${entry.candidate} ${phrase}, would that help?`,
+      assignedProfile: profile,
+    }).acceptedIds.includes(entry.traitId),
+    `${entry.traitId} hypothetical must not enter the fast ledger`,
+  );
+  assert.ok(
+    !extractHumanTraitsFast({
+      messageText: `I heard Candidate ${entry.candidate} ${phrase}.`,
+      assignedProfile: profile,
+    }).acceptedIds.includes(entry.traitId),
+    `${entry.traitId} reported claim must not enter the fast ledger`,
+  );
+  const ineligibleProfile = (["X", "Y", "Z"] as const).find((candidate) => !entry.profiles.includes(candidate));
+  if (ineligibleProfile) {
+    const ineligible = extractHumanTraitsFast({
+      messageText: `Candidate ${entry.candidate} ${phrase}.`,
+      assignedProfile: ineligibleProfile,
+    });
+    assert.ok(!ineligible.acceptedIds.includes(entry.traitId));
+    assert.ok(!ineligible.verificationCandidates.some((candidate) => candidate.traitId === entry.traitId));
+  }
+}
+
+const c2037Seq3 = extractHumanTraitsFast({
+  messageText: "I also liked Candidate B because you can rely on him/her 100%. Gossiping about co-workers is one of Candidate B's negative traits, but I don't think that is as negative as some of the other candidates' negative traits.",
+  assignedProfile: "Y",
+});
+assert.deepEqual(c2037Seq3.acceptedIds, ["B_p2", "B_n4"]);
+assert.deepEqual(c2037Seq3.verificationCandidates, []);
+
+const c2037Seq18 = extractHumanTraitsFast({
+  messageText: "I agree that he does have positive points. I eliminated Candidate C easily, but then it was kind of a toss-up for the other 3. I chose B because a cool head is very important for a pilot and I like his reliability. I feel that Candidate A's \"recognizing dangerous situations\" is almost like Candidate B's cool head, so they're equal on that point.",
+  assignedProfile: "Y",
+});
+assert.deepEqual(c2037Seq18.acceptedIds, ["B_p1", "B_p2"]);
+assert.deepEqual(
+  c2037Seq18.verificationCandidates.map((candidate) => candidate.traitId),
+  ["A_p1"],
+);
+
+const c2037Seq26 = extractHumanTraitsFast({
+  messageText: "I feel that not being open to new ideas (Candidate A) is a very negative quality, while gossiping is not that bad (and everyone does it), so I'm still leaning towards Candidate B. His/her other negative quality \"has a below-average memory for numbers\" is the only thing that I think would make him/her a bad candidate at this point.",
+  assignedProfile: "Y",
+});
+assert.deepEqual(c2037Seq26.acceptedIds, ["A_n4"]);
+assert.deepEqual(
+  c2037Seq26.verificationCandidates.map((candidate) => candidate.traitId),
+  ["B_n3"],
+);
+
+const c2037Seq19 = extractHumanTraitsFast({
+  messageText: "I feel that Candidate D's positive qualities are kind of generic and not specific to a pilot, while his negative traits would not be good for a pilot (quick-tempered).",
+  assignedProfile: "Y",
+});
+assert.deepEqual(c2037Seq19.acceptedIds, []);
+assert.deepEqual(
+  c2037Seq19.verificationCandidates.map((candidate) => candidate.traitId),
+  ["D_n4"],
+);
+
+assert.deepEqual(
+  ids("being moody in that situation when he is responsible for people's lives is not something that you can neglect it easy", "X"),
+  [],
+);
+assert.deepEqual(
+  ids("from the other hand, the pilot's place should be very organized and tidy, so candidate A can have some distraction during the flight and may cause danger", "X"),
+  [],
+);
+
+const cN1Lexical = extractHumanTraitsFast({ messageText: "Candidate C is verbally skillfull.", assignedProfile: "Y" });
+assert.equal(cN1Lexical.verificationCandidates[0]?.traitId, "C_n1");
+
+assert.deepEqual(
+  validateExtractedTraitMentions("I chose Candidate A because his positive points seem vital.", [
+    { traitId: "A_p1", evidenceQuote: "his positive points seem vital", assertionType: "asserted", confidence: 0.99 },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("I heard Candidate B is good at multitasking.", [
+    { traitId: "B_p4", evidenceQuote: "good at multitasking", assertionType: "asserted", confidence: 0.99 },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("Candidate B cannot assess weather conditions very well.", [
+    { traitId: "B_p3", evidenceQuote: "assess weather conditions very well", assertionType: "asserted", confidence: 0.99 },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions("Candidate B has a good memory for numbers.", [
+    { traitId: "B_n3", evidenceQuote: "memory for numbers", assertionType: "asserted", confidence: 0.99 },
+  ]),
+  [],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "If Candidate B had a cool head, that would help. Candidate B keeps a cool head in crisis situations.",
+    [{ traitId: "B_p1", evidenceQuote: "cool head", assertionType: "asserted", confidence: 0.99 }],
+  ),
+  ["B_p1"],
+);
+
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "Also, if A does a technical mistake and the co-worker reminded him and he does not tolerate criticism?! what's going to happen?",
+    [{ traitId: "A_n1", evidenceQuote: "he does not tolerate criticism", assertionType: "asserted", confidence: 0.99 }],
+  ),
+  [],
+);
+
+const parseMock = mock.method(Responses.prototype, "parse", async () => ({
+  output_parsed: {
+    mentions: [
+      { traitId: "A_n4", evidenceQuote: "not open to new ideas", assertionType: "asserted", confidence: 0.99 },
+      { traitId: "B_n3", evidenceQuote: "below-average memory for numbers", assertionType: "asserted", confidence: 0.99 },
+    ],
+  },
+}) as any);
+try {
+  const bounded = await verifyHumanTraitCandidates({
+    messageText: "Candidate A is not open to new ideas, and Candidate B has a below-average memory for numbers.",
+    candidates: [{ traitId: "B_n3", evidenceQuote: "below-average memory for numbers", reason: "assertion_context" }],
+  });
+  assert.deepEqual(bounded.ids, ["B_n3"]);
+  assert.equal(bounded.status, "verified");
+} finally {
+  parseMock.mock.restore();
+}
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "Candidate D's negative traits would not be good for a pilot (quick-tempered).",
+    [{ traitId: "D_n4", evidenceQuote: "quick-tempered", assertionType: "asserted", confidence: 0.99 }],
+  ),
+  ["D_n4"],
+);
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "Candidate A does not tolerate criticism.",
+    [{ traitId: "A_n1", evidenceQuote: "does not tolerate criticism", assertionType: "asserted", confidence: 0.99 }],
+    new Set(["B_p1"]),
+  ),
+  [],
+);
+
+type DraftRegistry = {
+  traits: Array<{
+    trait_id: string;
+    core_phrases: string[];
+    accepted_variants: string[];
+    review_status: string;
+  }>;
+};
+const draft = load(readFileSync(new URL("../eval/trait_keyword_registry.draft.yaml", import.meta.url), "utf8")) as DraftRegistry;
+const approvedDraft = draft.traits.filter((entry) => entry.review_status === "approved");
+assert.equal(approvedDraft.length, TRAIT_KEYWORD_REGISTRY.length);
+for (const runtimeEntry of TRAIT_KEYWORD_REGISTRY) {
+  const approved = approvedDraft.find((entry) => entry.trait_id === runtimeEntry.traitId);
+  assert.ok(approved, `missing approved registry entry ${runtimeEntry.traitId}`);
+  assert.deepEqual(runtimeEntry.corePhrases, approved.core_phrases, `${runtimeEntry.traitId} core phrases drifted`);
+  assert.deepEqual(runtimeEntry.acceptedVariants, approved.accepted_variants, `${runtimeEntry.traitId} variants drifted`);
+}
+
+const ambiguous = extractHumanTraitsFast({ messageText: "Should we trust Candidate B's reliability?", assignedProfile: "X" });
+assert.deepEqual(ambiguous.acceptedIds, []);
+assert.equal(ambiguous.verificationCandidates[0]?.traitId, "B_p2");
+console.log("pooling extractor fast-path tests passed");

@@ -18,8 +18,8 @@ import { transcriptLabel } from "./labels.js";
 import { log } from "./log.js";
 import { traceTurnEvent } from "./turnTrace.js";
 
-export const CONVERSATION_OBSERVER_VERSION = "conversation-observer-v8";
-export const CONVERSATION_OBSERVER_PROMPT_VERSION = "conversation-observer-prompt-v6";
+export const CONVERSATION_OBSERVER_VERSION = "conversation-observer-v10";
+export const CONVERSATION_OBSERVER_PROMPT_VERSION = "conversation-observer-prompt-v7";
 export const CONVERSATION_OBSERVER_SCHEMA_VERSION = "conversation-observer-schema-v6";
 export const CONVERSATION_OBSERVER_MODEL = "gpt-4o-mini";
 export const CONVERSATION_OBSERVER_PARAMETERS = Object.freeze({
@@ -235,6 +235,9 @@ function observerNormalizationAudit(
   if (raw.focusCandidate !== normalized.focusCandidate || raw.focusBasis !== normalized.focusBasis) {
     repairCodes.push("focus_structurally_normalized");
   }
+  if (!raw.addressees.includes("alex") && normalized.addressees.includes("alex")) {
+    repairCodes.push("plural_address_includes_alex");
+  }
   if (normalized.focusCandidate && !normalized.scopeCandidates.includes(normalized.focusCandidate)) {
     conflictCodes.push("focus_outside_scope");
   }
@@ -297,18 +300,41 @@ export function normalizeConversationObservation(
       )
     : observation.mentionedCandidates;
   const anchorNamesAlex = anchorContent ? /\balex\b/i.test(anchorContent) : false;
+  // A second-person plural address is a structural fact about the room, not a
+  // reading of the speaker's intent. "one of you" is deliberately absent from
+  // the forms below: it is as often referential ("one of you mentioned") as it
+  // is an address. The roster here is the speaker plus two
+  // others, one of whom is Alex, so "the two of you" cannot pick out one human.
+  // The observer resolved both of T-C2-037's plural invitations to the single
+  // other human with 0.9 confidence; each one minted no Alex opportunity and,
+  // through `expectedHumanResponder`, an exclusive human floor that vetoed Alex
+  // outright. An explicit invitation was thereby converted into a prohibition.
+  const anchorAddressesPlural = anchorContent
+    ? /\b(?:both|either|each|any|all|two)\s+of\s+you\b/i.test(anchorContent) ||
+      /\byou\s+(?:both|two|guys|all|folks|people)\b/i.test(anchorContent) ||
+      /\by'?all\b/i.test(anchorContent)
+    : false;
+  const nonSpeakerRoster = participantRoster.filter(
+    (actor) => !currentSpeakerRole || actor !== currentSpeakerRole,
+  );
+  const pluralAddressIncludesAlex =
+    anchorAddressesPlural &&
+    nonSpeakerRoster.length === 2 &&
+    nonSpeakerRoster.includes("alex");
   const addressees = [
-    ...new Set(
-      observation.addressees.filter(
+    ...new Set([
+      ...observation.addressees.filter(
         (recipient) =>
           allowedActors.has(recipient) &&
           (!currentSpeakerRole || recipient !== currentSpeakerRole) &&
           (recipient !== "alex" ||
             observation.alexRelation !== "explicit_addressee" ||
             anchorNamesAlex ||
-            observation.replyToSeq !== null),
+            observation.replyToSeq !== null ||
+            pluralAddressIncludesAlex),
       ),
-    ),
+      ...(pluralAddressIncludesAlex ? nonSpeakerRoster : []),
+    ]),
   ];
   const requestsAction =
     observation.speechAct === "question" || observation.speechAct === "proposal";
@@ -327,6 +353,8 @@ export function normalizeConversationObservation(
     observation.speechAct === "defer" ||
     (observation.speechAct === "proposal" && observation.requestExplicitness === "explicit");
   if (!canReserveNextHumanFloor) expectedHumanResponder = null;
+  const alexIsCoAddressedByRequest =
+    requestsAction && (addressees.includes("alex") || addressees.includes("group"));
   const alexRelation = addressees.includes("alex")
     ? "explicit_addressee"
     : hasPendingAlexQuestion &&
@@ -341,10 +369,35 @@ export function normalizeConversationObservation(
     ? "none" : observation.requestedScope;
   // The observer owns semantic focus, including corrections and explicit null.
   // Normalization validates structure; it must not reinterpret wording.
+  //
+  // "current_explicit" is a claim about *this* turn: the speaker named that
+  // candidate here. The claim is structurally false when the turn names
+  // candidates and the claimed focus is not one of them — either because
+  // several were named, so "the" explicit one is undecidable, or because the
+  // one named is a different candidate entirely. Both drop the focus.
+  //
+  // The second case used to be silently relabelled "carried_thread", which
+  // laundered a contradicted candidate into a valid-looking basis; since focus
+  // carries forward, one such turn pinned the thread to a candidate nobody was
+  // discussing. Nulling is the honest structural repair — it reinterprets no
+  // wording, and it is symmetric with the multiple-mention rule already here.
+  // Safe to null because trait eligibility now reads a null focus as "the whole
+  // thread scope is available" rather than as "nothing is available".
+  //
+  // A turn that names no candidate at all contradicts nothing, so it keeps the
+  // observer's candidate and only has its basis corrected to "carried_thread"
+  // below. That is the ordinary case of the discussion continuing without
+  // anyone restating whose profile is on the table.
+  const explicitFocusUnsupported =
+    observation.focusBasis === "current_explicit" &&
+    (literalCandidates.length > 1 ||
+      (literalCandidates.length === 1 &&
+        observation.focusCandidate !== null &&
+        !literalCandidates.includes(observation.focusCandidate)));
   const focusCandidate =
     observation.activeThread?.status === "resolved" ||
     observation.activeThread?.status === "superseded" ||
-    (observation.focusBasis === "current_explicit" && literalCandidates.length > 1)
+    explicitFocusUnsupported
       ? null
       : observation.focusCandidate;
   const focusBasis = focusCandidate
@@ -410,11 +463,24 @@ export function normalizeConversationObservation(
           evidenceSeqs: [...new Set(observation.activeThread.evidenceSeqs)],
         }
       : null,
-    floor: expectedHumanResponder
+    // A request that solicits a named human *and* Alex leaves the floor open to
+    // both. `expectedHumanResponder` is the only source of a held floor here,
+    // and a held floor is an absolute veto at the router, so without this the
+    // half of the invitation that names Alex is silently discarded. The rule is
+    // deliberately narrow: it fires only when this turn is itself a request and
+    // its addressees include Alex, so an ordinary human-to-human question still
+    // reserves that human's turn exactly as before.
+    floor: expectedHumanResponder && !alexIsCoAddressedByRequest
       ? {
           holder: expectedHumanResponder,
           expectedNext: [expectedHumanResponder],
           transition: "held",
+        }
+      : expectedHumanResponder && alexIsCoAddressedByRequest
+      ? {
+          holder: "open",
+          expectedNext: [expectedHumanResponder, "alex"],
+          transition: "available",
         }
       : !allowedActors.has(observation.floor.holder) &&
           observation.floor.holder !== "open" &&
@@ -493,7 +559,7 @@ Return both current-turn fields and cumulative state:
 - activeThread is the single currently controlling conversational project. Preserve its threadId and rootSeq while the project continues, even if the latest speaker addresses another human. Create a stable id such as thread-<rootSeq> for a new project. Close or supersede it only from semantic evidence of resolution, abandonment, or replacement; never from a message-count limit.
 - requestIntent records the meaning of the current request, or null for no request. Determine kind, candidates, source and countKind from context, negation and corrections, never isolated words. Compare paraphrases share compare_request. Comparisons use visible_board unless the speaker requests Alex's full knowledge (known_profile). Private/new notes use alex_notes; evaluation, narrowing, preference reasons and known counts use known_profile. countKind is all unless matches or misses are requested. Complete inventory requests differ from synthesis. Preserve the intended source across paraphrases.
 - opportunityTransitions reconciles the supplied ledger against the complete transcript, including turns missed during an observer failure. Use exact opportunity ids and actual evidence seqs. Close requests answered by humans (resolved_by_human), withdrawn, declined, or replaced (superseded), even when another thread is foreground or activeThread is null. Partial answers do not close an unsatisfied request. Defer only while waiting for another speaker, then reopen when the floor is available. Correct an erroneous terminal interpretation with open and current-turn evidence; never reopen consumed_by_alex. correctedThreadId is null unless correcting an association to an existing thread or the activeThread. Do not expire requests merely because they are old. Use [] when nothing changes.
-- A name-only thanks does not create a question or required participation. A preference or conclusion such as "it is between A and B" is not a request and must have requestExplicitness none and requestIntent null. Interpret human-first requests, negation, quotations and later corrections semantically; an Alex address does not override a human floor.
+- A name-only thanks does not create a question or required participation. A preference or conclusion such as "it is between A and B" is not a request and must have requestExplicitness none and requestIntent null. Interpret human-first requests, negation, quotations and later corrections semantically; naming Alex does not by itself cancel a floor another human already holds, but a single request that addresses a human and Alex together leaves the floor open to both.
 - requestedAction is a short literal-language description of what the group is trying to do. Preserve exact candidate letters and numbers.
 - alexParticipation distinguishes required, invited, merely relevant, and not involved. Group-inclusive language can include Alex even without naming Alex; an exchange between humans can still belong to a thread that includes Alex.
 - alexRelation and alexRelevance describe Alex's relation to the current turn and controlling thread. Use explicit_addressee only when the anchor explicitly names Alex or replyToSeq points to an Alex message. A human response to another human is not response_to_alex merely because an older Alex question or the active project remains open. "about_alex" means Alex is discussed in the third person, not addressed.
@@ -504,6 +570,7 @@ Return both current-turn fields and cumulative state:
 Apply these general discourse constraints consistently:
 - The current speaker is not their own addressee unless the text explicitly contains self-directed speech. Do not infer an expected response from the current speaker themself.
 - In this group chat, an inclusive first-person-plural proposal or request (for example language equivalent to "we", "let us", "our", "together", or "each other") addresses the group unless the transcript explicitly narrows or excludes participants. The group includes Alex. A separately named human may hold the first floor while the group thread still includes Alex.
+- A second-person plural address (for example "the two of you", "both of you", "either of you", "any of you", "you two", "you guys") names every other participant in the room, not one of them. The room holds one speaker, one other human, and Alex, so such a turn addresses that human and Alex together: list both in addressees. When a request addresses Alex as well as a human, do not report a floor that excludes Alex.
 - A proposal that asks its recipients to carry out an action now is an explicit request. requestedScope describes the content being requested, never the number of recipients. Derive it from the object of the action: one fact, one candidate, multiple candidates, or the whole board.
 - In this task domain Candidates A, B, C, and D are the entire board. A request explicitly covering all four or all candidates has whole_board scope, not merely multiple_candidates.
 - expectedHumanResponder must be a human who is actually among the current addressees and is explicitly solicited to take the next turn. Do not infer it from a pronoun, ownership reference, or a person merely being discussed.

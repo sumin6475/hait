@@ -28,6 +28,20 @@ export interface ConversationThread {
   scopeCandidates: Candidate[];
   focusCandidate: Candidate | null;
   focusBasis: "current_explicit" | "carried_thread" | "multiple_explicit" | "none";
+  /**
+   * The last message seq at which each candidate was literally named in this
+   * thread.
+   *
+   * `focusCandidate` is a single slot filled by a probabilistic observer, and it
+   * is null on exactly the turns that matter most: a comparison turn names two
+   * candidates, so "the" focus is undecidable, and a continuation turn names
+   * none. Session T-C2-037 ran 12 of 23 decisions with focus null, and on the
+   * one turn Alex spoke voluntarily from an unranked list it surfaced a
+   * Candidate A note while the group was eliminating Candidate C. Recency of
+   * literal mention is deterministic, needs no model call, and survives the
+   * turns where focus cannot be expressed at all.
+   */
+  candidateSalience?: Partial<Record<Candidate, number>>;
   participants: ConversationActor[];
   evidenceSeqs: number[];
   revision: number;
@@ -112,6 +126,8 @@ export interface ThreadProposal {
   scopeCandidates: Candidate[];
   focusCandidate: Candidate | null;
   focusBasis: ConversationThread["focusBasis"];
+  /** Candidates literally named in the current trigger message. */
+  mentionedCandidates?: Candidate[];
   participants: ConversationActor[];
   evidenceSeqs: number[];
 }
@@ -312,6 +328,7 @@ export function observerDeltaFromTurn(input: {
     ),
     focusCandidate: input.observation.focusCandidate ?? null,
     focusBasis: input.observation.focusBasis ?? "none",
+    mentionedCandidates: uniqueSorted(input.observation.mentionedCandidates ?? []),
     participants: threadParticipants,
     evidenceSeqs: uniqueSortedNumbers([
       ...(observedThread?.evidenceSeqs ?? []),
@@ -456,6 +473,7 @@ function copyState(state: ConversationLedgerState): ConversationLedgerState {
       scopeCandidates: [...(thread.scopeCandidates ?? thread.candidates)],
       focusCandidate: thread.focusCandidate ?? null,
       focusBasis: thread.focusBasis ?? "none",
+      candidateSalience: { ...(thread.candidateSalience ?? {}) },
       participants: [...thread.participants],
       evidenceSeqs: [...thread.evidenceSeqs],
     })),
@@ -510,6 +528,45 @@ const TERMINAL_OPPORTUNITY_STATUSES = new Set<OpportunityStatus>([
   "expired",
 ]);
 
+function mergeCandidateSalience(
+  existing: Partial<Record<Candidate, number>> | undefined,
+  mentioned: readonly Candidate[],
+  seq: number,
+): Partial<Record<Candidate, number>> {
+  const merged: Partial<Record<Candidate, number>> = { ...(existing ?? {}) };
+  for (const candidate of mentioned) {
+    const previous = merged[candidate];
+    if (previous === undefined || seq > previous) merged[candidate] = seq;
+  }
+  return merged;
+}
+
+/**
+ * The thread's candidates ordered by what the group is currently on: the
+ * observer's explicit focus first when it has one, then the most recently named
+ * candidate, then the rest of the scope in its stable order.
+ *
+ * This is the ranking signal that `focusCandidate` alone could not carry. It is
+ * a pure derivation over recorded mentions — no model call, no reinterpretation
+ * of wording — so it stays available on the comparison and continuation turns
+ * where focus is structurally null.
+ */
+export function candidateSalienceOrder(
+  thread: Pick<ConversationThread, "focusCandidate" | "candidates" | "scopeCandidates" | "candidateSalience">,
+): Candidate[] {
+  const scope = thread.scopeCandidates?.length ? thread.scopeCandidates : thread.candidates;
+  const salience = thread.candidateSalience ?? {};
+  const ranked = [...scope].sort((left, right) => {
+    const leftSeq = salience[left] ?? 0;
+    const rightSeq = salience[right] ?? 0;
+    if (leftSeq !== rightSeq) return rightSeq - leftSeq;
+    return scope.indexOf(left) - scope.indexOf(right);
+  });
+  const focus = thread.focusCandidate;
+  if (!focus || !ranked.includes(focus)) return ranked;
+  return [focus, ...ranked.filter((candidate) => candidate !== focus)];
+}
+
 export function reduceConversationLedger(
   previous: ConversationLedgerState | null | undefined,
   delta: ConversationObserverDelta,
@@ -561,12 +618,14 @@ export function reduceConversationLedger(
       transition.rejected.push(`thread:${proposal.id}:invalid`);
       continue;
     }
+    const mentionedNow = uniqueSorted(proposal.mentionedCandidates ?? []);
     const existingIndex = state.threads.findIndex((thread) => thread.id === proposal.id);
     if (existingIndex < 0) {
       state.threads.push({
         ...proposal,
         candidates: uniqueSorted(proposal.candidates),
         scopeCandidates: uniqueSorted(proposal.scopeCandidates),
+        candidateSalience: mergeCandidateSalience({}, mentionedNow, delta.currentTriggerSeq),
         participants: uniqueSorted(proposal.participants),
         evidenceSeqs: uniqueSortedNumbers(proposal.evidenceSeqs),
         revision: 1,
@@ -580,6 +639,13 @@ export function reduceConversationLedger(
         threadRootSeq: existing.threadRootSeq,
         candidates: uniqueSorted(proposal.scopeCandidates),
         scopeCandidates: uniqueSorted(proposal.scopeCandidates),
+        // Salience accumulates; a turn that names nobody must not erase what the
+        // group was already on. The spread above would have done exactly that.
+        candidateSalience: mergeCandidateSalience(
+          existing.candidateSalience,
+          mentionedNow,
+          delta.currentTriggerSeq,
+        ),
         participants: uniqueSorted([...existing.participants, ...proposal.participants]),
         evidenceSeqs: uniqueSortedNumbers([...existing.evidenceSeqs, ...proposal.evidenceSeqs]),
         revision: existing.revision + 1,
@@ -910,6 +976,7 @@ export function describeConversationLedger(state: ConversationLedgerState): stri
       `The foreground thread is ${foreground.id}, rooted at message ${foreground.threadRootSeq}; it is ${foreground.status}.`,
       `Its goal is ${foreground.goal}: ${foreground.requestedAction || "no additional action description"}.`,
       `Its scope candidates are ${(foreground.scopeCandidates ?? foreground.candidates).join(", ") || "not specified"}; current focus is ${foreground.focusCandidate ?? "none"} (${foreground.focusBasis ?? "none"}); evidence messages are ${foreground.evidenceSeqs.join(", ")}.`,
+      `Its candidates ordered by what the group is currently on are ${candidateSalienceOrder(foreground).join(", ") || "not specified"}.`,
     );
   } else {
     lines.push("No thread is exclusively foregrounded; other recorded threads may still remain open.");

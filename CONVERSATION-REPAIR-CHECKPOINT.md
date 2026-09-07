@@ -3,7 +3,7 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-06
+Last updated: 2026-09-07
 
 > Read this file first in a new session. It is the working contract for the
 > Observer / Judge / Generator repair. It replaces re-deriving the diagnosis.
@@ -287,17 +287,169 @@ Verified: `build`, `test:conversation-ledger`, `test:conversation-recovery`,
 `test:intervention-v2` all pass (checked with real exit codes, not a piped
 `$?`); `git diff --check` clean.
 
-### Gate 3 — Supply something to say
+### Gate 3 — Supply something to say — DONE (uncommitted)
 
-7. `interventionEngine.ts:1713` — when `focusCandidate` is null, return unsurfaced
-   `ALEX_Z_IDS` across the thread's `scopeCandidates` instead of `[]`. The Judge is
-   already contracted to select exactly one. Keep focus as a **ranking hint**, never
-   as a gate.
+Evidence: T-C2-035 (25 messages, 18 triggers, 6 Alex turns = 24%). Of 10
+silences, **8 were contract-rejection silences** — 3 where every Judge attempt
+was rejected (`ledger_judge_failure`, turns 2/9/12) and 5 where the Judge asked
+to speak and then capitulated (turns 18/21/22/23/24). Exactly one silence was a
+genuine `no_useful_move` (turn 25) and one was cooldown (turn 6). Alex was not
+short of things to say; the validator was rejecting what it wanted to say.
 
-Regression: a comparison-phase turn with `focusCandidate: null` and a non-empty
-`scopeCandidates` yields a non-empty eligible set.
+**3a. `conversationObserver.ts` focus normalization.** A `current_explicit`
+focus whose candidate the turn does not name was silently relabelled
+`carried_thread` and kept. T-C2-035 seq 4 said "so I delete Candidate C as well"
+while the observer reported focus B; B survived with a valid-looking basis and,
+because focus carries forward, pinned the thread to B through seq 7 — Alex
+answered about B, citing seq 3, four turns after the group moved to C. Now the
+focus is dropped when the turn names candidates and the claimed one is not among
+them, symmetric with the existing multiple-mention rule.
 
-Exit check: `no_useful_move` silences fall relative to the Section 2 baseline.
+  Scope note: the rule fires **only** on a contradiction. A turn that names no
+  candidate contradicts nothing, so the observer's carried candidate stands and
+  only the basis is corrected. The first draft of this fix nulled that case too
+  and was caught by an existing `test-intervention-v2` assertion (tc4022 seq 7);
+  that assertion was correct and the draft rule was wrong.
+
+**3b. `interventionEngine.ts` — `eligibleTraitIdsForLedgerState`.** Focus was a
+hard gate: no focus candidate meant zero eligible traits, which made every
+voluntary contribution structurally invalid. Eligibility is now a property of
+the thread's `scopeCandidates`, with focus reordering the list rather than
+filtering it. Extracted from a closure into an exported pure function so it is
+directly testable.
+
+**3c. `interventionJudge.ts` — voluntary `follow`.** `follow` was classed as an
+interaction act requiring an opportunity id, and the only kind that maps to it
+(`uptake`) is minted only after a human replies to Alex. So while the humans
+talked to each other, taking up their point was structurally illegal — on turns
+18/21/22/23/24 the Judge asked for exactly this and was rejected with
+`interaction_act_missing_opportunity` + `voluntary_act_evidence_invalid` every
+time. `follow` is now valid without an opportunity when its evidence is
+`conversation_grounded_synthesis`, which keeps it distinct from `contribute`
+(which carries a fact or correction) and stops it becoming an unconditional
+right to speak. `answer` and `participate` still require the request on record.
+Judge prompt updated and versioned `conversation-ledger-judge-prompt-v4`;
+`CONVERSATION_OBSERVER_VERSION` bumped to `conversation-observer-v9` for 3a.
+
+Regressions added, each verified to fail when its own fix is reverted:
+`test-intervention-v2` (3a: contradicted focus dropped, named focus kept,
+unnamed turn still carries) and `test-conversation-ledger` (3b: null focus
+offers the whole 24-trait scope, focus reorders without shrinking, surfaced
+excluded, dead thread offers nothing; 3c: grounded voluntary follow valid,
+ungrounded follow rejected, orphan `participate` still rejected).
+
+Exit check (still open, needs a live run): `no_useful_move` and
+`ledger_judge_capitulated_after_rejection` silences fall relative to the
+T-C2-035 baseline of 5 capitulations + 1 genuine silence.
+
+### Gate 3R — What T-C2-037 showed after Gates 1–3 — DONE (uncommitted)
+
+Second diagnostic session, run with Gates 1–3 live: C2 Leader, 31 messages,
+23 intervention decisions, 6 spoken (26%). Four distinct structural causes, all
+confirmed against the exported observations rather than the console log.
+
+| Turn(s) | Recorded outcome | Actual cause |
+| --- | --- | --- |
+| 2 | `ledger_judge_failure` | the only listed opportunity was one cooldown forbids |
+| 8→9 | spoke, wrong candidate | eligible traits arrived unranked; focus was null |
+| 18, 19, 25, 26 | `ledger_judge_capitulated_after_rejection` | one inert field rejected the whole decision |
+| 28, 30 | `ledger_router_human_floor_held`, no opportunity | a plural invitation resolved to one human |
+
+1. **Candidate salience.** `focusCandidate` is a single slot filled by a
+   probabilistic observer, and it was null on 12 of 23 decisions — null on
+   exactly the turns that matter, because a comparison turn names two candidates
+   (so "the" focus is undecidable and normalization drops it) and a continuation
+   turn names none. Gate 3 removed the *gate* but left the list in trait-id
+   order whenever focus was null, so at turn 8 the Judge read from the top and
+   Alex broadcast a Candidate A note while the group was eliminating Candidate C.
+   The humans complained six messages later that Alex was adding nothing.
+   `ConversationThread.candidateSalience` now records the last seq at which each
+   candidate was literally named; the reducer accumulates it, so a turn that
+   names nobody no longer erases what the group was on.
+   `candidateSalienceOrder()` ranks focus first when there is one and recency
+   otherwise, and `eligibleTraitIdsForLedgerState` orders by it. Pure derivation
+   over recorded mentions — no model call, no reinterpretation of wording, which
+   keeps the Observer/reducer split in §7 intact.
+
+2. **An option the validator will reject is not offered.** Turn 2 listed
+   `opp:1:group_request:alex` and nothing else; Alex had spoken on the previous
+   message, so `selected_opportunity_requires_cooldown` rejected it on both
+   attempts and the turn produced no decision at all. This is the same defect
+   Gate 1 fixed for terminal and stale-invited opportunities — cooldown is
+   simply the third class. `conversationLedgerDecisionProjection` now takes
+   `cooldownAvailable` and drops opportunities that cannot bypass it. The
+   validation rule is unchanged; only the menu is.
+
+3. **An inert field is repaired, not punished with silence.** Turns 18, 19, 25
+   and 26 are one shape four times: `follow` + `conversation_grounded_synthesis`
+   with `selectedTraitId` also filled. That field reaches generation solely
+   through `build_on` + `relevant_unsurfaced_information` (`routeTurn.ts:220`,
+   `routeTurn.ts:308`), so under any other evidence it is inert — yet validation
+   rejected the whole decision, and the retry took `silent`, the one output that
+   always validates. `canonicalizeConversationLedgerJudgeDecision` now clears the
+   field before validation and records `trait_cleared_for_non_trait_evidence` on
+   the attempt. The legacy Judge path has always done exactly this
+   (`interventionJudge.ts:40`); only the ledger Judge was stricter.
+
+   **The opposite repair was rejected.** Promoting the evidence to
+   `relevant_unsurfaced_information` to match the trait would hand the turn a
+   licence to reveal a private note that the Judge never asked for. Repair may
+   only ever remove a privilege, never grant one. Anything that could change
+   meaning is still rejected.
+
+4. **A plural invitation is not a prohibition.** At turns 28 and 30 a
+   participant asked "the two of you" and "either of you". The room is one
+   speaker, one other human and Alex, so both turns addressed Alex — the
+   observer resolved each to the single human, with `addressee` confidence 0.9.
+   Two things followed: no Alex opportunity was minted, and
+   `expectedHumanResponder` produced a held floor, which the router treats as an
+   absolute veto. An explicit invitation became a prohibition. Fixed at both
+   layers: the Observer prompt now states the plural-address rule, and
+   `normalizeConversationObservation` resolves a second-person plural address to
+   every other participant deterministically (repair code
+   `plural_address_includes_alex`) — this is a structural fact about a
+   three-participant room, not a reading of intent. Separately, a request whose
+   addressees include Alex can no longer produce an exclusive human floor; it
+   yields `expectedNext: [human, alex]` with the floor open. The narrower rule
+   is unchanged: an ordinary human-to-human question still reserves that human's
+   turn. Detector checked against all 23 human messages of the session: it fires
+   on 28 and 30 and nothing else.
+
+**Deliberately not done.**
+
+- **No cooldown bypass for a "focus shift + exact fact" turn.** Turn 10 is the
+  case that motivates it, and turn 10 is downstream of defect 1: the Judge chose
+  `C_n1` correctly there, and the only reason cooldown was spent was Alex's
+  wrong-candidate broadcast at turn 9. The information reached the group anyway
+  at turn 12. Cooldown also did real work at turn 7, blocking an `A_p1`
+  contribution during a Candidate C exchange. Fix the ranking first, then
+  measure; loosening a working safety gate to compensate for a fixed defect
+  would be the wrong order.
+- **Retry-forbids-silent** stays deferred (see Gate 2), now with a second reason:
+  repair 3 removes the violation that caused every capitulation in this session.
+- **Opportunity id keying** stays unchanged (see Gate 1).
+
+**New finding for Gate 4, not fixed here.** In all four capitulations the Judge
+asked to take up what the humans just said *and* carry a specific fact. The
+contract splits those: `contribute` + `relevant_unsurfaced_information` carries a
+fact with no uptake, `follow` + `conversation_grounded_synthesis` carries uptake
+with no fact. The model reached for the combination four times in one session.
+Gate 4 item 8 (permit a brief uptake opener on the substantive routes) is what
+closes that gap; do not add a new evidence type before trying it.
+
+Regressions in `test-conversation-ledger.ts` (Gates 3d–3f) and
+`test-conversation-recovery.ts`, reproducing all four shapes from the observed
+run. Each was verified to fail with its own fix reverted, including the
+accumulation half of salience, which a naive revert would have left passing.
+
+Verified: `build`, `test:conversation-ledger`, `test:conversation-recovery`,
+`test:intervention-v2` all pass; `git diff --check` clean. Versions bumped:
+observer `v9→v10` / prompt `v6→v7`, ledger judge `v3→v4` / prompt `v4→v5`.
+
+Exit check (needs a live run, the user's call): on a comparable session, turn-2
+style `ledger_judge_failure` and `..._capitulated_after_rejection:trait_present_for_non_trait_evidence`
+should both reach zero, and a voluntary contribution should name the candidate
+the group is actually on.
 
 ### Gate 4 — Speech quality (prompt layer; only after 1–3)
 
@@ -411,3 +563,21 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
   had introduced — and capitulated silence given its own `silenceReason`.
   Retry-forbids-silent deliberately deferred pending measurement. build + ledger
   + recovery + intervention-v2 green.
+- 2026-09-07 — Gate 3R complete (uncommitted in the root checkout; backed up on
+  the repair branch). Diagnosed from session T-C2-037 (23 decisions, 6 spoken).
+  Candidate salience replaces focus as the ranking signal; the decision
+  projection drops cooldown-forbidden opportunities; an inert `selectedTraitId`
+  is repaired instead of rejected; a second-person plural address resolves to
+  every participant and no longer yields an exclusive human floor. Six
+  regressions, each verified to fail with its own fix reverted. build + ledger
+  + recovery + intervention-v2 green. Cooldown bypass deliberately not added —
+  its motivating turn is downstream of the ranking defect. Measured effect
+  pending a live replay.
+- 2026-09-06 — Gate 3 complete (uncommitted in the root checkout). 3a focus
+  normalization no longer launders a contradicted focus; 3b trait eligibility
+  reads the thread scope with focus as a ranking hint; 3c voluntary `follow`
+  legalized with grounded-synthesis evidence. Prompt v4, observer v9. build +
+  ledger + recovery + intervention-v2 green; all three fixes revert-checked.
+  Diagnosis from T-C2-035: 8 of 10 silences were contract rejections, not
+  absence of content. First draft of 3a over-fired and was corrected by an
+  existing test — recorded above under Scope note.

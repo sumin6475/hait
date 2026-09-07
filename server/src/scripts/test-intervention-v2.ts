@@ -651,6 +651,64 @@ assert.equal(normalizeTc4022("Candidate A is organized and B is good at multitas
 assert.equal(normalizeTc4022("Even Candidate D is deemed not fit to lead.", 11, "D").focusCandidate, "D");
 assert.equal(normalizeTc4022("This makes D a good candidate.", 12, "D").focusCandidate, "D");
 assert.equal(normalizeTc4022("But D is deemed not fit to lead?", 13, "D").focusCandidate, "D");
+
+// --- Gate 3a: an explicit focus the turn contradicts is dropped -------------
+//
+// T-C2-035 seq 4 said "so I delete Candidate C as well" while the observer
+// reported focusCandidate B with basis current_explicit. The old normalizer
+// kept B and relabelled the basis "carried_thread", which pinned the thread to
+// B for the next four turns: Alex answered about B, citing seq 3, while the
+// group had already moved on to C.
+const gate3aBase: ConversationObserverResult = {
+  ...tc4022Base,
+  activeCandidates: ["A", "B", "C", "D"],
+};
+const gate3aContradicted = normalizeConversationObservation(
+  { ...gate3aBase, mentionedCandidates: ["C"], focusCandidate: "B" },
+  false,
+  "humanX",
+  "also being skillful is the most important thing for a pilot, so I delete Candidate C as well",
+  4,
+  new Set([1, 2, 3, 4]),
+);
+assert.equal(
+  gate3aContradicted.focusCandidate,
+  null,
+  "an explicit focus the turn names a different candidate than is dropped",
+);
+assert.equal(gate3aContradicted.focusBasis, "none");
+assert.equal(
+  normalizeConversationObservation(
+    { ...gate3aBase, mentionedCandidates: ["C"], focusCandidate: "C" },
+    false,
+    "humanX",
+    "also being skillful is the most important thing for a pilot, so I delete Candidate C as well",
+    4,
+    new Set([1, 2, 3, 4]),
+  ).focusCandidate,
+  "C",
+  "an explicit focus the turn actually names survives",
+);
+// The rule is narrow on purpose: a turn that names nobody contradicts nothing,
+// so the observer's carried candidate stands and only its basis is corrected.
+const gate3aCarried = normalizeConversationObservation(
+  { ...gate3aBase, mentionedCandidates: [], focusCandidate: "B" },
+  false,
+  "humanY",
+  "one match is not enough when others have more matches",
+  7,
+  new Set([1, 2, 3, 4, 5, 6, 7]),
+);
+assert.equal(
+  gate3aCarried.focusCandidate,
+  "B",
+  "a turn naming no candidate contradicts nothing and keeps the carried focus",
+);
+assert.equal(
+  gate3aCarried.focusBasis,
+  "carried_thread",
+  "but its basis is corrected off current_explicit",
+);
 const observerSnapshotForTest = {
   anchorSeq: 11,
   conversationEpoch: 2,

@@ -5,7 +5,7 @@ import { Session } from "../models/Session.js";
 import { Participant } from "../models/Participant.js";
 import { Message } from "../models/Message.js";
 import { allocHumanSeq } from "../lib/seq.js";
-import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
+import { extractHumanTraitsFast, verifyHumanTraitCandidates } from "../lib/poolingExtractor.js";
 import { updateRevealStats } from "../lib/poolingTally.js";
 import { aiDisplayName } from "../lib/labels.js";
 import { log } from "../lib/log.js";
@@ -28,8 +28,8 @@ interface LedgerTurnReservation {
 }
 
 // Socket callbacks from two participants can overlap. Keep chat saves and
-// broadcasts immediate, but serialize ledger commits in callback-arrival order
-// so a later routing decision never observes an unprocessed earlier message.
+// broadcasts immediate, and serialize only the fast deterministic persistence
+// in callback-arrival order. Bounded verification must never occupy this queue.
 const ledgerTails = new Map<string, Promise<void>>();
 
 function reserveLedgerTurn(sessionId: string): LedgerTurnReservation {
@@ -128,6 +128,7 @@ export function registerSocketHandlers(io: IO) {
         socket.data.participantCode = participantCode;
         socket.data.role = participant.role;
         socket.data.conditionCode = session.conditionCode as ConditionCode;
+        socket.data.assignedProfile = participant.assignedProfile;
 
         const allMessages = await Message.find({ sessionId: session._id }).sort({ seq: 1 });
         socket.emit("session-history", {
@@ -288,34 +289,63 @@ export function registerSocketHandlers(io: IO) {
           });
         }
 
-        await ledgerTurn?.waitForPrior;
-        if (conditionCode !== "CTRL" && trimmed.length >= 15) {
+        const persistenceTurn = ledgerTurn;
+        const fastTraits = conditionCode !== "CTRL" && trimmed.length >= 3
+          ? extractHumanTraitsFast({ messageText: trimmed, assignedProfile: socket.data.assignedProfile })
+          : { acceptedIds: [], verificationCandidates: [] };
+        // Keep ordering for persistence, but never make Alex wait for it or for
+        // the bounded verifier. Fast IDs are passed as a current-turn overlay.
+        if (conditionCode !== "CTRL") void (async () => {
+          const verificationPromise = verifyHumanTraitCandidates({
+            messageText: trimmed,
+            candidates: fastTraits.verificationCandidates,
+          });
+          let fastNewCount = 0;
           try {
-            // The ledger for this message must be committed before routing and
-            // judging it. The previous fire-and-forget path let the judge read
-            // stale coverage and classify already-spoken traits as unsurfaced.
-            const ids = await extractSurfacedTraits(trimmed);
-            const [newCount] = await Promise.all([
-              updateRevealStats(sessionId, ids, nextSeq),
-              ids.length
-                ? Message.updateOne(
-                    { _id: savedMessage._id },
-                    { $addToSet: { sharedInfoIds: { $each: ids } } },
-                  )
+            await persistenceTurn?.waitForPrior;
+            [fastNewCount] = await Promise.all([
+              updateRevealStats(sessionId, fastTraits.acceptedIds, nextSeq),
+              fastTraits.acceptedIds.length
+                ? Message.updateOne({
+                    _id: savedMessage._id,
+                  }, {
+                    $addToSet: { sharedInfoIds: { $each: fastTraits.acceptedIds } },
+                  })
                 : Promise.resolve(),
             ]);
-            if (ids.length) {
-              traceTurnEvent({
-                sessionId: sessionId.toString(),
-                seq: nextSeq,
-                detail: `coverage: surfaced ${ids.length}, newly recorded ${newCount}`,
-              });
+          } catch (error) {
+            log.error("[pooling] fast persistence error:", error);
+          } finally {
+            // Release as soon as deterministic IDs settle. Slow/failing model
+            // verification continues independently as a late correction.
+            persistenceTurn?.release();
+          }
+
+          try {
+            const verification = await verificationPromise;
+            const [verifiedNewCount] = await Promise.all([
+              updateRevealStats(sessionId, verification.ids, nextSeq),
+              verification.ids.length
+                ? Message.updateOne({
+                    _id: savedMessage._id,
+                  }, {
+                    $addToSet: { sharedInfoIds: { $each: verification.ids } },
+                  })
+                : Promise.resolve(),
+            ]);
+            const ids = [...new Set([...fastTraits.acceptedIds, ...verification.ids])];
+            const coverageDetail =
+              `coverage: surfaced ${ids.length}, newly recorded ${fastNewCount + verifiedNewCount}, ` +
+              `verification=${verification.status}`;
+            traceTurnEvent({ sessionId, seq: nextSeq, detail: coverageDetail });
+            log.info(`[pooling] ${coverageDetail} role=${role} seq=${nextSeq} session=${sessionCode}`);
+            if (verification.status === "failed") {
+              log.warn(`[pooling] verification failed role=${role} seq=${nextSeq} session=${sessionCode}: ${verification.error}`);
             }
           } catch (error) {
-            log.error("[pooling] extract error:", error);
+            log.error("[pooling] verification persistence error:", error);
           }
-        }
-        ledgerTurn?.release();
+        })();
         ledgerTurn = undefined;
         if (conditionCode !== "CTRL") {
           const explicitDefer = detectExplicitAlexDefer(trimmed);
@@ -332,6 +362,8 @@ export function registerSocketHandlers(io: IO) {
             messageSeq: nextSeq,
             conversationEpoch: humanTurn.conversationEpoch,
             content: trimmed,
+            assignedProfile: socket.data.assignedProfile,
+            pendingHumanTraitIds: fastTraits.acceptedIds,
           }).catch((error) => log.error("[push-v2] turn error:", error));
         }
       } catch (error) {

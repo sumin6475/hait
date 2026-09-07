@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Server } from "socket.io";
 import type { ClientToServerEvents, ServerToClientEvents, SocketData } from "../sockets/events.js";
 import type {
+  Candidate,
   ConditionCode,
   CommunicativeAct,
   InterventionDecisionStage,
@@ -41,6 +42,7 @@ import {
 } from "./interventionJudge.js";
 import {
   CONVERSATION_LEDGER_VERSION,
+  candidateSalienceOrder,
   describeConversationLedger,
   humanFloorHeld,
   opportunityMayBypassCooldown,
@@ -230,6 +232,44 @@ function requestIntentForObserverObligation(
     candidates,
     source: "known_profile",
   };
+}
+
+/**
+ * Alex's private trait ids that the foreground thread makes available to the
+ * Judge, most relevant first.
+ *
+ * Focus ranks; it must never gate. The previous form returned an empty list
+ * whenever the foreground thread had no focus candidate, which made every
+ * voluntary contribution structurally impossible and left the Judge with
+ * silence as its only valid output — five consecutive turns of it in T-C2-035.
+ * Eligibility is a property of the thread's scope; focus only decides what Alex
+ * reaches for first.
+ */
+export function eligibleTraitIdsForLedgerState(
+  state: ConversationLedgerState,
+  surfaced: ReadonlySet<string>,
+): string[] {
+  const thread = state.threads.find((item) => item.id === state.foregroundThreadId);
+  if (!thread || (thread.status !== "open" && thread.status !== "waiting")) return [];
+  const scope = thread.scopeCandidates?.length ? thread.scopeCandidates : thread.candidates;
+  const inScope = ALEX_Z_IDS.filter((id) => {
+    const candidate = TRAIT_BY_ID.get(id)?.candidate;
+    return candidate !== undefined && scope.includes(candidate) && !surfaced.has(id);
+  });
+  // Ranking now comes from salience, not from focus alone. Gate 3 removed the
+  // gate but left the list in trait-id order whenever focus was null, which is
+  // most of a comparison phase: the Judge is told to pick what fits the
+  // exchange, and with no ordering signal at all it read down the list from
+  // Candidate A. Salience keeps the observer's explicit focus first when there
+  // is one and otherwise falls back to the most recently named candidate.
+  const order = candidateSalienceOrder(thread);
+  const rank = new Map(order.map((candidate, index) => [candidate, index]));
+  return [...inScope].sort((left, right) => {
+    const leftRank = rank.get(TRAIT_BY_ID.get(left)?.candidate as Candidate) ?? order.length;
+    const rightRank = rank.get(TRAIT_BY_ID.get(right)?.candidate as Candidate) ?? order.length;
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return inScope.indexOf(left) - inScope.indexOf(right);
+  });
 }
 
 export function ledgerRouteKindForAct(
@@ -1569,6 +1609,8 @@ export async function onHumanMessage(input: {
   messageSeq: number;
   conversationEpoch: number;
   content: string;
+  assignedProfile?: "X" | "Y" | "Z";
+  pendingHumanTraitIds?: string[];
   postGenerationReevaluation?: boolean;
 }) {
   const runtime = runtimes.get(input.sessionCode);
@@ -1654,6 +1696,24 @@ export async function onHumanMessage(input: {
     Message.find({ sessionId: runtime.sessionId }).sort({ seq: 1 }).lean(),
   ]);
   if ((session as any)?.aiState?.lifecycle !== "active") return;
+  if (input.pendingHumanTraitIds?.length) {
+    const base = ((session as any).revealStats ?? {}) as any;
+    const byCandidate = { ...(base.byCandidate ?? {}) } as Record<string, any>;
+    for (const candidate of ["A", "B", "C", "D"]) {
+      byCandidate[candidate] = { ...(byCandidate[candidate] ?? {}) };
+      byCandidate[candidate].revealedIds = [...(byCandidate[candidate].revealedIds ?? [])];
+    }
+    for (const id of input.pendingHumanTraitIds) {
+      const candidate = TRAIT_BY_ID.get(id)?.candidate;
+      if (!candidate) continue;
+      byCandidate[candidate].revealedIds = [...new Set([...byCandidate[candidate].revealedIds, id])];
+    }
+    (session as any).revealStats = {
+      ...base,
+      byCandidate,
+      humanConfirmedIds: [...new Set([...(base.humanConfirmedIds ?? []), ...input.pendingHumanTraitIds])],
+    };
+  }
 
   const snapshot =
     controllerMode !== "legacy" || config.conversationObserverMode === "active"
@@ -1712,14 +1772,8 @@ export async function onHumanMessage(input: {
 
   if (controllerMode !== "legacy") {
     const surfaced = allSurfacedIds((session as any).revealStats);
-    const eligibleTraitIdsForState = (state: ConversationLedgerState): string[] => {
-      const thread = state.threads.find((item) => item.id === state.foregroundThreadId);
-      const focus = thread && (thread.status === "open" || thread.status === "waiting")
-        ? thread.focusCandidate : null;
-      return focus ? ALEX_Z_IDS.filter(
-        (id) => TRAIT_BY_ID.get(id)?.candidate === focus && !surfaced.has(id),
-      ) : [];
-    };
+    const eligibleTraitIdsForState = (state: ConversationLedgerState): string[] =>
+      eligibleTraitIdsForLedgerState(state, surfaced);
     const ledgerResult = await judgeLiveLedgerTurn({
       runtime,
       messageSeq: input.messageSeq,

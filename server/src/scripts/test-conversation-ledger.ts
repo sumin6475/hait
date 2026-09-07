@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import type { Candidate } from "../types.js";
 import { replayObservedConversation } from "../eval/conversationReplay.js";
 import {
   CONVERSATION_LEDGER_VERSION,
+  candidateSalienceOrder,
   createConversationLedgerState,
   humanFloorHeld,
   observerDeltaFromTurn,
@@ -10,9 +12,12 @@ import {
   responseOpportunityId,
   withOpportunityTransition,
   withProvisionalAlexAddress,
+  type ConversationLedgerState,
   type ObservedTurnForLedger,
 } from "../lib/conversationLedger.js";
+import { eligibleTraitIdsForLedgerState } from "../lib/interventionEngine.js";
 import {
+  canonicalizeConversationLedgerJudgeDecision,
   conversationLedgerDecisionProjection,
   judgeCapitulatedToSilence,
   judgeCapitulationRuleCodes,
@@ -1028,6 +1033,350 @@ assert.equal(
   ]),
   false,
   "a malformed silence corrected into a clean silence is not a capitulation",
+);
+
+// --- Gate 3b: focus ranks trait eligibility, it never gates it ---------------
+//
+// T-C2-035 turns 21-24: the foreground thread had no focus candidate, the old
+// helper therefore offered the Judge zero traits, every voluntary act became
+// invalid, and the Judge capitulated to silence four turns in a row.
+const gate3Thread: ConversationLedgerState["threads"][number] = {
+  id: "thread-1",
+  threadRootSeq: 1,
+  status: "open",
+  goal: "compare_information",
+  requestedAction: "discuss candidates",
+  candidates: ["A", "B", "C", "D"],
+  scopeCandidates: ["A", "B", "C", "D"],
+  focusCandidate: null,
+  focusBasis: "none",
+  participants: ["alex", "humanX", "humanY"],
+  evidenceSeqs: [1],
+  revision: 1,
+};
+const gate3State: ConversationLedgerState = {
+  ...createConversationLedgerState({
+    sessionKey: "T-GATE3",
+    observerVersion: "test-observer",
+    roster,
+  }),
+  currentTriggerSeq: 21,
+  contextThroughSeq: 21,
+  foregroundThreadId: "thread-1",
+  threads: [gate3Thread],
+};
+const nothingSurfaced = new Set<string>();
+const unfocusedEligible = eligibleTraitIdsForLedgerState(gate3State, nothingSurfaced);
+assert.equal(
+  unfocusedEligible.length,
+  24,
+  "a thread with no focus offers its whole scope, not nothing",
+);
+const focusedState: ConversationLedgerState = {
+  ...gate3State,
+  threads: [{ ...gate3Thread, focusCandidate: "C", focusBasis: "current_explicit" }],
+};
+const focusedEligible = eligibleTraitIdsForLedgerState(focusedState, nothingSurfaced);
+assert.equal(focusedEligible.length, 24, "focus reorders eligibility, it does not shrink it");
+assert.ok(
+  focusedEligible.slice(0, 6).every((id) => id.startsWith("C_")),
+  "the focus candidate's traits rank first",
+);
+assert.ok(
+  focusedEligible.slice(6).some((id) => id.startsWith("B_")),
+  "off-focus traits stay selectable behind the focused ones",
+);
+assert.equal(
+  eligibleTraitIdsForLedgerState(focusedState, new Set(["C_p1", "A_p1"])).length,
+  22,
+  "already surfaced traits are excluded regardless of focus",
+);
+assert.deepEqual(
+  eligibleTraitIdsForLedgerState(
+    { ...gate3State, threads: [{ ...gate3Thread, status: "resolved" }] },
+    nothingSurfaced,
+  ),
+  [],
+  "a thread that is no longer live offers nothing",
+);
+assert.deepEqual(
+  eligibleTraitIdsForLedgerState({ ...gate3State, threads: [] }, nothingSurfaced),
+  [],
+  "a missing foreground thread offers nothing",
+);
+
+// --- Gate 3c: following the humans no longer requires an opportunity ---------
+//
+// `follow` was classed as an interaction act, so it needed an opportunity id,
+// and the only kind that produces one (`uptake`) is minted only after a human
+// replies to Alex. While the humans talked to each other, taking up their point
+// was structurally illegal — the exact decision the Judge tried and lost on
+// turns 18, 21, 22, 23 and 24.
+const gate3cTranscript = new Set([1, 20, 21]);
+const voluntaryFollow = validateConversationLedgerJudgeDecision({
+  decision: {
+    decision: "speak",
+    act: "follow",
+    selectedOpportunityId: null,
+    evidence: "conversation_grounded_synthesis",
+    selectedTraitId: null,
+    evidenceSeqs: [20, 21],
+  },
+  state: gate3State,
+  eligibleTraitIds: [],
+  transcriptSeqs: gate3cTranscript,
+  cooldownAvailable: true,
+});
+assert.deepEqual(
+  voluntaryFollow.ruleCodes,
+  [],
+  "a grounded voluntary follow is valid with no opportunity open",
+);
+assert.equal(voluntaryFollow.ok, true);
+assert.deepEqual(
+  validateConversationLedgerJudgeDecision({
+    decision: {
+      decision: "speak",
+      act: "follow",
+      selectedOpportunityId: null,
+      evidence: "social_uptake",
+      selectedTraitId: null,
+      evidenceSeqs: [21],
+    },
+    state: gate3State,
+    eligibleTraitIds: [],
+    transcriptSeqs: gate3cTranscript,
+    cooldownAvailable: true,
+  }).ruleCodes,
+  ["voluntary_act_evidence_invalid"],
+  "a voluntary follow still has to be grounded in what was just said",
+);
+// The turns-18-to-24 output verbatim: an interaction act with no opportunity.
+// `participate` is a reply to a request, so it must still name the request.
+assert.deepEqual(
+  validateConversationLedgerJudgeDecision({
+    decision: {
+      decision: "speak",
+      act: "participate",
+      selectedOpportunityId: null,
+      evidence: "selected_open_opportunity",
+      selectedTraitId: null,
+      evidenceSeqs: [21],
+    },
+    state: gate3State,
+    eligibleTraitIds: [],
+    transcriptSeqs: gate3cTranscript,
+    cooldownAvailable: true,
+  }).ruleCodes,
+  ["interaction_act_missing_opportunity", "voluntary_act_evidence_invalid"],
+  "answering or participating without a request on record is still invalid",
+);
+
+// --- Gate 3d: candidate salience ranks eligibility when focus is null -------
+//
+// T-C2-037 turns 5-9. The humans eliminated Candidate C at seq 5 and carried
+// that point through seq 7 and 8 without naming anyone again. Every one of
+// those turns reached the Judge with `focusCandidate: null`, so the eligible
+// list arrived in trait-id order, the Judge read from the top, and Alex
+// broadcast a Candidate A note into a Candidate C discussion. Salience is the
+// state that was missing: it survives the turns where focus cannot be
+// expressed.
+const salienceTurns: Array<{ seq: number; mentioned: Candidate[] }> = [
+  { seq: 5, mentioned: ["C"] },
+  { seq: 7, mentioned: [] },
+  { seq: 8, mentioned: [] },
+];
+let salienceState: ConversationLedgerState | null = null;
+for (const turn of salienceTurns) {
+  salienceState = reduceConversationLedger(
+    salienceState,
+    observerDeltaFromTurn({
+      sessionKey: "T-C2-037-SALIENCE",
+      observerVersion: "test-observer",
+      roster,
+      sourceRole: "humanY",
+      currentTriggerSeq: turn.seq,
+      contextThroughSeq: turn.seq,
+      observation: observation({
+        speechAct: "answer",
+        mentionedCandidates: turn.mentioned,
+        scopeCandidates: ["A", "B", "C", "D"],
+        focusCandidate: null,
+        focusBasis: "none",
+        activeThread: {
+          threadId: "thread-1",
+          rootSeq: 1,
+          status: "open",
+          goal: "compare_information",
+          requestedAction: "discuss candidates",
+          candidates: ["A", "B", "C", "D"],
+          participants: [...roster],
+          expectedResponders: ["humanX", "humanY"],
+          alexParticipation: "invited",
+          evidenceSeqs: [turn.seq],
+        },
+      }),
+    }),
+  ).state;
+}
+const salienceThread = salienceState!.threads.find((thread) => thread.id === "thread-1")!;
+assert.equal(
+  salienceThread.candidateSalience?.C,
+  5,
+  "a literal mention records the seq it happened on",
+);
+assert.equal(
+  salienceThread.focusCandidate,
+  null,
+  "the observer's focus is still null on these turns",
+);
+assert.deepEqual(
+  candidateSalienceOrder(salienceThread).slice(0, 1),
+  ["C"],
+  "a turn that names nobody must not erase what the group was already on",
+);
+const salienceEligible = eligibleTraitIdsForLedgerState(
+  { ...salienceState!, foregroundThreadId: "thread-1" },
+  new Set<string>(),
+);
+assert.ok(
+  salienceEligible[0]?.startsWith("C_"),
+  "the most recently discussed candidate ranks first when focus is null",
+);
+assert.equal(
+  salienceEligible.length,
+  24,
+  "salience reorders eligibility, it does not shrink it",
+);
+assert.deepEqual(
+  candidateSalienceOrder({ ...salienceThread, focusCandidate: "D" }).slice(0, 1),
+  ["D"],
+  "an explicit focus still outranks recency",
+);
+
+// --- Gate 3e: an option the validator will reject is not offered ------------
+//
+// T-C2-037 turn 2. The only listed opportunity was invited, Alex had spoken on
+// the previous message, and `selected_opportunity_requires_cooldown` therefore
+// rejected it on both attempts — the turn produced no decision at all. Terminal
+// and stale-invited opportunities were already filtered for exactly this
+// reason; cooldown is the third class.
+const cooldownBlockedState: ConversationLedgerState = {
+  ...gate3State,
+  currentTriggerSeq: 2,
+  contextThroughSeq: 2,
+  opportunities: [
+    {
+      id: "opp:1:group_request:alex",
+      threadId: "thread-1",
+      kind: "group_request",
+      expectation: "invited",
+      sourceRole: "humanY",
+      opportunitySourceSeq: 1,
+      originActor: "alex",
+      originSeq: 1,
+      openedAtSeq: 2,
+      targets: ["alex"],
+      targetBasis: "inferred",
+      evidenceSeqs: [1, 2],
+      status: "open",
+      revision: 1,
+    },
+  ],
+};
+assert.equal(
+  conversationLedgerDecisionProjection(cooldownBlockedState, { cooldownAvailable: true })
+    .opportunities.length,
+  1,
+  "with cooldown available the invited opportunity is a real choice",
+);
+assert.equal(
+  conversationLedgerDecisionProjection(cooldownBlockedState, { cooldownAvailable: false })
+    .opportunities.length,
+  0,
+  "an opportunity cooldown forbids is context, not a choice",
+);
+assert.ok(
+  validateConversationLedgerJudgeDecision({
+    decision: {
+      decision: "speak",
+      act: "participate",
+      selectedOpportunityId: "opp:1:group_request:alex",
+      evidence: "selected_open_opportunity",
+      selectedTraitId: null,
+      evidenceSeqs: [2],
+    },
+    state: cooldownBlockedState,
+    eligibleTraitIds: [],
+    transcriptSeqs: new Set([1, 2]),
+    cooldownAvailable: false,
+  }).ruleCodes.includes("selected_opportunity_requires_cooldown"),
+  "the rule that made it unselectable is still enforced",
+);
+
+// --- Gate 3f: an inert field is repaired, not punished with silence ---------
+//
+// T-C2-037 turns 18, 19, 25 and 26 are one shape four times: the Judge asked to
+// follow the humans with a grounded synthesis and also filled selectedTraitId,
+// which reaches generation only through build_on + relevant_unsurfaced_information
+// and is inert here. Validation rejected the whole decision, and the retry took
+// the one output that always validates.
+const strayTrait = canonicalizeConversationLedgerJudgeDecision({
+  decision: "speak",
+  act: "follow",
+  selectedOpportunityId: null,
+  evidence: "conversation_grounded_synthesis",
+  selectedTraitId: "A_p2",
+  evidenceSeqs: [18],
+});
+assert.equal(strayTrait.decision.selectedTraitId, null, "the inert field is cleared");
+assert.equal(strayTrait.decision.act, "follow", "the decision itself is untouched");
+assert.deepEqual(
+  strayTrait.repairCodes,
+  ["trait_cleared_for_non_trait_evidence"],
+  "the repair is recorded rather than silently applied",
+);
+assert.deepEqual(
+  validateConversationLedgerJudgeDecision({
+    decision: strayTrait.decision,
+    state: gate3State,
+    eligibleTraitIds: ["A_p2"],
+    transcriptSeqs: new Set([18, 21]),
+    cooldownAvailable: true,
+  }).ruleCodes,
+  [],
+  "the repaired decision validates instead of forcing a retry",
+);
+const carriedTrait = canonicalizeConversationLedgerJudgeDecision({
+  decision: "speak",
+  act: "contribute",
+  selectedOpportunityId: null,
+  evidence: "relevant_unsurfaced_information",
+  selectedTraitId: "C_n1",
+  evidenceSeqs: [10],
+});
+assert.equal(
+  carriedTrait.decision.selectedTraitId,
+  "C_n1",
+  "a trait the evidence licenses is never cleared",
+);
+assert.deepEqual(carriedTrait.repairCodes, [], "an already-valid decision reports no repair");
+assert.ok(
+  validateConversationLedgerJudgeDecision({
+    decision: canonicalizeConversationLedgerJudgeDecision({
+      decision: "speak",
+      act: "contribute",
+      selectedOpportunityId: null,
+      evidence: "relevant_unsurfaced_information",
+      selectedTraitId: "Z_z9",
+      evidenceSeqs: [10],
+    }).decision,
+    state: gate3State,
+    eligibleTraitIds: ["C_n1"],
+    transcriptSeqs: new Set([10, 21]),
+    cooldownAvailable: true,
+  }).ruleCodes.includes("relevant_fact_trait_invalid"),
+  "repair never launders a trait id the ledger does not offer",
 );
 
 console.log("[conversation-ledger] deterministic reducer tests passed");

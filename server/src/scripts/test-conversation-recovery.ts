@@ -53,6 +53,71 @@ for (const content of ["Alex, thanks.", "Alex, Y부터 듣자.", "Don't let Y an
 }
 const held = normalizeConversationObservation({ ...observation, addressees: ["alex", "humanY"], expectedHumanResponder: "humanY", floor: { holder: "humanY", expectedNext: ["humanY"], transition: "held" } }, false);
 assert.equal(held.floor.holder, "humanY", "addressing Alex cannot cancel the observed human floor");
+
+// T-C2-037 turns 28 and 30. Both were second-person plural invitations — the
+// room is one speaker, one other human and Alex, so they addressed both — and
+// the observer resolved each to the single human with 0.9 confidence. That
+// produced no Alex opportunity and, through expectedHumanResponder, a floor the
+// router treats as an absolute veto: an explicit invitation became a
+// prohibition. Address resolution here is structural, not a reading of intent.
+const pluralInvitation = normalizeConversationObservation(
+  {
+    ...observation,
+    addressees: ["humanX"],
+    alexRelation: "group_participant",
+    speechAct: "question",
+    requestExplicitness: "explicit",
+    expectedHumanResponder: "humanX",
+    floor: { holder: "humanX", expectedNext: ["humanX"], transition: "held" },
+  },
+  false,
+  "humanY",
+  "Is this what the two of you are feeling also?",
+  28,
+  new Set([28]),
+  null,
+  roster,
+);
+assert.ok(
+  pluralInvitation.addressees.includes("alex") && pluralInvitation.addressees.includes("humanX"),
+  "a second-person plural address names every other participant",
+);
+assert.equal(
+  pluralInvitation.floor.holder,
+  "open",
+  "a request that addresses Alex too cannot leave a human holding an exclusive floor",
+);
+assert.ok(
+  pluralInvitation.floor.expectedNext.includes("alex"),
+  "both addressed participants are expected next",
+);
+const singularQuestion = normalizeConversationObservation(
+  {
+    ...observation,
+    addressees: ["humanX"],
+    alexRelation: "group_participant",
+    speechAct: "question",
+    requestExplicitness: "explicit",
+    expectedHumanResponder: "humanX",
+    floor: { holder: "humanX", expectedNext: ["humanX"], transition: "held" },
+  },
+  false,
+  "humanY",
+  "humanX, do you agree with that?",
+  28,
+  new Set([28]),
+  null,
+  roster,
+);
+assert.equal(
+  singularQuestion.floor.holder,
+  "humanX",
+  "an ordinary human-to-human question still reserves that human's turn",
+);
+assert.ok(
+  !singularQuestion.addressees.includes("alex"),
+  "the plural rule does not fire on a singular address",
+);
 let priorState = reduceConversationStateAfter({ anchorSeq: 1, conversationEpoch: 1, observation: { ...observation, focusCandidate: null } });
 for (let seq = 2; seq <= 4; seq++) {
   const normalized = normalizeConversationObservation(observation, false, "humanX", "그 지원자 얘기 계속하자", seq, new Set([1, 2, 3, 4]), priorState, roster);

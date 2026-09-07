@@ -11,6 +11,7 @@ import type {
 import { describeConversationSituation } from "./conversationObserver.js";
 import type { CommunicativeAct } from "../types.js";
 import {
+  candidateSalienceOrder,
   describeConversationLedger,
   opportunityMayBypassCooldown,
   type ConversationLedgerState,
@@ -374,9 +375,9 @@ const ConversationLedgerJudgeSchema = z.object({
 });
 
 export type ConversationLedgerJudgeDecision = z.infer<typeof ConversationLedgerJudgeSchema>;
-export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v3";
+export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v4";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v3";
+  "conversation-ledger-judge-prompt-v5";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
   "conversation-ledger-judge-schema-v2";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
@@ -398,6 +399,8 @@ export interface ConversationLedgerJudgeCallAttempt {
   error?: string;
   parsedOutput?: ConversationLedgerJudgeDecision;
   ruleCodes?: string[];
+  /** Shape repairs applied before validation; see `canonicalizeConversationLedgerJudgeDecision`. */
+  repairCodes?: string[];
   usage?: {
     inputTokens: number;
     outputTokens: number;
@@ -424,6 +427,7 @@ Only select an opportunity whose exact id is listed with status open. Deferred a
 
 Voluntary acts have no selectedOpportunityId:
 - contribute adds a relevant non-redundant fact, factual correction, or concrete synthesis.
+- follow takes up the point the humans just made and carries it one step further. Use it, with evidence=conversation_grounded_synthesis, when the useful move is to build directly on what was just said rather than to introduce a new fact. It needs no opportunity: follow is the act for the uptake opportunity kind when one is open, and is also available voluntarily when none is.
 - acknowledge is brief social uptake without a new fact or agenda change.
 - mediate is reserved for an explicit unresolved process blockage.
 
@@ -432,7 +436,7 @@ When an open required opportunity was opened on the current trigger and no human
 
 For every selected opportunity, use exactly: decision=speak, the act fixed above for its kind, evidence=selected_open_opportunity, and selectedTraitId=null. A selected invited opportunity does not automatically bypass cooldown. Without ordinary cooldown, only a required opportunity or the current foreground uptake cluster with current-trigger evidence may be selected.
 
-For relevant_unsurfaced_information, select exactly one supplied eligible trait id. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
+For relevant_unsurfaced_information, select exactly one supplied eligible trait id. The eligible list covers every candidate in the thread's scope, ordered by what the group is currently on: the explicit focus candidate first when there is one, then the most recently named candidate. That order is a hint, not a restriction. Pick the id that fits the candidate the humans are actually discussing on this turn, reading the transcript rather than the position in the list; a fact about a candidate the group has moved past is not a useful move. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
 
 const ACT_FOR_OPPORTUNITY_KIND: Record<OpportunityKind, CommunicativeAct> = {
   direct_question: "answer",
@@ -537,8 +541,15 @@ export function validateConversationLedgerJudgeDecision(input: {
     }
   } else if (
     decision.decision === "speak" &&
-    (decision.act === "answer" || decision.act === "participate" || decision.act === "follow")
+    (decision.act === "answer" || decision.act === "participate")
   ) {
+    // `follow` is deliberately no longer listed here. Answering and
+    // participating are replies to a request somebody made, so they need that
+    // request on record. Picking up the point a human just made is not a reply
+    // to a request — yet `uptake`, the only opportunity kind that maps to
+    // `follow`, is minted only after a human responds to Alex. So for the whole
+    // stretch where the humans talked to each other, following them was
+    // structurally illegal and the Judge had to fall back to silence.
     ruleCodes.push("interaction_act_missing_opportunity");
   }
   if (!decision.selectedOpportunityId && decision.decision === "speak") {
@@ -553,7 +564,14 @@ export function validateConversationLedgerJudgeDecision(input: {
           ? decision.evidence === "social_uptake"
           : decision.act === "mediate"
             ? decision.evidence === "conversation_grounded_synthesis"
-            : false;
+            : decision.act === "follow"
+              // A voluntary follow still has to earn the floor with something
+              // the humans just said. Restricting it to grounded synthesis
+              // keeps it distinct from `contribute` (which carries a fact or a
+              // correction) and stops it degenerating into an unconditional
+              // right to speak on every turn.
+              ? decision.evidence === "conversation_grounded_synthesis"
+              : false;
     if (!validVoluntaryEvidence) ruleCodes.push("voluntary_act_evidence_invalid");
   }
   if (decision.evidence === "relevant_unsurfaced_information") {
@@ -597,6 +615,7 @@ export function validateConversationLedgerJudgeDecision(input: {
  */
 export function conversationLedgerDecisionProjection(
   state: ConversationLedgerState,
+  options?: { cooldownAvailable?: boolean },
 ): ConversationLedgerState {
   return {
     ...state,
@@ -609,9 +628,54 @@ export function conversationLedgerDecisionProjection(
       ) {
         return false;
       }
+      // Same principle as the two filters above, applied to the last class of
+      // option the Judge could see but never take. Without ordinary cooldown
+      // only a required opportunity or the current uptake cluster is
+      // selectable; everything else is rejected by
+      // `selected_opportunity_requires_cooldown`. T-C2-037 turn 2 listed one
+      // such opportunity and nothing else, the model selected it twice, and the
+      // turn ended in `ledger_judge_failure` — no decision at all.
+      if (
+        options?.cooldownAvailable === false &&
+        !opportunityMayBypassCooldown(state, opportunity)
+      ) {
+        return false;
+      }
       return true;
     }),
   };
+}
+
+/**
+ * Repairs a Judge output whose shape is wrong in a way that cannot change what
+ * Alex would say, before deterministic validation sees it.
+ *
+ * Validation exists to reject decisions that mean the wrong thing. It was also
+ * rejecting decisions that meant the right thing in the wrong fields, and the
+ * retry's cheapest always-valid answer is `silent` — so a stray field became a
+ * silence. In T-C2-037 the same violation, `trait_present_for_non_trait_evidence`,
+ * cost four turns this way.
+ *
+ * Only one repair qualifies today. `selectedTraitId` reaches generation solely
+ * through `build_on` + `relevant_unsurfaced_information`; under any other
+ * evidence the field is inert, so clearing it is provably meaning-preserving.
+ * The opposite repair — promoting the evidence to match the trait — is not:
+ * it would hand the turn a licence to reveal a private note that the Judge
+ * never asked for. Anything that could change meaning must still be rejected.
+ */
+export function canonicalizeConversationLedgerJudgeDecision(
+  decision: ConversationLedgerJudgeDecision,
+): { decision: ConversationLedgerJudgeDecision; repairCodes: string[] } {
+  if (
+    decision.selectedTraitId !== null &&
+    decision.evidence !== "relevant_unsurfaced_information"
+  ) {
+    return {
+      decision: { ...decision, selectedTraitId: null },
+      repairCodes: ["trait_cleared_for_non_trait_evidence"],
+    };
+  }
+  return { decision, repairCodes: [] };
 }
 
 /**
@@ -667,7 +731,9 @@ export async function judgeConversationLedgerTurn(input: {
   backchannelAvailable: boolean;
   eligibleTraitIds: string[];
 }): Promise<ConversationLedgerJudgeCallResult> {
-  const decisionState = conversationLedgerDecisionProjection(input.state);
+  const decisionState = conversationLedgerDecisionProjection(input.state, {
+    cooldownAvailable: input.cooldownAvailable,
+  });
   const transcript = input.messages
     .filter((message) => message.seq <= input.state.contextThroughSeq)
     .map((message) => `[${message.seq}] ${message.speaker}: ${message.content}`)
@@ -682,7 +748,7 @@ export async function judgeConversationLedgerTurn(input: {
     ? decisionState.threads.find((thread) => thread.id === decisionState.foregroundThreadId)
     : undefined;
   const openOpportunities = decisionState.opportunities.filter((item) => item.status === "open");
-  const user = `Current selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nInfrastructure availability:\n- Messages since Alex: ${input.messagesSinceAlex}\n- Ordinary cooldown available: ${input.cooldownAvailable}\n- Backchannel interval available: ${input.backchannelAvailable}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nComplete transcript:\n${transcript}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  const user = `Current selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nInfrastructure availability:\n- Messages since Alex: ${input.messagesSinceAlex}\n- Ordinary cooldown available: ${input.cooldownAvailable}\n- Backchannel interval available: ${input.backchannelAvailable}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nComplete transcript:\n${transcript}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
   const attempts: ConversationLedgerJudgeCallAttempt[] = [];
   let priorRuleCodes: string[] = [];
   let priorDecisionJson = "none";
@@ -739,15 +805,22 @@ export async function judgeConversationLedgerTurn(input: {
         attempts.push({ ...baseAttempt, status: "output_parsed_null" });
         continue;
       }
+      const canonical = canonicalizeConversationLedgerJudgeDecision(response.output_parsed);
       const validation = validateConversationLedgerJudgeDecision({
-        decision: response.output_parsed,
+        decision: canonical.decision,
         state: decisionState,
         eligibleTraitIds: input.eligibleTraitIds,
         transcriptSeqs: new Set(input.messages.map((message) => message.seq)),
         cooldownAvailable: input.cooldownAvailable,
       });
       if (validation.ok && validation.value) {
-        attempts.push({ ...baseAttempt, status: "accepted" });
+        attempts.push({
+          ...baseAttempt,
+          status: "accepted",
+          ...(canonical.repairCodes.length
+            ? { parsedOutput: response.output_parsed, repairCodes: canonical.repairCodes }
+            : {}),
+        });
         return { decision: validation.value, attempts };
       }
       attempts.push({
@@ -755,9 +828,10 @@ export async function judgeConversationLedgerTurn(input: {
         status: "validation_failed",
         parsedOutput: response.output_parsed,
         ruleCodes: validation.ruleCodes,
+        ...(canonical.repairCodes.length ? { repairCodes: canonical.repairCodes } : {}),
       });
       priorRuleCodes = validation.ruleCodes;
-      priorDecisionJson = JSON.stringify(response.output_parsed);
+      priorDecisionJson = JSON.stringify(canonical.decision);
     } catch (error: any) {
       clearTimeout(timeout);
       const message = error?.message ?? String(error);

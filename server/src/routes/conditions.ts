@@ -14,7 +14,7 @@ import { getRoutePrompt, getRoutePromptRegistryView } from "../lib/routePromptRe
 import { buildRouteUserContext } from "../lib/routeContext.js";
 import { transcriptLabel } from "../lib/labels.js";
 import { routeGenerationLimits } from "../lib/routeTurn.js";
-import { extractSurfacedTraits } from "../lib/poolingExtractor.js";
+import { extractHumanTraitsFast, extractSurfacedTraits, verifyHumanTraitCandidates } from "../lib/poolingExtractor.js";
 import { TRAIT_BY_ID } from "../lib/traitData.js";
 import { generateScopedRouteMessage } from "../lib/routeScopedGeneration.js";
 
@@ -30,7 +30,7 @@ conditionsRouter.post("/test-chat", requireAdmin, async (req, res) => {
   const { conditionCode, routeKind, transcript } = req.body as {
     conditionCode?: ConditionCode;
     routeKind?: RouteKind;
-    transcript?: { sender: string; content: string }[];
+    transcript?: { sender: string; content: string; assignedProfile?: "X" | "Y" | "Z" }[];
   };
 
   //CTRL은 AI 없음
@@ -56,7 +56,17 @@ conditionsRouter.post("/test-chat", requireAdmin, async (req, res) => {
       transcript.map(async (message, index) => ({
         index,
         sender: message.sender,
-        ids: await extractSurfacedTraits(message.content),
+        ids: await (message.sender === "ai"
+          ? extractSurfacedTraits(message.content)
+          : (() => {
+              const fast = extractHumanTraitsFast({
+                messageText: message.content,
+                assignedProfile: message.assignedProfile,
+              });
+              return verifyHumanTraitCandidates({ messageText: message.content, candidates: fast.verificationCandidates }).then((verified) =>
+                [...new Set([...fast.acceptedIds, ...verified.ids])],
+              );
+            })()),
       })),
     );
     const humanSurfacedIds = [
