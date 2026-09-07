@@ -791,6 +791,73 @@ cheaper interim is to make a fact-less `follow` silent again in C1/C3 only.
 Length itself improved: Alex averaged **30.8 words** here against 43.8 in
 C1-020. The failure moved from too long to empty.
 
+## 4e. Fourth measurement — T-C1-023, restarted server (2026-09-07)
+
+**A6 is in effect and works.** Per-turn arithmetic now fits
+`observer + judge + max(floor, generation)` plus a constant tail:
+
+| anchor | observer | judge | generation | sequential | overlapped | measured |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6 | 6.40 s | 2.36 s | 5.14 s | 15.9 s | 13.9 s | **16.6 s** |
+| 9 | 6.75 s | 1.30 s | 2.66 s | 12.7 s | 10.7 s | **13.2 s** |
+| 14 | 5.18 s | 0.98 s | 0 (deterministic) | 8.2 s | 8.2 s | **11.7 s** |
+
+Every spoken turn lands on **overlapped + 2.5–3.5 s**, not on sequential. The
+constant excess is the pre-broadcast AI-side trait extraction (`routeTurn.ts:553`)
+— clearest at anchor 14, where generation was deterministic (0 ms) and 3.5 s of
+tail remained anyway. **A7 is now the single largest remaining item on the
+spoken path**, and its size is measured rather than estimated.
+
+**Silent turns regressed: 9.5 s mean (6.7 s in T-C1-022).** The Observer is the
+whole of it — 4.7 to 10.5 s per call, and its *output* grew monotonically
+through the session, 270 → 531 tokens, as unclosed opportunities and thread
+revisions accumulated (`opp:3`, `opp:4`, `opp:5` all still open at the end).
+This is B1 and B4 measured on live data: the Observer's cost is not flat, it
+**grows with ledger clutter**, so the TTL and the schema cut are the same fix
+seen from two sides. Observer caching held (2432–2816 on 7 of 11 turns).
+
+### New defect: the ledger and the floor disagree inside one observation
+
+Turns 3, 4 and 5 were three consecutive `ledger_router_human_floor_held`
+silences on explicit invitations. The observation for each says, at once:
+
+- `alexRelation: "explicit_addressee"` — which fires Gate 1's
+  `alex_addressee_taken_from_explicit_relation` repair and **mints an Alex
+  opportunity**;
+- `addressees: ["humanY"]` — which is what the Gate 3D floor rule reads, so it
+  does not see Alex, leaves `expectedHumanResponder: humanY`, and the router
+  vetoes.
+
+So the ledger records "Alex has an open invitation" while the floor records
+"Alex may not speak", from the same observation, because the two rules dispatch
+on **different fields for the same question**. Gate 1 established that
+`alexRelation === "explicit_addressee"` is an equally valid signal that a turn
+addresses Alex; Gate 3D should have used that same predicate and did not. Mine
+to fix. New item **B9** — cheap, and it cost three turns in a row here.
+
+### The leader-like behaviour is coming from a deterministic template
+
+At seq 14 a participant asked "do you have any other positives or negatives
+other than the ones listed?" — a request for Alex's *additional* items. The
+Observer classified it `requestIntentKind: complete_all_candidates`, which
+routed to `server-deterministic-peer-complete`, and Alex emitted a formatted
+board recap ending "Still to cover: B, C, D".
+
+Three separate problems, none of them generation quality:
+1. intent misclassification — the question asked for an increment, not a recap;
+2. the template emits a **bulleted, tabulated layout** that `outputDiscipline`
+   explicitly forbids ("no Markdown bullets, labels, analysis") — deterministic
+   routes bypass the output contract entirely;
+3. "Still to cover: B, C, D" is **agenda-setting**, which is Leader behaviour
+   appearing in a Peer session.
+
+**Gate D will not touch this** — it is not the model's output. New item **D6**,
+and it is the more likely source of the "Alex is mediating like a leader"
+impression than the fact-less `follow` turns are.
+
+The fact-less `follow` pattern from T-C1-022 also recurred (seq 10, "I'll stay
+on A until we agree to move on"). Same Gate D item, unchanged.
+
 ### Gate B — Observer: read the facts, cheaply and correctly
 
 | # | Change |
@@ -802,6 +869,7 @@ C1-020. The failure moved from too long to empty.
 | B5 | **Compact the carried state.** Keep the transcript whole (cache-friendly); pass the previous ledger as a compact delta rather than a full JSON dump. |
 | B6 | *(from retired item 11)* Stop the C2 task-grounding regex from bypassing the Observer snapshot, and give C2 a question-form variant. Re-observed at T-C2-039 seq 5–6. |
 | B7 | **Revise the thread's `requestedAction`.** It is written once when the thread is created and never updated, so a thread rooted at Alex's greeting told the generator "greet participants" for a whole session (T-C1-022, seq 10). It must track what the group is currently doing, or stop being passed to generation as an instruction. |
+| B9 | **One predicate for "this turn addresses Alex".** Gate 1's opportunity derivation accepts `alexRelation === "explicit_addressee"`; Gate 3D's floor rule reads `addressees` only. T-C1-023 turns 3–5 produced an Alex opportunity and an Alex-excluding floor from the same observation, losing three consecutive turns. Both must dispatch on the same predicate. |
 | B8 | **Bound the Observer review path.** `observerReviewed: true` makes a second full call — 12.2 s of observer on one turn in T-C1-022, against a 3.9 s single-call floor. Either the review inherits B1's smaller schema or it is capped, otherwise B1's savings are erased on exactly the turns that are already slowest. |
 
 ### Gate C — Judge: a goal, not a rubber stamp
@@ -830,6 +898,7 @@ Two prompt-only attempts have failed. Enforce it.
 | D3 | **Per-turn reveal budget as a hard guard.** Give `address` and `followup` a `maxTraitIds`; they currently have none. This is what permitted the 15-trait message. Violations go through the existing repair loop. *(absorbs original item 8 — a permitted brief uptake opener is part of this rewrite)* |
 | D4 | **Deterministic anti-repeat.** Inject `revealStats.aiSurfacedIds` as "already stated by you" and forbid restatement outside an explicit full-list request. C profile was recited 4× and D 3× in T-C1-020. |
 | D5 | **Add a length post-condition** to `outputScopeViolation()` (sentence and word count), and trim the `outputDiscipline` exception clause ("explicitly requested full list or comparison") that is currently firing on ordinary turns. |
+| D6 | **Bring deterministic routes under the output contract.** `server-deterministic-peer-complete` emitted a bulleted board recap ending "Still to cover: B, C, D" — layout the output discipline forbids, and agenda-setting a Peer must not do. It bypasses every generation guard because it is not generated. Either it emits chat prose under the same rules, or Peer conditions do not get an agenda line. Also re-check the `complete_all_candidates` intent that routed to it: the participant asked for Alex's *additional* items. |
 
 ### Measurement targets
 
@@ -944,6 +1013,17 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
   + recovery + intervention-v2 green. Cooldown bypass deliberately not added —
   its motivating turn is downstream of the ranking defect. Measured effect
   pending a live replay.
+- 2026-09-07 — T-C1-023 measured on a restarted server. **A6 confirmed
+  working**: every spoken turn fits `observer + judge + max(floor, generation)`
+  plus a constant 2.5–3.5 s tail, and that tail is the pre-broadcast AI-side
+  trait extraction — A7 is now measured, not estimated, and is the largest
+  remaining item on the spoken path. Silent turns regressed to 9.5 s because
+  Observer output grew 270 → 531 tokens with ledger clutter, which is B1 and B4
+  measured from live data. Two new items: B9 (the opportunity derivation and the
+  floor rule dispatch on different fields for the same question and contradicted
+  each other for three consecutive turns — my Gate 3D omission) and D6 (the
+  leader-like agenda line comes from a deterministic template that bypasses the
+  output contract, not from generation). No code changed.
 - 2026-09-07 — T-C1-022 measured (diagnosis only, no code changed). Silent turns
   held at 6.7 s; spoken turns did not improve, and the arithmetic says A6 was
   not in effect — re-measure on a restarted server. A3 confirmed for the
