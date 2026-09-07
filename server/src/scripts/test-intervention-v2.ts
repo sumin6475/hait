@@ -52,7 +52,7 @@ import {
   outputScopeSoftViolations,
   outputScopeViolation,
 } from "../lib/routeScopedGeneration.js";
-import { validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
+import { extractHumanTraitsFast, validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
 import {
   blocksConsecutiveAITurn,
   deterministicGreetingContent,
@@ -2228,6 +2228,101 @@ assert.equal(
   "trait_outside_current_candidate",
 );
 
+// ─────────────────────────────────────────────────────────────────────────────
+// [D3/D4] Per-turn reveal budget. `address` and `followup` carried no
+// trait-count guard at all unless a request scope happened to supply one. Both
+// messages below are Alex's own verbatim output from T-C1-025, where D6 stopped
+// routing the opening turn to a deterministic template and the fallthrough to
+// generation disclosed most of Alex's private profile on the third message of
+// the session, then repeated it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const d3OrdinaryTurn = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 3,
+  messages: [
+    {
+      seq: 3,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Hello! I think it would be best to just go through what information we have on each candidate",
+    },
+  ],
+  revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+} as any);
+assert.equal(d3OrdinaryTurn.requestIntent.kind, "none", "an ordinary turn carries no request");
+assert.deepEqual(
+  d3OrdinaryTurn.outputScopeGuard,
+  { candidate: null, maxTraitIds: 1, maxRestatedTraitIds: 2, reason: "route_reveal_budget" },
+  "a turn with no request gets the per-turn reveal budget",
+);
+
+// Alex's verbatim seq 4: sixteen traits matched across all four candidates,
+// including six of the eight notes Alex alone holds.
+const d3Dump = "For Candidate A I have that they match on recognizing dangerous situations, having a good overview of complex contexts, excellent spatial awareness, and being very well organized; they miss on being friendly and they transmit restlessness. For Candidate B I have that they match on keeping a cool head in crises, being reliably dependable, assessing weather conditions well, and multitasking; they miss on being considered arrogant and sometimes abusive in tone. For Candidate C I have that they match on making quick correct decisions, prioritizing the safety of people in their care, and sustained attention; they miss on verbal skill, are considered egocentric, and are reluctant to take part in training. For Candidate D I have that they match on reacting adequately to unforeseen events, concentrating well, being very resilient, and being very responsible; they miss on being considered moody and having strong prejudices.";
+const d3DumpIds = [
+  ...new Set(extractHumanTraitsFast({ messageText: d3Dump, assignedProfile: "Z" }).acceptedIds),
+];
+assert.ok(d3DumpIds.length > 10, "the observed message really does carry a whole-profile dump");
+assert.equal(
+  outputScopeViolation(d3Dump, d3DumpIds, d3OrdinaryTurn.outputScopeGuard!, []),
+  "too_many_traits",
+);
+
+// Alex's verbatim seq 7: fifteen traits, none of them new. `maxTraitIds` counts
+// only newly introduced ids, so without a restated bound this recital passes.
+const d3Repeat = "That sounds fine to me; I agree with going through each candidate. From what I\u2019ve got, Candidate A matches on recognizing dangerous situations, overview of complex contexts, excellent spatial awareness, and being very well organized, and misses on friendliness and transmitting restlessness. Candidate B matches on keeping a cool head in crises, being reliably dependable, assessing weather well, and multitasking, and misses on being considered arrogant and sometimes abusive in tone. Candidate C matches on making quick correct decisions, prioritizing safety of people in their care, and sustained attention, and misses on verbal skill, being considered egocentric, and reluctance to take part in training. Candidate D matches on reacting adequately to unforeseen events, concentrating well, being very resilient, and very responsible, and misses on being considered moody and having strong prejudices.";
+const d3RepeatIds = [
+  ...new Set(extractHumanTraitsFast({ messageText: d3Repeat, assignedProfile: "Z" }).acceptedIds),
+];
+assert.equal(
+  d3RepeatIds.filter((id) => !d3DumpIds.includes(id)).length,
+  0,
+  "the repeat introduces nothing new, which is precisely why maxTraitIds misses it",
+);
+assert.equal(
+  outputScopeViolation(d3Repeat, d3RepeatIds, d3OrdinaryTurn.outputScopeGuard!, d3DumpIds),
+  "too_many_restated_traits",
+);
+
+// An ordinary reply is unaffected in both directions.
+const d3Fine = "That sounds good. One thing I have on Candidate A is that they have excellent spatial awareness.";
+assert.equal(
+  outputScopeViolation(
+    d3Fine,
+    [...new Set(extractHumanTraitsFast({ messageText: d3Fine, assignedProfile: "Z" }).acceptedIds)],
+    d3OrdinaryTurn.outputScopeGuard!,
+    [],
+  ),
+  null,
+);
+
+// An explicit request keeps its own scope, including the decision to impose no
+// trait-count limit — that is the turn which may legitimately name many traits.
+const d3ExplicitAll = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: [
+    {
+      seq: 9,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Alex, what do you have for all candidates?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+} as any);
+assert.equal(d3ExplicitAll.requestIntent.kind, "complete_all_candidates");
+assert.equal(
+  d3ExplicitAll.outputScopeGuard,
+  undefined,
+  "an explicit all-candidate request is never clipped by the per-turn budget",
+);
+
 // [RequestIntent] edge 1/2 — "테이블에 나온 전체" 요청과 "알렉스가 가진 전체" 요청 구분.
 // Every condition answers the exact visible board; status never removes normal
 // AI answer competence.
@@ -2676,7 +2771,25 @@ const bareAddressContext = buildRouteUserContext({
 });
 assert.equal(bareAddressContext.focusDepthState.candidate, "A");
 assert.equal(bareAddressContext.outputScopeGuard?.reason, "focus_depth");
-assert.equal(bareAddressContext.outputScopeGuard?.maxTraitIds, undefined);
+// [D3] CHANGED ASSERTION. This previously required `maxTraitIds` to be
+// undefined here, on the design note that "candidate focus and trait-count
+// limits are independent" — a depth lock keeps the subject stable and only
+// Turn Metadata or an explicit request should limit how many traits an answer
+// may carry. That separation is still right about *scope*, and the candidate
+// lock below is unchanged. It was wrong about there being any other bound:
+// nothing at all limited the count on address/followup, so a bare "Alex?" could
+// answer with every trait Alex holds for the focused candidate. T-C1-020 seq 4
+// revealed fifteen, and T-C1-025 seq 4 revealed seventeen across all four
+// candidates once D6 stopped a template from accidentally capping that turn.
+// The explicit-request paths that the note was protecting are untouched: they
+// set their own scope, including no limit, and never reach this budget.
+assert.equal(bareAddressContext.outputScopeGuard?.maxTraitIds, 1);
+assert.equal(bareAddressContext.outputScopeGuard?.maxRestatedTraitIds, 2);
+assert.equal(
+  bareAddressContext.outputScopeGuard?.candidate,
+  "A",
+  "the depth lock still scopes the candidate exactly as before",
+);
 // [T-C4-019] 반복 방지 블록은 address/followup에만 주입된다 (long_silence/build_on은 자체 규칙 보유).
 assert.match(bareAddressContext.userPrompt, /Anti-repeat \(server-derived\)/);
 assert.doesNotMatch(focusedLongSilenceContext.userPrompt, /Anti-repeat/);

@@ -7,6 +7,7 @@ import { Message } from "../models/Message.js";
 import { Participant } from "../models/Participant.js";
 import {
   CONVERSATION_OBSERVER_OUTPUT_SCHEMA, observerResultFromParsed,
+  conversationObserverReviewReason, observationRosterConflicts,
   enqueueConversationObservation, liveObservationAnchorSeq, normalizeConversationObservation,
   reduceConversationStateAfter, type ConversationObserverResult,
 } from "../lib/conversationObserver.js";
@@ -453,5 +454,124 @@ assert.equal(
   false,
   "a whole accumulated evidence history is rejected by the contract",
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [B8] The Observer review path makes a second full call — 5.8 s + 6.4 s on one
+// turn of T-C1-022, against a 3.9 s single-call floor. It has to be reserved for
+// contradictions the deterministic normalizer cannot settle.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const b8Normalize = (patch: Partial<ConversationObserverResult>) =>
+  normalizeConversationObservation(
+    { ...observation, ...patch } as ConversationObserverResult,
+    false, "humanX", "Alex, what next?", 9, new Set([9]), null, roster,
+  );
+
+// B8a — the floor trigger was unreachable, and removing unreachable code is not
+// itself regression-coverable: no input can distinguish its presence from its
+// absence. What IS asserted is the reason it was unreachable — normalization
+// resolves an "available" transition to an open floor (or to unclear when the
+// holder is off-roster) before the trigger is evaluated — so if that ever stops
+// holding, this fails and the deleted trigger has to be reconsidered.
+for (const holder of ["humanY", "alex"] as const) {
+  const normalized = b8Normalize({ floor: { holder, expectedNext: [holder], transition: "available" } });
+  assert.equal(normalized.floor.holder, "open", "an available transition means nobody holds the floor");
+  assert.equal(
+    conversationObserverReviewReason(normalized, []),
+    null,
+    "a floor the normalizer already resolved never buys a second model call",
+  );
+}
+
+// B8b — a roster conflict is repaired by the normalizer's actor filtering, so
+// nothing survives to conflict. End to end: an observation naming an off-roster
+// actor must cost ONE model call, not two, and must not degrade the controller.
+// Reporting the raw conflicts did both — a second full observation, and an
+// `observer_conflict:*` material rejection that sets degradedMode and forbids
+// all inferred speech, over an output the next line had already repaired.
+const b8Raw = {
+  ...observation,
+  addressees: ["alex", "humanZ"],
+  floor: { holder: "humanZ", expectedNext: ["humanZ"], transition: "held" },
+} as ConversationObserverResult;
+assert.ok(
+  observationRosterConflicts(b8Raw, roster).length > 0,
+  "the raw model output really does name an off-roster actor",
+);
+{
+  const b8Records: any[] = [
+    { sessionId: "b8-test", anchorSeq: 1, stateAfter: priorState, ledgerStateAfter: initial },
+  ];
+  const b8Messages = [1, 4].map((seq) => ({
+    seq,
+    senderRole: "humanX",
+    content: seq === 1 ? "Compare A and B" : "and what do you make of that?",
+  }));
+  const bq8 = (value: unknown) => ({ sort() { return this; }, select() { return this; }, lean: async () => value });
+  let b8ParseCalls = 0;
+  const oldMode8 = config.conversationObserverMode;
+  const oldKey8 = config.openaiApiKey;
+  try {
+    config.conversationObserverMode = "active";
+    config.openaiApiKey = "test-no-network";
+    mock.method(Message, "find", (filter: any) => bq8(b8Messages.filter((m) => m.seq <= filter.seq.$lte)) as any);
+    mock.method(Participant, "find", () => bq8([{ role: "humanX" }, { role: "humanY" }]) as any);
+    mock.method(ConversationObservation, "findOne", (filter: any) => bq8([...b8Records].reverse().find((r) => r.anchorSeq < filter.anchorSeq.$lt && (!filter.stateAfter || r.stateAfter) && (!filter.ledgerStateAfter || r.ledgerStateAfter))) as any);
+    mock.method(ConversationObservation, "updateOne", async (filter: any, update: any) => {
+      let record = b8Records.find((item) => item.anchorSeq === filter.anchorSeq);
+      if (!record) { record = { ...filter }; b8Records.push(record); }
+      Object.assign(record, update.$set);
+      return {} as any;
+    });
+    mock.method(Responses.prototype, "parse", (async () => {
+      b8ParseCalls++;
+      return {
+        model: "test",
+        output_parsed: {
+          ...observation,
+          ...quiet,
+          addressees: ["alex", "humanZ"],
+          floor: { holder: "humanZ", expectedNext: ["humanZ"], transition: "held" },
+        },
+      };
+    }) as any);
+    const b8Result = await enqueueConversationObservation({
+      sessionId: "b8-test", anchorSeq: 4, conversationEpoch: 4, explicitAlexDefer: false,
+    });
+    assert.equal(b8ParseCalls, 1, "an off-roster actor the normalizer strips costs one model call, not two");
+    assert.equal(
+      b8Records.find((r) => r.anchorSeq === 4)?.observerReviewed,
+      false,
+      "and does not send the turn through the review path",
+    );
+    assert.deepEqual(b8Result?.observation.addressees, ["alex"], "the off-roster actor is filtered out");
+    assert.equal(
+      b8Result?.ledgerStateAfter?.degradedMode,
+      false,
+      "an already-repaired output is not a material contradiction and must not degrade the controller",
+    );
+    assert.ok(
+      (b8Result?.repairCodes ?? []).some((code: string) => code.startsWith("roster_conflicts_normalized:")),
+      "the raw conflict stays visible in the audit as a repair",
+    );
+  } finally {
+    mock.restoreAll();
+    config.conversationObserverMode = oldMode8;
+    config.openaiApiKey = oldKey8;
+  }
+}
+
+// B8c — the one contradiction nothing deterministic can settle still triggers a
+// review, and now says why, because the review overwrites the initial
+// observation in the record and used to leave no trace of its cause.
+const b8Contradiction = b8Normalize({
+  alexRelevance: "not_relevant",
+  activeThread: { ...observation.activeThread!, alexParticipation: "required" },
+});
+assert.equal(
+  conversationObserverReviewReason(b8Contradiction, []),
+  "alex_participation_contradiction",
+);
+assert.equal(conversationObserverReviewReason(b8Contradiction, ["something_unresolved"]), "unresolved_conflict");
 
 console.log("[conversation-recovery] semantic authority, lifecycle, generation, observer failure recovery and burst supersession passed");

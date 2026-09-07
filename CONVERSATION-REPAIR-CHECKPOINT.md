@@ -3,7 +3,7 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-07 — after T-C1-024, D6, B4 and B1
+Last updated: 2026-09-07 — after T-C1-025, D3/D4 and B8; overlap designed in §4h
 
 > **This file is the single source of truth for this work.** Read it first in a
 > new session; it replaces re-deriving the diagnosis. Status is maintained here,
@@ -46,26 +46,25 @@ and either location can be recovered from the other.
 | D6 · deterministic template under the output contract | **DONE** | Gate D table, §4f |
 | B4 · opportunity lifetime | **DONE** | Gate B table |
 | B1 · Observer output schema | **DONE**, but its premise was wrong | Gate B table, §4g |
-| B8 · bound the Observer review path | **OPEN — next** | Gate B table |
+| B8 · bound the Observer review path | **DONE** | Gate B table |
+| D3/D4 · per-turn reveal budget | **DONE** — fixes the D6 regression | Gate D table, §4f-bis |
 | B2, B3, B6, B7 · Observer accuracy | OPEN — **no latency benefit expected** | Gate B table, §4g |
-| Observer overlap (new) | **OPEN — the only item that can reach ≤5 s** | §4g |
+| Observer overlap | **DESIGNED, awaiting a decision** | §4h |
 | Gate C · Judge role goals | **BLOCKED on the user** (§ Open decisions) | Gate C |
 | Gate D · D1–D5 generator length, emptiness, anti-repeat | OPEN | Gate D |
 
 **Do next, in this order.**
 
-1. **Read §4g first.** B1 landed, and measuring it showed Gate B's premise does
-   not hold: the Observer's output is not mostly padding (a full cut is 7%) and
-   its latency does not track output size within the observed range. Plan the
-   rest of Gate B accordingly.
-2. **B8**, which is unaffected by that finding — a second full Observer call is
-   the one mechanism that demonstrably doubles a turn (12.2 s in T-C1-022).
-3. **Decide on overlapping the Observer** (§4g item 2). At ~6.5 s mean and ~2 s
-   standard deviation it is the only remaining item that can reach the ≤5 s
-   median target, and it is the structural analogue of A6.
-4. **Gate D, D1–D5.** D6 is done. The remaining items are evidenced verbatim in
-   §4d, §4e and §4f; D4 (anti-repeat) has the sharpest evidence — T-C1-024 seq 13
-   contained *zero* new information.
+1. **Run a live session.** D3/D4 and B8 have never been observed live, and D3 is
+   a regression fix on the study's central variable — confirm that Alex's opening
+   turn now discloses at most one trait, and that repair exhaustion (which fails
+   closed, costing the turn) is rare rather than routine.
+2. **Decide on the Observer overlap** — §4h sets out three options with measured
+   expectations and the behaviour change each one implies. Recommendation:
+   Option 2, then Option 1.
+3. **Gate D, D1/D2/D5.** D3, D4 and D6 are done. D5's length post-condition is
+   the natural companion to D3's trait budget.
+4. **B2, B3, B7, B6** as accuracy work, with no latency expectation (§4g).
 
 **Waiting on the user.** Gate C cannot start until the condition-blind Judge
 invariant is formally retired (§7, § Open decisions). Nothing else is blocked.
@@ -1066,7 +1065,43 @@ common-ground behaviour. Flagged for the user to adjudicate before any change.
 | B6 | *(from retired item 11)* Stop the C2 task-grounding regex from bypassing the Observer snapshot, and give C2 a question-form variant. Re-observed at T-C2-039 seq 5–6. |
 | B7 | **Revise the thread's `requestedAction`.** It is written once when the thread is created and never updated, so a thread rooted at Alex's greeting told the generator "greet participants" for a whole session (T-C1-022, seq 10). It must track what the group is currently doing, or stop being passed to generation as an instruction. |
 | B9 | **DONE (uncommitted).** One predicate for "this turn addresses Alex": the floor rule now accepts `alexRelation === "explicit_addressee"` exactly as Gate 1's opportunity derivation does, so a turn can no longer open an Alex invitation and close the floor against it at the same time. **This required changing an existing assertion** — `test-conversation-recovery.ts` asserted "addressing Alex cannot cancel the observed human floor". That invariant cannot coexist with Gate 1, and T-C1-023 cost three consecutive turns to the contradiction. The narrower invariant that replaces it is asserted instead: a turn addressing Alex makes the floor **shared** (`expectedNext: [human, "alex"]`, human first), and a turn that does *not* address Alex still leaves the human floor exclusive. Both directions have regressions; the new one was verified to fail with the predicate reverted. |
-| B8 | **Bound the Observer review path.** `observerReviewed: true` makes a second full call — 12.2 s of observer on one turn in T-C1-022, against a 3.9 s single-call floor. Either the review inherits B1's smaller schema or it is capped, otherwise B1's savings are erased on exactly the turns that are already slowest. |
+| B8 | **DONE (uncommitted).** Not capped — two of the three triggers turned out not to warrant a call at all. (1) *A floor reading `transition: "available"` with a named holder* is evaluated on the **normalized** observation, and normalization resolves every such floor to `open`, or to `unclear` when the holder is off-roster. The condition could not fire; it is deleted. (2) *A roster conflict* was computed on the **raw** model output while the normalizer filters every roster-typed field, so `observationRosterConflicts(normalized)` is always empty. The caller now passes the surviving conflicts, which retires the trigger without changing the rule, and the raw conflict is kept as a `roster_conflicts_normalized:<n>` repair code. **This also closed a degraded-mode path**: those same raw conflicts flowed into `observerConflicts` → a material reducer rejection → `degradedMode`, which forbids all inferred speech — the identical category error Gate 2 corrected for redundant rejections. What remains is the one contradiction nothing deterministic settles: a thread requiring Alex's participation on a turn judged not relevant to Alex. The review call now also records **why** it fired, because the review overwrites the initial observation in the stored record and reviewed turns in T-C1-022 and T-C1-024 can no longer be attributed. |
+
+### 4f-bis. Sixth measurement — T-C1-025, first run with D6, B4 and B1 (2026-09-07)
+
+C1 Peer, same opening script, 8 messages, 5 decisions, 2 spoken.
+
+**Three fixes confirmed live.**
+
+- **B4 fired in production.** The intervention record at anchor 6 carries
+  `transition:opp:5:invitation:alex:superseded:answered_by_opp:6:invitation:alex`
+  — the exact rule, at the exact turn, on the exact pair it was written for.
+- **D6 changed the routing.** The turn that produced the degenerate board recap
+  in T-C1-024 now classifies `requestIntentKind: none` (was
+  `complete_all_candidates`) and generates instead of emitting the template.
+- **B1 is live**, `conversation-observer-v11`, output 264–473 tokens.
+
+**Observer caching went to 0 on all five calls**, where T-C1-024 cached on 4 of
+8. Suggestive, not conclusive at n=5 given how erratic caching already was;
+confirm on a longer run before treating it as a B1 side effect.
+
+**And D6 caused a regression, which is the important finding.**
+
+| seq | words | traits | new | Z-only |
+| ---: | ---: | ---: | ---: | ---: |
+| 4 | 144 | 16 | 16 | 6 of the 8 in the whole pool |
+| 7 | 131 | 15 | **0** | 6 |
+
+Where T-C1-024 answered that turn with a bounded 16-word template, the
+fallthrough to generation disclosed most of Alex's private profile on the third
+message of the session, then repeated it with nothing new. **The hidden-profile
+manipulation collapsed on message 4.**
+
+The attribution matters and is mine: D6 is right in itself, but it removed an
+*accidental* cap that had been masking D3. `address` and `followup` carry no
+`maxTraitIds` unless a request scope supplies one — a defect that predates this
+work and already produced a 15-trait message in T-C1-020. **D6 must not ship
+without D3**, and D3 was therefore done immediately rather than in gate order.
 
 ### 4g. Gate B's premise does not survive the T-C1-024 measurement
 
@@ -1120,6 +1155,116 @@ Observer latency, in order:
 3. **A faster observer model.** `gpt-4o-mini` at 4–11 s is the floor being
    measured; this is a cost/accuracy decision for the user, not a code change.
 
+### 4h. Observer overlap — design (2026-09-07)
+
+§4g established that no payload change reaches the ≤5 s median target while the
+Observer is a blocking serial call at ~6.5 s mean and ~2 s standard deviation.
+This is the design for taking it off the critical path. **No code has been
+written for this**; the two options below change routing behaviour and want the
+user's decision first.
+
+#### What the Observer is actually on the critical path for
+
+`executeRouteTurn` awaits `waitForConversationObservation`
+(`interventionEngine.ts:1784`) before anything else in the decision. But the
+Observer produces two different kinds of output, and only one of them gates the
+current turn:
+
+| output | who needs it | when |
+| --- | --- | --- |
+| addressees, `alexRelation`, `speechAct`, `requestExplicitness`, floor, opportunity proposals | this turn's routing decision | **now** |
+| thread revision, candidates, `candidateSalience`, `conversationPhase`, `requestIntent` detail, `activeThread` bookkeeping | the ledger, for later turns | before the *next* decision |
+
+The whole call is awaited for the first row.
+
+#### Option 1 — Split the call: a fast decision observation, a full one behind it
+
+Two calls. A small one returns only the first row (~60 output tokens) and gates
+the decision; the full one runs off the decision path and merges into the ledger
+before the next turn.
+
+**The Judge is the existence proof for the latency claim**, and it is worth being
+precise here because §4g just showed that output size does *not* predict latency
+within the Observer's own 384–527 token range. The Judge is the same model
+(`gpt-4o-mini`), in the same sessions, on comparable input (1.1–1.9 k tokens),
+emitting 36–46 output tokens: it runs in **1.0–1.7 s**. That is a measurement of
+a small call, not an extrapolation from a large one.
+
+- Critical path: ~6.5 s → ~1.5–2 s. Median turn **9.4 s → ~5 s**, and it is the
+  only option that helps *spoken* turns, which is what participants experience
+  as slow (13.6 s at T-C1-025 anchor 3).
+- Cost: two observer calls per turn instead of one. The added call is small; the
+  large one is unchanged and no longer blocks.
+- Risk: the two can disagree. The rule has to be that the fast call is
+  authoritative for the decision it already gated, and the full call is
+  authoritative for state — never a retroactive re-decision, which would violate
+  "successful broadcast is the only `consumed_by_alex` transition".
+- Risk: if humans type faster than the full call returns, the next decision runs
+  on a ledger one turn stale. A1/A2's supersession already handles the analogous
+  case, and B4's TTL bounds how long a missed opportunity lingers.
+- This is a gate, not a patch: new schema, prompt, version bump, reconciliation
+  rule, and regressions.
+
+#### Option 2 — Decide the deterministic vetoes before paying for the Observer
+
+`cooldownAvailable` is `messagesSinceLastAI(docs) >= 2` — **pure arithmetic over
+documents already loaded**, computed at `interventionEngine.ts:1806` and applied
+as a veto at `:1937`, after both model calls have run. In T-C1-024 and T-C1-025
+*every* silence was that veto: eight turns that each paid a full Observer and
+Judge to reach a decision the counter had already made.
+
+The turn's silence can be recorded immediately, with the observation still
+running **off the decision path** so the ledger stays current. The work still
+happens; it stops blocking a decision that does not depend on it. That is the
+same move as A6.
+
+- Silent turns: 6.3–10.3 s → **~0.2 s**. Three of five turns in T-C1-025.
+  Median turn **9.4 s → ~6.4 s**. Does not help spoken turns.
+- **This changes behaviour, which is why it needs a decision.** Cooldown is not
+  an unconditional veto: `opportunityMayBypassCooldown` lets a `required`
+  expectation, or an `uptake` invitation on the foreground thread, speak through
+  it — and this turn's observation is what would mint either. Skipping the
+  observation blindly would convert a direct question during cooldown into
+  silence, which is exactly the conflation §7 forbids.
+- The safe form gates the fast path on a conservative deterministic test that
+  no bypass is possible: the message names no participant, asks nothing, and is
+  not the first message after an Alex turn (an `uptake` cannot exist otherwise).
+  Anything not provably exempt takes the normal path. That test is cheap and
+  needs no model call.
+
+#### Option 3 — A faster observer model
+
+`gpt-4o-mini` at 4.5–11.2 s is the floor being measured. Nothing in the code
+changes. This is a cost and accuracy decision for the user, and it interacts
+with the IRB/pre-registration record of which models produced the behaviour.
+
+#### Recommendation
+
+**Option 2, then Option 1.** Option 2 is small, reversible, has the larger
+effect on the median, and its risk is confined to a single well-understood
+predicate. Option 1 is the only thing that helps the turns participants
+experience as slow, and should follow once Option 2's measurement confirms the
+Observer is the whole remaining budget.
+
+#### What must not regress
+
+- Silence must stay attributable: a turn skipped by Option 2 records
+  `cooldown`, never `no_useful_move` — generation failure, floor, lifecycle and
+  cooldown are already required to stay distinct (§7).
+- The ledger must not silently fall behind: an off-path observation still
+  persists, and a missed turn is still recoverable by the path
+  `test-conversation-recovery` already covers.
+- Option 1 must never re-decide a turn after the fact.
+- Condition orthogonality is untouched by both; neither option reads the
+  condition code.
+
+#### How to measure
+
+Per-turn arithmetic exactly as in §4e/§4f: `observer + judge + max(floor,
+generation)` against measured elapsed. Success for Option 2 is silent turns at
+≤1 s with the same `silenceReason` distribution; for Option 1, spoken turns at
+≤6 s with no rise in wrong-candidate turns or ledger conflict codes.
+
 ### Gate C — Judge: a goal, not a rubber stamp
 
 **This gate retires the "Judge is condition-blind" invariant in §7 and needs
@@ -1143,8 +1288,8 @@ Two prompt-only attempts have failed. Enforce it.
 | --- | --- |
 | D1 | **Set `text: { verbosity: "low" }`.** The GPT-5 family's own length control, currently unused. `reasoning: { effort: "minimal" }` is already set. No prompt edit required. |
 | D2 | **Close the silent guard bypass.** `extractSurfacedTraits` (`poolingExtractor.ts:426`) ends in `catch { return [] }`, and an empty result reads as "this message revealed nothing", so every scope guard passes. It is also called *synchronously on the generation path* (`routeScopedGeneration.ts:213,351`). Represent failure as unknown and fail closed; move or cache the call. |
-| D3 | **Per-turn reveal budget as a hard guard.** Give `address` and `followup` a `maxTraitIds`; they currently have none. This is what permitted the 15-trait message. Violations go through the existing repair loop. *(absorbs original item 8 — a permitted brief uptake opener is part of this rewrite)* |
-| D4 | **Deterministic anti-repeat.** Inject `revealStats.aiSurfacedIds` as "already stated by you" and forbid restatement outside an explicit full-list request. C profile was recited 4× and D 3× in T-C1-020. |
+| D3 | **DONE (uncommitted).** A turn on `address`/`followup` that carries **no request at all** now gets a default guard of one new trait. The scoping rule is deliberate: when the human asked something specific — a preference, a count, a full list, an explicit narrowing — the request-scope machinery already decides what Alex may say and is entitled to decide that no limit applies, so those paths are untouched and an explicit all-candidate request still answers in full. Violations go through the existing repair loop, which **fails closed** (a lost turn, not an unbounded one). **This required changing an existing assertion**, recorded per §6: `bareAddressContext` asserted `maxTraitIds` must be undefined under a `focus_depth` guard, on the design note that focus and trait-count limits are independent. That note is still right about scope — the candidate lock is unchanged and asserted — but it was wrong that anything else bounded the count: nothing did, so a bare "Alex?" could answer with every trait Alex holds. |
+| D4 | **PARTLY DONE (uncommitted).** The hard half shipped with D3: `maxTraitIds` counts only *newly introduced* traits, so a message reciting nothing but already-surfaced ones passed every guard — T-C1-025 seq 7 restated fifteen and introduced none. Guards now also carry `maxRestatedTraitIds` (2 on the default budget), violated as `too_many_restated_traits`. **Still open:** injecting `revealStats.aiSurfacedIds` into the prompt as "already stated by you", which is the positive half — the bound stops the recital, it does not yet tell the generator what it has already said. |
 | D5 | **Add a length post-condition** to `outputScopeViolation()` (sentence and word count), and trim the `outputDiscipline` exception clause ("explicitly requested full list or comparison") that is currently firing on ordinary turns. |
 | D6 | **DONE (uncommitted).** Three changes in `routeContext.ts`, each revert-checked. (1) *An empty board is not recited* — the route exists to prevent omissions in a board that exists; with nothing surfaced it returns `undefined` and the turn falls through to generation, under the output contract. This is T-C1-024 seq 4. (2) *"Still to cover" is Leader-only* — it names what the group has yet to do, which is agenda setting; a Peer recites the board and stops. Both conditions still report identical facts. (3) *The deterministic bypass requires both readings of the request to agree* — when an opportunity is selected the intent comes from the Observer and `classifyRequestIntent` is never consulted (`routeContext.ts:1479`), which is how T-C1-023 seq 14's request for *additional* items routed to a full board recap; disagreement now falls through to generation, never to a wider template. **Two classifier corrections came with (3):** a complete/all marker inside a proposal about procedure is not a request that Alex enumerate anything (T-C1-024 seq 3 matched `EXPLICIT_ALL_SCOPE` on "each candidate"), and the same direction requirement had to be applied to `preference_request` — `FOCUS_SCOPE_OVERRIDE` matches a bare "best", so without it the same proposal degraded into a request for Alex's preference instead. Directed requests, including those without a question mark, are untouched. |
 
@@ -1158,8 +1303,8 @@ Two prompt-only attempts have failed. Enforce it.
 | Observer share of turn time | — | **66%** | — |
 | Judge cache hit rate | 0% | 0% | structurally impossible, see §4d |
 | Observer output tokens | ~450 | 384 → 527 | ~100 |
-| Alex words per message (mean) | 44 / 56 | **34** | ≤ 30 |
-| Max traits per Alex message | 15 | **4** | ≤ 2 |
+| Alex words per message (mean) | 44 / 56 | **34** (T-C1-025: 138) | ≤ 30 |
+| Max traits per Alex message | 15 | **4** (T-C1-025: 16, pre-D3) | ≤ 2 |
 | Wrong-candidate turns | 2 (both corrected by a participant) | 0 | 0 |
 | Alex messages with zero new information | — | 1 of 4 | 0 |
 | Directive phrasing, Leader : Peer | 8/11 : 1/18 | — | unchanged |
@@ -1248,6 +1393,25 @@ repair.
 
 Append one line per completed gate: date, gate, commit, tests run, measured effect.
 
+- 2026-09-07 — T-C1-025 measured; D3/D4 and B8 completed (uncommitted).
+  **B4 and D6 confirmed firing in production**, B4 by its exact transition code
+  at the exact turn. **D6 also caused a regression and D3 was pulled forward to
+  fix it**: with the template no longer bounding the opening turn, generation
+  disclosed 16 traits — six of the eight notes Alex alone holds — on message 4,
+  and repeated 15 of them with nothing new at seq 7. Attribution is mine; the
+  underlying missing guard predates this work (T-C1-020, 15 traits) and D6
+  removed the accident that was masking it. D3 adds a one-new-trait budget to
+  request-less address/followup turns and D4's hard half bounds restatement;
+  both were verified against the verbatim messages that failed. B8 found two of
+  three review triggers unwarranted — one dead code, one already repaired by the
+  normalizer — and closed a spurious `degradedMode` path on the way. Ten
+  regressions; each **live** change verified to fail with its own fix reverted.
+  Two vacuous first attempts are recorded rather than hidden: a B8 assertion that
+  tested the normalizer instead of the call site (replaced with an end-to-end
+  test that counts model calls), and one that cannot be covered at all because
+  removing unreachable code is unobservable — said plainly in the test. One
+  existing assertion changed, per §6. build + all four suites green.
+  Observer overlap designed in §4h; no code written, awaiting a decision.
 - 2026-09-07 — B1 completed (uncommitted). The model's output contract is now
   separate from the observation consumers read, so three fields the normalizer
   already discarded left the model contract without changing any downstream

@@ -260,6 +260,8 @@ export interface ConversationObserverSnapshot {
 
 export interface ConversationObserverCallAttempt {
   purpose: "initial" | "review";
+  /** [B8] Why a review call was made; absent on the initial call. */
+  reason?: string | null;
   ok: boolean;
   model: string;
   responseId?: string;
@@ -1013,7 +1015,13 @@ export async function observeConversationStructure(input: {
       };
     }
     const observed = observerResultFromParsed(response.output_parsed, participantRoster);
-    const rosterConflicts = observationRosterConflicts(observed, participantRoster);
+    // [B8] The conflicts that matter are the ones that survive normalization.
+    // Reporting the raw ones made the reducer treat an already-repaired output
+    // as a material contradiction — which sets `degradedMode` and forbids all
+    // inferred speech — and made the observer pay for a second full call to fix
+    // what the next line fixes for free. This is the same category error Gate 2
+    // corrected for redundant reducer rejections.
+    const rawRosterConflicts = observationRosterConflicts(observed, participantRoster);
     const normalized = normalizeConversationObservation(
       observed,
       input.pendingQuestion !== null,
@@ -1030,11 +1038,17 @@ export async function observeConversationStructure(input: {
       transition.evidenceSeqs.some((seq) => !transcriptSeqs.has(seq)))) {
       return { ok: false, error: "opportunity_evidence_not_in_transcript", model: response.model ?? MODEL, latencyMs: Date.now() - started, usage };
     }
+    const rosterConflicts = observationRosterConflicts(normalized, participantRoster);
     return {
       ok: true,
       observation: normalized,
       rosterConflicts,
-      repairCodes: audit.repairCodes,
+      repairCodes: [
+        ...audit.repairCodes,
+        ...(rawRosterConflicts.length && !rosterConflicts.length
+          ? [`roster_conflicts_normalized:${rawRosterConflicts.length}`]
+          : []),
+      ],
       conflictCodes: audit.conflictCodes,
       model: response.model ?? MODEL,
       responseId: response.id,
@@ -1055,18 +1069,50 @@ export async function observeConversationStructure(input: {
   }
 }
 
+/**
+ * [B8] Whether a second full observation is worth its cost, and if so, why.
+ *
+ * The review re-runs the entire observation — 5.8 s + 6.4 s on one turn of
+ * T-C1-022, against a 3.9 s single-call floor — so it has to be reserved for
+ * contradictions the deterministic normalizer cannot settle. Two of the three
+ * original triggers were not:
+ *
+ * - A floor reading `transition: "available"` with a named holder. This is
+ *   evaluated on the *normalized* observation, and normalization resolves every
+ *   such floor to `open` (or to `unclear` when the holder is off-roster) before
+ *   this function ever sees it. The condition could not fire, and is removed
+ *   rather than left as a comment on unreachable behaviour.
+ * - A roster conflict. These were computed on the *raw* model output while the
+ *   normalizer filters every roster-typed field — addressees, thread
+ *   participants and expected responders, floor holder and expectedNext,
+ *   expectedHumanResponder — so `observationRosterConflicts(normalized)` is
+ *   always empty. The caller now passes the surviving conflicts, which retires
+ *   this trigger without changing the rule; the raw conflict is preserved as a
+ *   repair code so nothing leaves the audit.
+ *
+ * What remains is the one genuine contradiction: a thread that requires Alex's
+ * participation on a turn the observer judged irrelevant to Alex. Nothing
+ * deterministic can settle which reading is right, and both change routing.
+ */
+export function conversationObserverReviewReason(
+  observation: ConversationObserverResult,
+  conflicts: readonly string[] = [],
+): string | null {
+  if (conflicts.length > 0) return "unresolved_conflict";
+  if (
+    observation.activeThread?.alexParticipation === "required" &&
+    observation.alexRelevance === "not_relevant"
+  ) {
+    return "alex_participation_contradiction";
+  }
+  return null;
+}
+
 export function observerNeedsReview(
   observation: ConversationObserverResult,
   rosterConflicts: readonly string[] = [],
 ): boolean {
-  return (
-    rosterConflicts.length > 0 ||
-    (observation.floor.transition === "available" &&
-      observation.floor.holder !== "open" &&
-      observation.floor.holder !== "unclear") ||
-    (observation.activeThread?.alexParticipation === "required" &&
-      observation.alexRelevance === "not_relevant")
-  );
+  return conversationObserverReviewReason(observation, rosterConflicts) !== null;
 }
 
 export function describeConversationSituation(snapshot: ConversationObserverSnapshot): string {
@@ -1173,16 +1219,20 @@ export async function observeConversationTurnInMemory(input: {
     },
   ];
   let observerReviewed = false;
-  if (
-    result.ok &&
-    observerNeedsReview(result.observation, [
-      ...result.rosterConflicts,
-      ...result.conflictCodes,
-      ...(result.repairCodes.includes("whole_board_scope_expanded")
-        ? ["whole_board_scope_semantic_mismatch"]
-        : []),
-    ])
-  ) {
+  // [B8] The review replaces the initial observation in the stored record, so a
+  // reviewed turn used to leave no trace of what triggered it — T-C1-022 and
+  // T-C1-024 each cost ~5 s to a review nobody can now attribute. Record the
+  // reason on the call attempt.
+  const reviewReason = result.ok
+    ? conversationObserverReviewReason(result.observation, [
+        ...result.rosterConflicts,
+        ...result.conflictCodes,
+        ...(result.repairCodes.includes("whole_board_scope_expanded")
+          ? ["whole_board_scope_semantic_mismatch"]
+          : []),
+      ])
+    : null;
+  if (result.ok && reviewReason) {
     const reviewed = await observeConversationStructure({
       messages: input.messages,
       anchorSeq: input.anchorSeq,
@@ -1195,6 +1245,7 @@ export async function observeConversationTurnInMemory(input: {
     });
     callAttempts.push({
       purpose: "review",
+      reason: reviewReason,
       ok: reviewed.ok,
       model: reviewed.model,
       ...(reviewed.responseId ? { responseId: reviewed.responseId } : {}),

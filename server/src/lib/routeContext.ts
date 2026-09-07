@@ -716,6 +716,11 @@ export interface RouteOutputScopeGuard {
   // the subject stable; only Turn Metadata or an explicitly scope-less
   // request should mechanically limit how many traits can be answered.
   maxTraitIds?: number;
+  // [D4] `maxTraitIds` counts only *newly introduced* traits, so a message that
+  // recites nothing but already-surfaced ones passes it untouched. T-C1-025 seq 7
+  // restated sixteen traits and introduced none. A chat turn refers to a couple
+  // of settled points at most, whoever first said them.
+  maxRestatedTraitIds?: number;
   // NOTE_CONTRIBUTION may disclose exactly the Judge-selected note and no
   // other trait, including traits that were already on the table.
   allowedTraitIds?: string[];
@@ -729,7 +734,50 @@ export interface RouteOutputScopeGuard {
     | "conversation_grounded_synthesis"
     | "mediation_no_new_traits"
     | "explicit_complete_request"
-    | "requested_narrowing";
+    | "requested_narrowing"
+    | "route_reveal_budget";
+}
+
+/**
+ * [D3] The per-turn reveal budget for Alex's two ordinary speaking routes.
+ *
+ * `address` and `followup` carried no trait-count guard at all unless a request
+ * scope happened to supply one, so the only thing bounding them was the prompt
+ * asking nicely — and it did not work. T-C1-020 seq 4 revealed fifteen traits;
+ * after D6 stopped routing T-C1-025 seq 3 to the deterministic template, the
+ * fallthrough to generation revealed **seventeen on the third message of the
+ * session**, six of the eight notes Alex alone holds, and restated sixteen of
+ * them again at seq 7. That is the hidden-profile manipulation collapsing, and
+ * a prompt-level "share at most one trait" has now failed to prevent it in
+ * three separate runs.
+ *
+ * The numbers match the written output contract (one new trait per turn) and
+ * allow a natural acknowledgement of a settled point or two. An explicit
+ * request for a full list is unaffected: that path sets its own, larger budget
+ * and is left exactly as it is.
+ */
+const ROUTE_REVEAL_BUDGET = { maxTraitIds: 1, maxRestatedTraitIds: 2 } as const;
+
+function withRouteRevealBudget(
+  guard: RouteOutputScopeGuard | undefined,
+  routeKind: RouteKind,
+  requestIntentKind: RequestIntent["kind"],
+): RouteOutputScopeGuard | undefined {
+  if (routeKind !== "address" && routeKind !== "followup") return guard;
+  // Only ordinary conversational turns. When the human asked something specific
+  // — a preference, a count, a full list, an explicit narrowing — the request
+  // scope machinery already decides what Alex may say, and it is entitled to
+  // decide that no trait-count limit applies. The budget is the default for a
+  // turn that carries no request at all, which is exactly the shape that went
+  // unbounded: T-C1-025 seq 3 was classified `none` and answered with seventeen
+  // traits.
+  if (requestIntentKind !== "none") return guard;
+  if (!guard) return { candidate: null, ...ROUTE_REVEAL_BUDGET, reason: "route_reveal_budget" };
+  return {
+    ...guard,
+    maxTraitIds: guard.maxTraitIds ?? ROUTE_REVEAL_BUDGET.maxTraitIds,
+    maxRestatedTraitIds: guard.maxRestatedTraitIds ?? ROUTE_REVEAL_BUDGET.maxRestatedTraitIds,
+  };
 }
 
 const BROAD_INFORMATION_REQUESTS = [
@@ -1658,12 +1706,21 @@ export function buildRouteUserContext(input: {
           reason: "mediation_no_new_traits",
         }
       : undefined;
-  const outputScopeGuard =
-    requestScope?.guard ??
-    selectedContributionGuard ??
-    routeSinglePointGuard ??
-    mediationNoNewTraitsGuard ??
-    focusGuard;
+  // [D3] An explicit request determines its own scope, including the decision to
+  // impose no trait-count limit at all — answering "what do you have on all
+  // four?" is exactly the turn that may name many traits, and
+  // `buildRequestScope` says so by returning a block with no guard. Only turns
+  // where no explicit request scope applies get the per-turn reveal budget.
+  const outputScopeGuard = requestScope
+    ? requestScope.guard
+    : withRouteRevealBudget(
+        selectedContributionGuard ??
+          routeSinglePointGuard ??
+          mediationNoNewTraitsGuard ??
+          focusGuard,
+        input.routeKind,
+        requestIntent.kind,
+      );
   return {
     // Kept as a combined audit/test view. Model calls use the separated
     // developerPrompt + transcriptPrompt fields below.

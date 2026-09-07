@@ -133,6 +133,15 @@ export function outputScopeViolation(
       ? "new_trait_in_mediation"
       : "too_many_traits";
   }
+  // [D4] Restating is not free. The check above counts only new traits, so a
+  // wholesale recital of the board passes it — T-C1-025 seq 7 restated sixteen
+  // traits and introduced none.
+  if (
+    guard.maxRestatedTraitIds !== undefined &&
+    extractedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
+  ) {
+    return "too_many_restated_traits";
+  }
   const traitCandidates = candidatesForIds(newlyIntroducedIds);
   if (
     guard.candidate &&
@@ -311,8 +320,21 @@ export async function generateScopedRouteMessage(input: {
       scopeViolation && input.guard
         ? input.guard.reason === "mediation_no_new_traits"
           ? "Rewrite without introducing any candidate trait that was not already visible in the conversation. You may briefly refer to already-visible points while stating only the discussion state and next direction."
-          : input.guard.candidate
+          : !input.guard.candidate
             ? [
+                // [D3] The route reveal budget has no candidate scope, so the
+                // correction below (which is candidate-led) never reached it.
+                input.guard.maxTraitIds !== undefined
+                  ? `Introduce at most ${input.guard.maxTraitIds} new candidate trait${input.guard.maxTraitIds === 1 ? "" : "s"} in this message.`
+                  : null,
+                input.guard.maxRestatedTraitIds !== undefined
+                  ? `Refer back to at most ${input.guard.maxRestatedTraitIds} already-surfaced trait${input.guard.maxRestatedTraitIds === 1 ? "" : "s"}; do not recite the board.`
+                  : null,
+                "Keep it to a short chat message that answers what was just said.",
+              ]
+                .filter(Boolean)
+                .join(" ")
+            : [
                 `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
                 input.guard.requiredTraitId
                   ? `The only candidate trait you may mention is: "${TRAIT_BY_ID.get(input.guard.requiredTraitId)?.text ?? input.guard.requiredTraitId}". Include that exact point and no other candidate trait, even if another trait was already discussed.`
@@ -320,10 +342,12 @@ export async function generateScopedRouteMessage(input: {
                 input.guard.maxTraitIds !== undefined && !input.guard.requiredTraitId
                   ? `Introduce at most ${input.guard.maxTraitIds} new trait${input.guard.maxTraitIds === 1 ? "" : "s"}; you may still acknowledge already-surfaced points.`
                   : null,
+                input.guard.maxRestatedTraitIds !== undefined
+                  ? `Refer back to at most ${input.guard.maxRestatedTraitIds} already-surfaced trait${input.guard.maxRestatedTraitIds === 1 ? "" : "s"}; do not recite the board.`
+                  : null,
               ]
                 .filter(Boolean)
                 .join(" ")
-            : null
         : null,
       'Preserve the current condition style, conversational subject, and Turn Metadata goal. Return only the corrected visible chat message inside the required JSON object: {"content": "<message>"}.',
     ]
