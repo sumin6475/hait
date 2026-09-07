@@ -858,6 +858,41 @@ impression than the fact-less `follow` turns are.
 The fact-less `follow` pattern from T-C1-022 also recurred (seq 10, "I'll stay
 on A until we agree to move on"). Same Gate D item, unchanged.
 
+### A7 — Take the model call off the broadcast path — DONE (uncommitted)
+
+`routeTurn.ts` awaited `extractSurfacedTraits` — an LLM round trip — between
+`Message.create` and the socket emit, so Alex's finished message sat unsent
+while a second model decided what it had revealed. T-C1-023 measured that at
+2.5–3.5 s on every spoken turn, and 3.5 s of a turn whose message had been
+generated deterministically in 0 ms.
+
+It now runs the deterministic closed-pool matcher (`extractHumanTraitsFast`)
+synchronously and sends the bounded model verification to the background as the
+same late correction the human path already uses. The ledger still settles
+before the broadcast; it settles without a network call.
+
+**The matcher is a better fit on Alex's text than on human text**, which is why
+this is not a recall trade. The output contract requires Alex to "preserve the
+key wording of a trait", so its phrasing stays close to the pool. Checked
+against verbatim messages from the observed sessions:
+
+| message | model extractor recorded | matcher |
+| --- | --- | --- |
+| T-C2-039 seq 15 (Candidate C, six traits) | C_p1, C_p6, C_p7, C_n1, C_n2, C_n3 | identical |
+| T-C1-020 seq 11 (two A misses) | A_n5, A_n6 | identical |
+| T-C2-039 seq 19 **and** seq 29 | D_p1–D_p4 only | D_p1, D_p3, D_p4, **D_n5, D_n6** + 1 queued |
+
+The last row is a **correctness finding, not just latency**. Alex disclosed
+"misses on being considered moody and having strong prejudices" in both
+messages and the model extractor recorded neither, twice. `revealStats` was
+under-counting Alex's own reveals — the exact input the anti-repeat work (D4)
+depends on, and a plausible contributor to the repeated recitations seen in
+T-C1-020.
+
+Regressions in `test-pooling-extractor.ts` on those verbatim messages. **Not
+covered:** that the broadcast now precedes verification — that needs the
+`executeRouteTurn` harness this repository still lacks.
+
 ### Gate B — Observer: read the facts, cheaply and correctly
 
 | # | Change |
@@ -869,7 +904,7 @@ on A until we agree to move on"). Same Gate D item, unchanged.
 | B5 | **Compact the carried state.** Keep the transcript whole (cache-friendly); pass the previous ledger as a compact delta rather than a full JSON dump. |
 | B6 | *(from retired item 11)* Stop the C2 task-grounding regex from bypassing the Observer snapshot, and give C2 a question-form variant. Re-observed at T-C2-039 seq 5–6. |
 | B7 | **Revise the thread's `requestedAction`.** It is written once when the thread is created and never updated, so a thread rooted at Alex's greeting told the generator "greet participants" for a whole session (T-C1-022, seq 10). It must track what the group is currently doing, or stop being passed to generation as an instruction. |
-| B9 | **One predicate for "this turn addresses Alex".** Gate 1's opportunity derivation accepts `alexRelation === "explicit_addressee"`; Gate 3D's floor rule reads `addressees` only. T-C1-023 turns 3–5 produced an Alex opportunity and an Alex-excluding floor from the same observation, losing three consecutive turns. Both must dispatch on the same predicate. |
+| B9 | **DONE (uncommitted).** One predicate for "this turn addresses Alex": the floor rule now accepts `alexRelation === "explicit_addressee"` exactly as Gate 1's opportunity derivation does, so a turn can no longer open an Alex invitation and close the floor against it at the same time. **This required changing an existing assertion** — `test-conversation-recovery.ts` asserted "addressing Alex cannot cancel the observed human floor". That invariant cannot coexist with Gate 1, and T-C1-023 cost three consecutive turns to the contradiction. The narrower invariant that replaces it is asserted instead: a turn addressing Alex makes the floor **shared** (`expectedNext: [human, "alex"]`, human first), and a turn that does *not* address Alex still leaves the human floor exclusive. Both directions have regressions; the new one was verified to fail with the predicate reverted. |
 | B8 | **Bound the Observer review path.** `observerReviewed: true` makes a second full call — 12.2 s of observer on one turn in T-C1-022, against a 3.9 s single-call floor. Either the review inherits B1's smaller schema or it is capped, otherwise B1's savings are erased on exactly the turns that are already slowest. |
 
 ### Gate C — Judge: a goal, not a rubber stamp
@@ -1013,6 +1048,15 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
   + recovery + intervention-v2 green. Cooldown bypass deliberately not added —
   its motivating turn is downstream of the ranking defect. Measured effect
   pending a live replay.
+- 2026-09-07 — B9 and A7 complete (uncommitted; backed up). B9 unified the
+  "addresses Alex" predicate between the opportunity derivation and the floor
+  rule, which required retiring an existing assertion — recorded in the B9 row
+  with the narrower invariant that replaces it. A7 replaced the pre-broadcast
+  LLM extraction with the deterministic matcher and moved verification to the
+  background; on the way it surfaced that the model extractor had been dropping
+  Alex's own disclosed misses (T-C2-039 seq 19 and 29), so this is an accuracy
+  fix as well as a 2.5-3.5 s one. build + ledger + recovery + intervention-v2 +
+  pooling-extractor green. Effect on turn latency not yet measured live.
 - 2026-09-07 — T-C1-023 measured on a restarted server. **A6 confirmed
   working**: every spoken turn fits `observer + judge + max(floor, generation)`
   plus a constant 2.5–3.5 s tail, and that tail is the pre-broadcast AI-side

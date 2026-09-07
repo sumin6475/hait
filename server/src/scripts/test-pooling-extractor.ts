@@ -287,4 +287,39 @@ for (const runtimeEntry of TRAIT_KEYWORD_REGISTRY) {
 const ambiguous = extractHumanTraitsFast({ messageText: "Should we trust Candidate B's reliability?", assignedProfile: "X" });
 assert.deepEqual(ambiguous.acceptedIds, []);
 assert.equal(ambiguous.verificationCandidates[0]?.traitId, "B_p2");
+// --- Gate A7: the matcher also carries Alex's own output ---------------------
+//
+// The pre-broadcast extraction on Alex's messages was a model call sitting
+// between the message being saved and being emitted — 2.5-3.5 s of every spoken
+// turn in T-C1-023, and 3.5 s of a turn whose message was generated
+// deterministically in 0 ms. It now runs through this matcher instead, which is
+// a better fit here than on human text: the output contract requires Alex to
+// "preserve the key wording of a trait", so its phrasing stays close to the
+// pool. No profile filter is applied, because Alex may restate a trait a human
+// put on the table.
+//
+// These are verbatim Alex messages from the observed sessions.
+const alexDisclosure = extractHumanTraitsFast({
+  messageText:
+    "You already shared that Candidate C is considered egocentric and is reluctant to take part in training. From my notes, Candidate C can make the right decisions very quickly, puts the safety of people in their care above everything else, and performs very well in terms of sustained attention. I also have that Candidate C is not verbally skillful.",
+});
+assert.deepEqual(
+  [...alexDisclosure.acceptedIds].sort(),
+  ["C_n1", "C_n2", "C_n3", "C_p1", "C_p6", "C_p7"],
+  "every trait Alex names in its own message is recorded without a model call",
+);
+
+// T-C2-039 seq 19 and 29. The model extractor recorded only D_p1-D_p4 both
+// times and dropped the two misses Alex had just disclosed, so `revealStats`
+// under-counted Alex's own reveals — which is exactly what the anti-repeat work
+// depends on. The matcher catches them.
+const alexMisses = extractHumanTraitsFast({
+  messageText:
+    "From my notes, Candidate D matches on reacting adequately to unforeseen events, concentrating very well, being very resilient, and being very responsible, and misses on being considered moody and having strong prejudices.",
+});
+assert.ok(
+  alexMisses.acceptedIds.includes("D_n5") && alexMisses.acceptedIds.includes("D_n6"),
+  "misses Alex discloses are recorded, which the model extractor was dropping",
+);
+
 console.log("pooling extractor fast-path tests passed");

@@ -353,8 +353,21 @@ export function normalizeConversationObservation(
     observation.speechAct === "defer" ||
     (observation.speechAct === "proposal" && observation.requestExplicitness === "explicit");
   if (!canReserveNextHumanFloor) expectedHumanResponder = null;
+  // One predicate for "this turn addresses Alex", shared with the opportunity
+  // derivation in `observerDeltaFromTurn`.
+  //
+  // Gate 1 accepts `alexRelation === "explicit_addressee"` as an address even
+  // when `addressees` omits Alex, and mints an Alex opportunity from it. The
+  // floor rule read `addressees` alone, so T-C1-023 turns 3, 4 and 5 each
+  // produced an open Alex invitation *and* a floor that excluded Alex, from the
+  // same observation — three consecutive turns lost to a ledger contradicting
+  // itself. Whatever threshold is right for minting the opportunity has to be
+  // the same threshold for letting Alex answer it.
   const alexIsCoAddressedByRequest =
-    requestsAction && (addressees.includes("alex") || addressees.includes("group"));
+    requestsAction &&
+    (addressees.includes("alex") ||
+      addressees.includes("group") ||
+      observation.alexRelation === "explicit_addressee");
   const alexRelation = addressees.includes("alex")
     ? "explicit_addressee"
     : hasPendingAlexQuestion &&

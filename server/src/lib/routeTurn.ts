@@ -24,7 +24,7 @@ import {
 } from "./routeContext.js";
 import type { ConversationLedgerState, ReducerTransitionAudit } from "./conversationLedger.js";
 import { transcriptLabel } from "./labels.js";
-import { extractSurfacedTraits } from "./poolingExtractor.js";
+import { extractHumanTraitsFast, verifyHumanTraitCandidates } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
@@ -554,16 +554,31 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   }
 
   if (!["summary", "closing", "greeting", "backchannel"].includes(input.routeKind)) {
+    // The ledger still settles before the broadcast — but with the deterministic
+    // closed-pool matcher, not a model call.
+    //
+    // This block used to `await extractSurfacedTraits(...)`, an LLM round trip
+    // sitting between `Message.create` and the socket emit. T-C1-023 measured it
+    // at 2.5-3.5 s on every spoken turn; at anchor 14 the message itself was
+    // deterministic (0 ms generation) and 3.5 s of that turn was this call
+    // alone. Alex's own text quotes trait wording closely — the output contract
+    // requires it ("preserve the key wording of a trait") — so the matcher that
+    // already serves the human path is a better fit here than it is there, and
+    // it cannot time out or fail open.
+    //
+    // Bounded model verification still runs, in the background, as the same
+    // late correction the human path uses. What it adds lands a beat after the
+    // broadcast instead of delaying it.
     try {
-      // A selected note has already passed the exact output guard, so record
-      // its known id directly. Other generated answers are extracted before
-      // broadcast. Either way the next human turn sees a settled ledger.
-      const ids =
+      const deterministic =
         input.routeKind === "build_on" &&
         input.judgeEvidence === "relevant_unsurfaced_information" &&
         input.selectedTraitId
-          ? [input.selectedTraitId]
-          : (extractedAiIds ?? (await extractSurfacedTraits(result.parsed.content)));
+          ? { acceptedIds: [input.selectedTraitId], verificationCandidates: [] }
+          : extractedAiIds
+            ? { acceptedIds: extractedAiIds, verificationCandidates: [] }
+            : extractHumanTraitsFast({ messageText: result.parsed.content });
+      const ids = deterministic.acceptedIds;
       await Promise.all([
         updateAiSurfaced(input.sessionId, ids, savedMessage.seq),
         ids.length
@@ -573,6 +588,27 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
             )
           : Promise.resolve(),
       ]);
+      if (deterministic.verificationCandidates.length) {
+        void (async () => {
+          try {
+            const verified = await verifyHumanTraitCandidates({
+              messageText: result.parsed.content,
+              candidates: deterministic.verificationCandidates,
+            });
+            const extra = verified.ids.filter((id) => !ids.includes(id));
+            if (!extra.length) return;
+            await Promise.all([
+              updateAiSurfaced(input.sessionId, extra, savedMessage.seq),
+              Message.updateOne(
+                { _id: savedMessage._id },
+                { $addToSet: { sharedInfoIds: { $each: extra } } },
+              ),
+            ]);
+          } catch (error) {
+            log.error("[pooling] AI late verification error:", error);
+          }
+        })();
+      }
     } catch (error) {
       log.error("[pooling] AI update error:", error);
     }

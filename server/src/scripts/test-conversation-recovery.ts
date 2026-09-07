@@ -51,8 +51,57 @@ for (const content of ["Alex, thanks.", "Alex, Y부터 듣자.", "Don't let Y an
   const normalized = normalizeConversationObservation(semantic, false, "humanX", content, 2, new Set([1, 2]));
   assert.equal(reduce(null, 2, normalized).opportunities.length, 0, "normalization cannot invent a question from wording");
 }
-const held = normalizeConversationObservation({ ...observation, addressees: ["alex", "humanY"], expectedHumanResponder: "humanY", floor: { holder: "humanY", expectedNext: ["humanY"], transition: "held" } }, false);
-assert.equal(held.floor.holder, "humanY", "addressing Alex cannot cancel the observed human floor");
+// CHANGED 2026-09-07 (Gate B9). This previously asserted `floor.holder ===
+// "humanY"` under the label "addressing Alex cannot cancel the observed human
+// floor". That invariant cannot stand alongside Gate 1: the same signal
+// (`alexRelation === "explicit_addressee"`) mints an Alex opportunity, so a
+// floor that still excludes Alex makes the ledger contradict itself. T-C1-023
+// turns 3-5 lost three consecutive turns to exactly that contradiction — an
+// open invitation Alex was forbidden to answer.
+//
+// The invariant that survives is narrower and is the one actually worth having:
+// a turn that addresses Alex makes the floor *shared*, not Alex's. The human
+// keeps first position; Alex is merely allowed to answer the request addressed
+// to it. The exclusive-floor case is asserted separately below on a turn that
+// does not address Alex at all.
+const shared = normalizeConversationObservation({ ...observation, addressees: ["alex", "humanY"], expectedHumanResponder: "humanY", floor: { holder: "humanY", expectedNext: ["humanY"], transition: "held" } }, false);
+assert.equal(shared.floor.holder, "open", "a request addressed to Alex cannot leave a human holding an exclusive floor");
+assert.deepEqual(
+  shared.floor.expectedNext,
+  ["humanY", "alex"],
+  "the solicited human still goes first; Alex gets parity, not priority",
+);
+
+// T-C1-023 turns 3-5: the observer reported `addressees: ["humanY"]` while
+// calling Alex the explicit addressee. Gate 1's derivation opens an Alex
+// opportunity on that signal, so the floor must not simultaneously close.
+const contradictoryAddress = normalizeConversationObservation(
+  {
+    ...observation,
+    addressees: ["humanY"],
+    alexRelation: "explicit_addressee",
+    speechAct: "proposal",
+    requestExplicitness: "explicit",
+    expectedHumanResponder: "humanY",
+    floor: { holder: "humanY", expectedNext: ["humanY"], transition: "held" },
+  },
+  false,
+  "humanX",
+  "Hello! I think it would be best to just go through what information we have on each candidate",
+  3,
+  new Set([1, 2, 3]),
+  null,
+  roster,
+);
+assert.equal(
+  contradictoryAddress.floor.holder,
+  "open",
+  "an explicit-addressee relation opens the floor for Alex just as it opens an opportunity",
+);
+assert.ok(
+  contradictoryAddress.floor.expectedNext.includes("alex"),
+  "Alex is expected next alongside the named human",
+);
 
 // T-C2-037 turns 28 and 30. Both were second-person plural invitations — the
 // room is one speaker, one other human and Alex, so they addressed both — and
