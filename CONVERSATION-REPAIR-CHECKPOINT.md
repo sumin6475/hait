@@ -3,12 +3,74 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-07 (second series)
+Last updated: 2026-09-07 — after B9 + A7, backup `c20c43e`
 
-> Read this file first in a new session. It is the working contract for the
-> Observer / Judge / Generator repair. It replaces re-deriving the diagnosis.
+> **This file is the single source of truth for this work.** Read it first in a
+> new session; it replaces re-deriving the diagnosis. Status is maintained here,
+> not anywhere else — an earlier published web snapshot of the first plan
+> (`claude.ai/code/artifact/fa28d004-…`) is **superseded and safe to delete**;
+> it stops at the first plan and knows nothing of the four measurement rounds.
 > Background architecture lives in `docs/tmp/HAIT-handoff-current.md` (gitignored,
 > local only) and the `/private/tmp/hait-*` artifact set it indexes.
+
+---
+
+## Current state — read this first
+
+**Where the work is.** Four live measurement rounds have been run against the
+repair. Latency work (Gate A) is essentially done; the remaining latency lives
+in the Observer, which is Gate B. Speech *quality* is the open front: Alex is no
+longer too long, it is too often empty, and one deterministic template makes a
+Peer sound like a Leader.
+
+**Where the code is.** Uncommitted in the root checkout
+(`/Users/jadekim/Documents/Code HQ/HAIT`, branch `main`, never commit there).
+Mirrored as commits on `claude/hait-conversation-system-errors-0f5e58` for
+backup only — latest `c20c43e`.
+
+| Item | State | Where |
+| --- | --- | --- |
+| Gate 1 · opportunity identity | **DONE** | §4 |
+| Gate 2 · real reason for silence | **DONE** | §4 |
+| Gate 3 · supply something to say | **DONE** | §4 |
+| Gate 3R · T-C2-037 repairs | **DONE** | §4 |
+| A1–A4 · burst coalescing, cancellation, cache order | **DONE** | §4c |
+| A5 · `floorMs` | **not needed** — A6 buys the same 2 s free | §4c |
+| A6 · overlap floor with generation | **DONE**, confirmed live in T-C1-023 | §4c |
+| A7 · model call off the broadcast path | **DONE**, effect not yet measured live | §4e |
+| B9 · one "addresses Alex" predicate | **DONE**, effect not yet measured live | Gate B table |
+| B1, B4, B7, B8 · Observer cost and hygiene | **OPEN — next** | Gate B table |
+| B6 · C2 task-grounding regex | OPEN | Gate B table |
+| Gate C · Judge role goals | **BLOCKED on the user** (§ Open decisions) | Gate C |
+| Gate D · generator length, emptiness, D6 template | OPEN | Gate D |
+
+**Do next, in this order.**
+
+1. **Run one live session** and measure. A7 and B9 have never been observed
+   live. Expect spoken turns 13.2 s → ~9–10 s, and no repeat of the three
+   consecutive `ledger_router_human_floor_held` silences at the session opening.
+2. **B4 then B1 then B8.** T-C1-023 showed Observer output growing 270 → 531
+   tokens across one session as unclosed opportunities accumulated, so the TTL
+   comes before the schema cut — otherwise B1's saving is eaten by clutter, and
+   B8's review path erases it on the slowest turns.
+3. **Gate D.** Two speech regressions are waiting on it and are documented with
+   verbatim evidence in §4d and §4e. D6 (the deterministic template) is the more
+   visible of the two.
+
+**Waiting on the user.** Gate C cannot start until the condition-blind Judge
+invariant is formally retired (§7, § Open decisions). Nothing else is blocked.
+
+**How to know it worked.** The measurement targets table in §4c, against the
+baselines in §2, §4b, §4d and §4e.
+
+**What is not covered by tests, and why.** This repository has no runtime
+harness for `reserveTurn` / `executeRouteTurn` — `test-intervention-v2.ts` tests
+`humanArrivalAction` as a pure function and never drives the engine. So A6's
+timing and cancellation behaviour, A7's broadcast-before-verification ordering,
+and the engine-side early supersession check in A2 are all verified by reasoning
+plus live measurement only. Building that harness is worth doing before Gate D,
+which needs generation-level post-conditions. Do not describe those three as
+regression-covered.
 
 ---
 
@@ -569,7 +631,7 @@ Generation 2.3 s (20%) → floor 2–3 s.**
 Ordered. Gate A first because 39% of turns are currently thrown away, and no
 later gate's effect can be measured through that much loss.
 
-### Gate A — Latency and flow — A1–A4, A6 DONE (uncommitted); A5 not needed, A7 open
+### Gate A — Latency and flow — A1–A4, A6, A7 DONE (uncommitted); A5 not needed
 
 | # | Change | Where |
 | --- | --- | --- |
@@ -716,7 +778,7 @@ fixed from this run.**
 | Silent | 8.2 s | 6.8 s | **6.7 s** |
 | Spoken | 19.6 s (med) | 13.2 s (med) | 18.3 / 19.0 / 12.1 / 9.2 s |
 
-### A6 does not appear to have been in effect in this run
+### A6 does not appear to have been in effect in this run — SUPERSEDED by §4e
 
 Per-turn arithmetic from the export, anchor 12: observer 4.055 + judge 1.047 +
 generation 2.017 = 7.1 s. Adding a **sequential** 2 s floor gives 9.1 s; the
@@ -725,6 +787,10 @@ Anchor 9 fits the same way. The most likely explanation is that the server was
 still running the pre-A6 build (the log shows T-C1-021's long-silence timer
 still resident, i.e. no restart between runs). **Re-measure on a restarted
 server before drawing any conclusion about A6.**
+
+**Resolved.** T-C1-023 was run on a restarted server and the arithmetic fits the
+overlapped form on every spoken turn. The server had indeed still been running
+the pre-A6 build here. See §4e.
 
 ### A3 worked for the Observer and cannot work for the Judge as built
 
@@ -950,10 +1016,17 @@ Two prompt-only attempts have failed. Enforce it.
 
 ### Open decisions blocking work
 
-1. **Gate C**: approve retiring the condition-blind Judge invariant?
-2. **Gate A5**: may `floorMs` be tuned? It is 20% of turn time and an experimental design value.
+1. **Gate C — the only thing actually blocking work.** Approve retiring the
+   condition-blind Judge invariant (§7)? Until then Gate C cannot start; every
+   other open item can proceed.
+2. ~~**Gate A5**: may `floorMs` be tuned?~~ **Withdrawn.** A6 recovered the same
+   2 s by overlapping generation with the pause, so the design value stays at
+   2000/3000 ms untouched. Reopen only if Gate B leaves turns too slow.
 3. `eval/trait_keyword_registry.draft.yaml` is stale — delete, or keep as a
-   record with a superseded marker?
+   record with a superseded marker? Cosmetic; blocks nothing. Note that the TS
+   registry it was superseded by is now load-bearing for **A7** as well as the
+   human path, and its contents have still never been audited against the
+   approved draft.
 
 ## 5. How to verify
 
@@ -965,7 +1038,11 @@ npm run build --silent
 npm run test:intervention-v2
 npm run test:conversation-ledger
 npm run test:conversation-recovery
+npm run test:pooling-extractor
 ```
+
+All five must pass. `test:pooling-extractor` joined the set with A7, which put
+the deterministic matcher on Alex's own output as well as the humans'.
 
 `tsx` tests may hit a managed-sandbox IPC `EPERM`; rerun with the local IPC
 permission granted. Run `git diff --check` before finishing a change.
