@@ -14,7 +14,10 @@ import {
 } from "../lib/conversationLedger.js";
 import {
   conversationLedgerDecisionProjection,
+  judgeCapitulatedToSilence,
+  judgeCapitulationRuleCodes,
   validateConversationLedgerJudgeDecision,
+  type ConversationLedgerJudgeCallAttempt,
 } from "../lib/interventionJudge.js";
 
 const roster = ["alex", "humanX", "humanY"] as const;
@@ -863,6 +866,168 @@ assert.equal(
   ),
   false,
   "a consumed opportunity is never offered to the Judge as a choice",
+);
+
+// --- Gate 2 regressions -----------------------------------------------------
+
+// Gate 2 / degraded mode. The reducer treated every rejection as evidence that
+// the ledger could not be trusted, and degraded mode forbids inferred speech.
+// In T-C2-034 the only degraded turn (13) was produced by a single idempotent
+// no-op: the observer proposed closing an opportunity that was already closed.
+// The observer is shown only open opportunities, so it re-proposes finished
+// ones as a matter of course; that must not silence a turn.
+const redundantRejectionBase = withOpportunityTransition(terminalMergeBase, {
+  opportunityId: terminalMergeId,
+  toStatus: "consumed_by_alex",
+  reason: "alex_broadcast_succeeded",
+  broadcastSucceeded: true,
+  evidenceSeqs: [2],
+  alexBroadcastSeq: 3,
+}).state;
+const reclosedAlreadyTerminal = withOpportunityTransition(
+  { ...redundantRejectionBase, contextThroughSeq: 5, currentTriggerSeq: 5 },
+  {
+    opportunityId: terminalMergeId,
+    toStatus: "resolved_by_human",
+    reason: "observer re-proposed a closure that already happened",
+    evidenceSeqs: [5],
+  },
+);
+assert.ok(
+  reclosedAlreadyTerminal.transition.rejected.some((code) =>
+    code.endsWith(":already_terminal"),
+  ),
+  "re-closing a closed opportunity is still rejected",
+);
+assert.equal(
+  reclosedAlreadyTerminal.state.degradedMode,
+  false,
+  "an idempotent no-op rejection must not put the controller into degraded mode",
+);
+assert.deepEqual(
+  reclosedAlreadyTerminal.state.conflictCodes,
+  [],
+  "a redundant rejection is not a state conflict",
+);
+
+// A materially invalid proposal must still degrade. Evidence pointing past the
+// observed context is a real inconsistency, not a no-op.
+const materialConflict = reduceConversationLedger(redundantRejectionBase, {
+  ledgerVersion: CONVERSATION_LEDGER_VERSION,
+  observerVersion: "test-observer",
+  sessionKey: "T-C2-TERMINAL-MERGE",
+  roster: [...roster],
+  sourceRole: "humanY",
+  currentTriggerSeq: 6,
+  contextThroughSeq: 6,
+  foregroundThreadId: "thread-1",
+  threadProposals: [],
+  opportunityProposals: [],
+  opportunityTransitions: [],
+  floorProposal: {
+    holder: "open",
+    expectedNext: [],
+    transition: "available",
+    evidenceSeqs: [99],
+  },
+  observerConflicts: [],
+  repairCodes: [],
+  conflictCodes: [],
+  degradedMode: false,
+});
+assert.ok(
+  materialConflict.transition.rejected.includes("floor:invalid"),
+  "evidence outside the observed context is rejected",
+);
+assert.equal(
+  materialConflict.state.degradedMode,
+  true,
+  "a material rejection still degrades the controller",
+);
+
+// Gate 2 / capitulation. A silence that follows a rejected request to speak is
+// a different event from a Judge that never wanted the floor, but both report
+// evidence "no_useful_move". T-C2-034 turns 22, 25 and 26 all took the first
+// shape and were recorded as the second.
+const capitulationAttempts: ConversationLedgerJudgeCallAttempt[] = [
+  {
+    attempt: 1,
+    status: "validation_failed",
+    model: "test-judge",
+    latencyMs: 1,
+    parsedOutput: {
+      decision: "speak",
+      act: "follow",
+      selectedOpportunityId: "opp:19:uptake:alex",
+      evidence: "selected_open_opportunity",
+      selectedTraitId: null,
+      evidenceSeqs: [20],
+    },
+    ruleCodes: ["selected_opportunity_not_open_for_alex", "selected_invited_opportunity_not_current"],
+  },
+  { attempt: 2, status: "accepted", model: "test-judge", latencyMs: 1 },
+];
+const capitulatedSilence = {
+  decision: "silent" as const,
+  act: null,
+  selectedOpportunityId: null,
+  evidence: "no_useful_move" as const,
+  selectedTraitId: null,
+  evidenceSeqs: [] as number[],
+};
+assert.equal(
+  judgeCapitulatedToSilence(capitulatedSilence, capitulationAttempts),
+  true,
+  "silence after a rejected request to speak is a capitulation",
+);
+assert.deepEqual(
+  judgeCapitulationRuleCodes(capitulationAttempts),
+  ["selected_invited_opportunity_not_current", "selected_opportunity_not_open_for_alex"],
+  "the rules the Judge backed away from are carried into the silence audit",
+);
+assert.equal(
+  judgeCapitulatedToSilence(capitulatedSilence, [
+    { attempt: 1, status: "accepted", model: "test-judge", latencyMs: 1 },
+  ]),
+  false,
+  "a first-attempt silence is a genuine judgement, not a capitulation",
+);
+assert.equal(
+  judgeCapitulatedToSilence(
+    {
+      decision: "speak" as const,
+      act: "contribute" as const,
+      selectedOpportunityId: null,
+      evidence: "relevant_unsurfaced_information" as const,
+      selectedTraitId: "A_p1",
+      evidenceSeqs: [20],
+    },
+    capitulationAttempts,
+  ),
+  false,
+  "a retry that recovers a valid speak is not a capitulation",
+);
+assert.equal(
+  judgeCapitulatedToSilence(capitulatedSilence, [
+    {
+      attempt: 1,
+      status: "validation_failed",
+      model: "test-judge",
+      latencyMs: 1,
+      parsedOutput: {
+        decision: "silent" as const,
+        act: null,
+        selectedOpportunityId: "opp:19:uptake:alex",
+        evidence: "no_useful_move" as const,
+        selectedTraitId: null,
+        evidenceSeqs: [] as number[],
+      },
+      ruleCodes: ["non_speak_has_opportunity"],
+    },
+    { attempt: 2, status: "accepted", model: "test-judge", latencyMs: 1 },
+  ]),
+  false,
+  "a malformed silence corrected into a clean silence is not a capitulation",
 );
 
 console.log("[conversation-ledger] deterministic reducer tests passed");

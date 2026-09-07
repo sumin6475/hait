@@ -487,6 +487,20 @@ function validEvidence(evidenceSeqs: readonly number[], contextThroughSeq: numbe
   );
 }
 
+/**
+ * True when a reducer rejection is an idempotent no-op rather than evidence of
+ * a state conflict.
+ *
+ * Both `already_terminal` rejections mean the ledger already holds the outcome
+ * the proposal asked for: an opportunity that is closed stays closed, whether
+ * the proposal tried to attach fresh evidence to it or to close it again. See
+ * the degraded-mode note in `reduceConversationLedger` for why the distinction
+ * matters.
+ */
+export function isRedundantRejection(code: string): boolean {
+  return code.endsWith(":already_terminal");
+}
+
 const TERMINAL_OPPORTUNITY_STATUSES = new Set<OpportunityStatus>([
   "consumed_by_alex",
   "resolved_by_human",
@@ -730,11 +744,27 @@ export function reduceConversationLedger(
   state.contextThroughSeq = delta.contextThroughSeq;
   state.currentTriggerSeq = delta.currentTriggerSeq;
   state.repairCodes = uniqueSorted([...(state.repairCodes ?? []), ...(delta.repairCodes ?? [])]);
+  // A rejection means one of two very different things, and conflating them
+  // silenced turns. Material rejections say the delta or a proposal contradicts
+  // the authoritative state, so the projection cannot be trusted and the
+  // controller should behave conservatively. Redundant rejections say the
+  // proposal asked for something the ledger already reflects: re-proposing a
+  // closed opportunity, or re-closing one, is an idempotent no-op. The observer
+  // is only ever shown open opportunities, so it cannot know an id is finished
+  // and will re-propose it as a matter of course. Counting that as evidence of
+  // an unreliable ledger put the controller into degraded mode, which forbids
+  // all inferred speech — routine bookkeeping became silence.
+  //
+  // Redundant rejections stay in `transition.rejected`, which is persisted as
+  // the reducer audit, so nothing becomes invisible.
+  const materialRejections = transition.rejected.filter(
+    (code) => !isRedundantRejection(code),
+  );
   state.conflictCodes = uniqueSorted([
     ...(delta.conflictCodes ?? []),
-    ...transition.rejected.map((code) => `reducer:${code}`),
+    ...materialRejections.map((code) => `reducer:${code}`),
   ]);
-  state.degradedMode = delta.degradedMode === true || transition.rejected.length > 0;
+  state.degradedMode = delta.degradedMode === true || materialRejections.length > 0;
   if (delta.foregroundThreadId === null) {
     state.foregroundThreadId = null;
   } else if (

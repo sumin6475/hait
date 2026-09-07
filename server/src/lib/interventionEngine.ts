@@ -29,6 +29,8 @@ import {
   CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION,
   CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION,
   CONVERSATION_LEDGER_JUDGE_VERSION,
+  judgeCapitulatedToSilence,
+  judgeCapitulationRuleCodes,
   judgeConversationLedgerTurn,
   judgeConversationTurn,
   judgeIntervention,
@@ -1788,6 +1790,12 @@ export async function onHumanMessage(input: {
         return;
       }
       if (decision.decision === "silent" || !decision.act) {
+        // A silence that follows a rejected request to speak is not the same
+        // event as a Judge that never wanted the floor, even though both report
+        // evidence "no_useful_move". Label it separately, and carry the rule
+        // codes it backed away from, so contract failures stop being counted as
+        // the Judge having nothing to say.
+        const capitulated = judgeCapitulatedToSilence(decision, ledgerResult.attempts);
         await recordLedgerSilence(
           ledgerResult.state.degradedMode
             ? `ledger_degraded:${ledgerResult.state.conflictCodes.join("+") || "unknown_conflict"}`
@@ -1795,7 +1803,12 @@ export async function onHumanMessage(input: {
             ? "ledger_human_floor_held"
             : decision.evidence === "cooldown"
               ? "cooldown"
-              : "ledger_judge_silent",
+              : capitulated
+                ? `ledger_judge_capitulated_after_rejection:${
+                    judgeCapitulationRuleCodes(ledgerResult.attempts).join("+") ||
+                    "unknown_rule"
+                  }`
+                : "ledger_judge_silent",
         );
         return;
       }

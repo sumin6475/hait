@@ -232,19 +232,60 @@ Still open from the original Gate 1 exit check: replaying `T-C2-034` end to end
 to confirm turn 16 now produces a `speak`. That needs a live model run, which is
 the user's call.
 
-### Gate 2 — Separate the real reason for silence
+### Gate 2 — Separate the real reason for silence — DONE (uncommitted)
 
-5. Forbid `silent` in the Judge's retry turn (require a corrected version of the
-   rejected decision), **or** record capitulation distinctly, e.g.
-   `silenceReason: "judge_capitulated_after_rejection"`, never as
-   `no_useful_move`. Without this separation, speech-volume loss can never be
-   attributed correctly in evaluation.
-6. Only after that separation exists, consider raising `maxAttempts` from 2.
-   Raising it first would add another capitulation, not another repair.
+Two category errors, both of which turned bookkeeping outcomes into silence.
 
-Regression: a decision rejected on attempt 1 that ends silent is recorded with
-the capitulation reason, and `no_useful_move` appears only when attempt 1 itself
-chose silence.
+1. **Redundant rejections no longer degrade the controller.**
+   `conversationLedger.ts` set `degradedMode = ... || transition.rejected.length > 0`,
+   so *any* rejection put the controller into degraded mode, which forbids all
+   inferred speech. In T-C2-034 the only degraded turn (13) was produced by a
+   single idempotent no-op: the observer proposed closing an opportunity that was
+   already closed. The observer is shown only open opportunities, so it
+   re-proposes finished ones as a matter of course. Rejections are now split by
+   `isRedundantRejection(code)` — the two `:already_terminal` codes are no-ops,
+   everything else is material — and only material ones reach `conflictCodes`
+   and `degradedMode`. Redundant ones stay in `transition.rejected`, which is
+   persisted, so nothing becomes invisible.
+
+   **This also repaired a regression Gate 1 introduced.** Gate 1's terminal-merge
+   guard emits `opportunity:<id>:already_terminal` every time the inferred branch
+   re-proposes its session-constant id — eight turns in T-C2-034 — each of which
+   would have degraded the controller under the old rule.
+
+2. **Capitulated silence is labelled separately.**
+   `judgeCapitulatedToSilence(decision, attempts)` and
+   `judgeCapitulationRuleCodes(attempts)` in `interventionJudge.ts` detect the
+   shape where the Judge asked to speak, deterministic validation rejected it,
+   and the retry answered `silent` — the one output that always validates.
+   `interventionEngine.ts` now records those as
+   `ledger_judge_capitulated_after_rejection:<rule codes>` instead of
+   `ledger_judge_silent`. `silenceReason` is a free-form String field, so no
+   schema migration is needed. T-C2-034 turns 22, 25 and 26 are this shape.
+
+   `judgeEvidence` is deliberately left as the model reported it
+   (`no_useful_move`): it records what the Judge claimed, and rewriting it would
+   falsify the record. The distinction lives in `silenceReason`.
+
+**Deliberately not done: item 6, forbidding `silent` on the retry.** Re-reading
+the run, the correction is not obviously "speak". At turns 22/25/26 there was no
+selectable opportunity and no eligible trait, so the only valid speak was
+`contribute` + `conversation_grounded_synthesis`; whether that was worth saying
+is a judgement the log cannot settle. Forbidding `silent` would convert an
+honest capitulation into an invalid speak, two failed attempts and a
+`ledger_judge_failure` — a worse record, not more speech. Gate 1 also removed
+terminal ids from the prompt, which is what attempt 1 kept selecting, so the
+trigger may already be much rarer. Measure first, using the new label.
+
+Regressions in `test-conversation-ledger.ts`: a redundant rejection does not
+degrade while a material one still does; capitulation is distinguished from a
+first-attempt silence, from a retry that recovers a valid speak, and from a
+malformed silence corrected into a clean one. Each was verified to fail with its
+own fix reverted.
+
+Verified: `build`, `test:conversation-ledger`, `test:conversation-recovery`,
+`test:intervention-v2` all pass (checked with real exit codes, not a piped
+`$?`); `git diff --check` clean.
 
 ### Gate 3 — Supply something to say
 
@@ -306,6 +347,9 @@ npm run test:conversation-recovery
 `tsx` tests may hit a managed-sandbox IPC `EPERM`; rerun with the local IPC
 permission granted. Run `git diff --check` before finishing a change.
 
+Capture exit codes directly — `npm run build --silent | tail -5; echo $?` reports
+`tail`'s status, not the build's. Redirect to a file and test `$?` instead.
+
 Note: `tsx` does not typecheck, so a test can pass under `test:conversation-ledger`
 while `npm run build` fails. Always run `build` as well — `test:intervention-v2`
 depends on it.
@@ -361,3 +405,9 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
 - 2026-09-06 — Working location moved back to the root checkout at the user's
   request; all Gate 0+1 content now lives there as uncommitted changes on top of
   `origin/main`. The repair branch is retained as a frozen backup at `ba582c3`.
+- 2026-09-06 — Gate 2 complete (uncommitted in the root checkout; backed up on
+  the repair branch). Redundant vs material rejections split so idempotent
+  no-ops stop degrading the controller — this also repaired a regression Gate 1
+  had introduced — and capitulated silence given its own `silenceReason`.
+  Retry-forbids-silent deliberately deferred pending measurement. build + ledger
+  + recovery + intervention-v2 green.

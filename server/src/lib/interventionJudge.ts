@@ -614,6 +614,51 @@ export function conversationLedgerDecisionProjection(
   };
 }
 
+/**
+ * True when the Judge asked to speak, deterministic validation rejected the
+ * request, and the retry then answered `silent`.
+ *
+ * The retry prompt reports the violated rule codes and asks for a correction.
+ * `silent` is the one output that always validates, so it is the cheapest way
+ * out of a rejection — and the resulting record is indistinguishable from a
+ * turn where the Judge genuinely had nothing worth saying, because both land as
+ * `evidence: "no_useful_move"`. Session T-C2-034 shows the pattern three times
+ * (turns 22, 25 and 26: attempt 1 selects an opportunity, is rejected, attempt
+ * 2 goes silent).
+ *
+ * This does not decide whether the silence was wrong. A capitulation can be
+ * correct — the model may have had no valid move. It exists so the two cases
+ * stop sharing one label and speech-volume loss can be attributed. Treat a
+ * rising capitulation rate as a signal to fix the contract the Judge keeps
+ * violating, not as a licence to force speech.
+ */
+export function judgeCapitulatedToSilence(
+  decision: ConversationLedgerJudgeDecision | null,
+  attempts: readonly ConversationLedgerJudgeCallAttempt[],
+): boolean {
+  if (!decision || decision.decision === "speak") return false;
+  return attempts.some(
+    (attempt) =>
+      attempt.status === "validation_failed" && attempt.parsedOutput?.decision === "speak",
+  );
+}
+
+/** The rule codes a capitulating Judge backed away from, for the silence audit. */
+export function judgeCapitulationRuleCodes(
+  attempts: readonly ConversationLedgerJudgeCallAttempt[],
+): string[] {
+  return [
+    ...new Set(
+      attempts
+        .filter(
+          (attempt) =>
+            attempt.status === "validation_failed" && attempt.parsedOutput?.decision === "speak",
+        )
+        .flatMap((attempt) => attempt.ruleCodes ?? []),
+    ),
+  ].sort();
+}
+
 export async function judgeConversationLedgerTurn(input: {
   messages: ObserverTranscriptMessage[];
   state: ConversationLedgerState;
