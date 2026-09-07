@@ -706,6 +706,91 @@ which is true, and was described as ready to start immediately, which
 understated it — it touches the reservation state machine at seven points. The
 scope was read properly only after the proposal.
 
+## 4d. Third measurement — T-C1-022 (2026-09-07)
+
+Same opening script again, on the Gate A build. **Diagnosis only — nothing was
+fixed from this run.**
+
+| Turn class | C1-020 (baseline) | C1-021 (A1–A4) | C1-022 |
+| --- | --- | --- | --- |
+| Silent | 8.2 s | 6.8 s | **6.7 s** |
+| Spoken | 19.6 s (med) | 13.2 s (med) | 18.3 / 19.0 / 12.1 / 9.2 s |
+
+### A6 does not appear to have been in effect in this run
+
+Per-turn arithmetic from the export, anchor 12: observer 4.055 + judge 1.047 +
+generation 2.017 = 7.1 s. Adding a **sequential** 2 s floor gives 9.1 s; the
+turn measured **9.2 s**. With the floor overlapped it should have been ~7.3 s.
+Anchor 9 fits the same way. The most likely explanation is that the server was
+still running the pre-A6 build (the log shows T-C1-021's long-silence timer
+still resident, i.e. no restart between runs). **Re-measure on a restarted
+server before drawing any conclusion about A6.**
+
+### A3 worked for the Observer and cannot work for the Judge as built
+
+- Observer: `cachedInputTokens` **2432–2560** on 4 of 7 turns (was 512–1590).
+- Judge: **0 on every call, again.**
+
+The reason is structural, not an ordering mistake. The Judge's static system
+block is ~3,141 characters ≈ **785 tokens**, and OpenAI only caches prefixes of
+**1024 tokens or more**. Early in a session `system + transcript` sits under
+that line, so those calls are uncacheable no matter how they are ordered. The
+Observer's system block is ~1,815 tokens and caches immediately.
+**Not worth chasing:** judge calls run 1.0–1.7 s on 1.2–1.7 k tokens. Record the
+reason and move on.
+
+### The Observer review path can double a turn
+
+Anchor 3 set `observerReviewed: true` and made two calls — 5,797 + 6,372 ms =
+**12.2 s of observer on one turn**. Anchor 6 took **13,875 ms in a single call**.
+Observer latency now ranges 3.9–13.9 s. This is the remaining bulk of the turn
+and Gate B1 (cut ~400 output tokens to ~100) is aimed at the wrong half of it if
+the review path keeps firing. New item **B8**.
+
+### Two speech-quality regressions, both traceable
+
+**1. Alex greeted the room again at seq 10 ("Hi again — glad we're starting with
+Candidate A").** Not a generation whim. The observer created `thread-1` rooted at
+**seq 1, Alex's own greeting**, with `requestedAction: "greet participants"` —
+and that string was still the thread's requested action on **all seven**
+observations, through seq 12. It reaches the generator as
+`selectedOpportunityRequestedAction`. At turn 9 the Judge selected
+`opp:1:group_request:alex`, whose origin is Alex's greeting at seq 1, citing
+`judgeEvidenceSeqs: [1, 9]`. The generator was handed "the requested action is:
+greet participants" eight turns into a candidate discussion and did exactly that.
+
+Two defects compose here:
+- the thread's `requestedAction` is frozen at whatever the observer wrote when
+  the thread was created and is never revised as the conversation moves on. In
+  every earlier session the thread happened to be rooted at a human's proposal,
+  so the string was "discuss candidates" and this stayed invisible. New item
+  **B7**.
+- `opp:1:group_request:alex` is the thread-root-keyed inferred opportunity that
+  **Gate 1 deliberately left unchanged** on the grounds that "there is no
+  evidence in the observed run that the dead id cost any speech". That
+  attribution held for T-C2-034 and T-C2-037. It does not hold now: this is the
+  first run where that id produced visible damage in the transcript. The Gate 1
+  deferral should be revisited under **B4**, not left as an audit-only concern.
+
+**2. Peer Alex directed the process at seq 13** — "that alignment means our
+shared data on A is complete for now and we can move on when you're ready."
+Route `followup`, evidence `conversation_grounded_synthesis`, and the Judge's
+selected trait `A_n5` was **cleared by the Gate 3R repair**. The turn therefore
+had no licensed information to carry and the model filled it with process talk.
+Same shape at seq 4 and 7 ("Sounds good", "Sounds like a plan"). Three of five
+Alex messages in this session carry no candidate information at all.
+
+This is a **known side effect of Gate 3R**, now with data. Gate 3R noted that
+whether a fact-less `follow` was worth saying "is a judgement the log cannot
+settle". T-C1-022 settles it for the Peer condition: it is not — a contentless
+follow reads as process direction, which is precisely what a Peer must not do.
+The orthogonality assertions do not catch it because it is not the `mediation`
+route. **Gate D is the fix; do not patch it before then.** If Gate D slips, the
+cheaper interim is to make a fact-less `follow` silent again in C1/C3 only.
+
+Length itself improved: Alex averaged **30.8 words** here against 43.8 in
+C1-020. The failure moved from too long to empty.
+
 ### Gate B — Observer: read the facts, cheaply and correctly
 
 | # | Change |
@@ -713,9 +798,11 @@ scope was read properly only after the proposal.
 | B1 | **Shrink the output schema.** The model should return only what is judgeable *this turn*: addressees, speechAct, requestIntent, alexRelation, floor, thread status change, focus. Everything else — roster, participants, scopeCandidates, threadId/rootSeq, and `mentionedCandidates` — is derivable deterministically; `mentionedCandidates` is *already* recomputed by regex in the normalizer, so the model is paying ~450 output tokens per turn to emit fields that are then overwritten. Target ~100 tokens. |
 | B2 | **Fix the literal-candidate regex** so a bare `A` is detected in ordinary positions ("lay out A first"). Salience accuracy depends on it. Guard against the English article "a" as the prompt already warns. |
 | B3 | **Invert focus vs salience.** Focus wins only when `focusBasis === "current_explicit"`. A `carried_thread` focus is an inference about an announcement and must not outrank the candidate actually being named. Direct fix for T-C2-039 seq 10. |
-| B4 | **Opportunity TTL.** Expire an unconsumed `invitation` after N turns or one epoch. Fixes prompt bloat and stale selection together. |
+| B4 | **Opportunity TTL, and revisit the Gate 1 deferral.** Expire an unconsumed `invitation` after N turns or one epoch. Gate 1 left the thread-root-keyed inferred opportunity id in place because it had cost no speech in the runs available then; T-C1-022 shows it being selected eight turns after its origin and producing a second greeting, so that attribution no longer holds. |
 | B5 | **Compact the carried state.** Keep the transcript whole (cache-friendly); pass the previous ledger as a compact delta rather than a full JSON dump. |
 | B6 | *(from retired item 11)* Stop the C2 task-grounding regex from bypassing the Observer snapshot, and give C2 a question-form variant. Re-observed at T-C2-039 seq 5–6. |
+| B7 | **Revise the thread's `requestedAction`.** It is written once when the thread is created and never updated, so a thread rooted at Alex's greeting told the generator "greet participants" for a whole session (T-C1-022, seq 10). It must track what the group is currently doing, or stop being passed to generation as an instruction. |
+| B8 | **Bound the Observer review path.** `observerReviewed: true` makes a second full call — 12.2 s of observer on one turn in T-C1-022, against a 3.9 s single-call floor. Either the review inherits B1's smaller schema or it is capped, otherwise B1's savings are erased on exactly the turns that are already slowest. |
 
 ### Gate C — Judge: a goal, not a rubber stamp
 
@@ -857,6 +944,16 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
   + recovery + intervention-v2 green. Cooldown bypass deliberately not added —
   its motivating turn is downstream of the ranking defect. Measured effect
   pending a live replay.
+- 2026-09-07 — T-C1-022 measured (diagnosis only, no code changed). Silent turns
+  held at 6.7 s; spoken turns did not improve, and the arithmetic says A6 was
+  not in effect — re-measure on a restarted server. A3 confirmed for the
+  Observer (2432–2560 cached) and shown to be structurally impossible for the
+  Judge, whose static block is ~785 tokens against a 1024-token cache minimum.
+  Two speech regressions traced: a stale thread `requestedAction` frozen at
+  "greet participants" made Alex greet the room again mid-session (new B7, and
+  it revives the Gate 1 opportunity-keying deferral under B4), and a fact-less
+  `follow` — the Gate 3R repair's own side effect — filled Peer turns with
+  process direction (Gate D owns it).
 - 2026-09-07 — Gate A1–A4 complete (uncommitted in the root checkout; backed up
   on the repair branch). One live observation per session, superseded work
   aborted instead of paid for, and both model prompts reordered for prefix
