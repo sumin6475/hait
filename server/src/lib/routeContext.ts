@@ -795,14 +795,32 @@ const NEW_INFORMATION_REQUESTS = [
   /\b(?:new|additional)\s+insight\b|\banything\s+else\b/i,
   /(?:새로운|추가|더).*(?:정보|내용|특성|속성|인사이트)|(?:우리가|팀이).*(?:모르는|없는).*(?:정보|내용)/,
 ];
-const EXPLICIT_ALL_SCOPE = [
+// [T-C1-027] The all-scope markers are split by what they actually scope over.
+// "every candidate" names the whole field; "all your notes" names a complete
+// inventory, which is a *single*-candidate request whenever the message also
+// names one candidate. Before this split, "all your notes for candidate A"
+// reached the whole-board recap because any all-marker suppressed Priority 1.
+const ALL_CANDIDATES_SCOPE = [
   /\ball\s+(?:of\s+the\s+)?(?:candidates|finalists|profiles)\b|\b(?:every|each)\s+(?:candidate|finalist|profile)\b/i,
-  /\b(?:all|everything|complete|full)\s+(?:of\s+)?(?:your\s+)?notes\b/i,
   /\ball\s+of\s+them\b/i,
-  /(?:모든|전체)\s*(?:후보|후보자|프로필|노트|메모)/,
+  /(?:모든|전체)\s*(?:후보|후보자|프로필)/,
 ];
+const ALL_INVENTORY_SCOPE = [
+  /\b(?:all|everything|complete|full)\s+(?:of\s+)?(?:your\s+)?notes\b/i,
+  /(?:모든|전체)\s*(?:노트|메모)/,
+];
+const EXPLICIT_ALL_SCOPE = [...ALL_CANDIDATES_SCOPE, ...ALL_INVENTORY_SCOPE];
+// The nouns are the ones participants actually use for a card's contents.
+// T-C1-027 asked four times using "attributes" and "items", neither of which
+// was here, so the request classified as `none` and every downstream consumer
+// treated an explicit complete-list request as no request at all. The optional
+// possessive is the same omission: "all your attributes" did not match either.
+const COMPLETE_INVENTORY_NOUNS = "traits?|attributes?|items?|points?|matches|misses|profiles?|notes?";
 const EXPLICIT_COMPLETE_SINGLE = [
-  /\b(?:all|every|complete|full)\s+(?:of\s+)?(?:the\s+)?(?:traits?|matches|misses|profiles?|notes?)\b/i,
+  new RegExp(
+    `\\b(?:all|every|complete|full)\\s+(?:of\\s+)?(?:the\\s+|your\\s+|his\\s+|her\\s+|their\\s+)?(?:${COMPLETE_INVENTORY_NOUNS})\\b`,
+    "i",
+  ),
   /\ball\s+(?:the\s+)?(?:Candidate\s+)?[ABCD](?:'s|’s)?\s+traits?\b/i,
   /\beverything\s+you\s+(?:have|got|know)\b/i,
   /(?:전부|모두|전체|모든)\s*(?:특성|속성|장단점|매치|미스|프로필|노트|메모)/,
@@ -940,14 +958,28 @@ function requestCountKind(text: string): RequestCountKind {
  * true in character — Alex writes chat prose, and a Peer really does hold only
  * its own card — so neither has to reach for a policy.
  */
+const LAYOUT_NOUNS = "table|chart|grid|matrix|spreadsheet";
 const LAYOUT_REQUESTS = [
-  /\b(?:table|chart|grid|matrix|spreadsheet)\b/i,
+  // A layout noun only makes this a formatting request when something binds it
+  // to *how* the answer should look. Bare "table" cannot: "everything on the
+  // table" is this task's idiom for the visible board — VISIBLE_BOARD_SCOPE
+  // reads it that way — and T-C1-027 phrases whole-board requests exactly so.
+  new RegExp(
+    `\\b(?:make|create|build|put|lay|format|organi[sz]e|arrange|draw|give|show|write|turn|do)\\b[^.?!]{0,40}\\b(?:${LAYOUT_NOUNS})\\b`,
+    "i",
+  ),
+  new RegExp(`\\b(?:in|as|into)\\s+(?:a|an|the)\\s+(?:${LAYOUT_NOUNS})\\b`, "i"),
+  new RegExp(`\\b(?:${LAYOUT_NOUNS})\\s+(?:format|form|layout|view)\\b`, "i"),
   /\b(?:columns?|rows?)\b/i,
   /\bbullet(?:ed|s)?\b|\bnumbered list\b/i,
-  /(?:표|테이블|차트|도표)(?:로|를|을)?/,
+  /(?:표|테이블|차트|도표)(?:로|를|을)/,
 ];
 export function layoutRequestSignal(content: string | undefined | null): boolean {
-  return matchesAny(content?.trim() ?? "", LAYOUT_REQUESTS);
+  // The idiom is removed before matching so that "put everything on the table"
+  // — a verb plus the noun, and a legitimate whole-board request — does not
+  // reach the verb pattern above.
+  const text = (content?.trim() ?? "").replace(/\bon the table\b/gi, " ");
+  return matchesAny(text, LAYOUT_REQUESTS);
 }
 
 /**
@@ -995,6 +1027,8 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   const completeMarker =
     directed && (matchesAny(text, EXPLICIT_COMPLETE_SINGLE) || EVERYTHING_REQUEST.test(text));
   const allMarker = directed && matchesAny(text, EXPLICIT_ALL_SCOPE);
+  // Only a whole-field marker suppresses the single-candidate reading below.
+  const allCandidatesMarker = directed && matchesAny(text, ALL_CANDIDATES_SCOPE);
   const named = mentions.size === 1 ? [...mentions][0]! : null;
   const mentionedCandidates = [...mentions];
   const compareMarker = matchesAny(text, COMPARE_REQUESTS);
@@ -1005,7 +1039,7 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   // ("Can you give me all traits of Candidate B?" carries no "what do you
   // have") and it outranks the current conversational focus and the one-trait
   // guard.
-  if (completeMarker && named && !allMarker) {
+  if (completeMarker && named && !allCandidatesMarker) {
     return { kind: "complete_single_candidate", candidate: named, source };
   }
   // A request to compare all candidates is synthesis, not a request to dump
@@ -1177,11 +1211,11 @@ const BARE_ALEX_ADDRESS = /^\s*(?:hey\s+)?alex[\s?!.,]*$/i;
 function requestBundleForAnchor(
   window: TranscriptMessage[],
   anchorSeq: number,
-): { anchor?: TranscriptMessage; content: string } {
+): { anchor?: TranscriptMessage; content: string; startIndex: number } {
   const anchor = anchorHumanMessage(window, anchorSeq);
-  if (!anchor) return { content: "" };
+  if (!anchor) return { content: "", startIndex: -1 };
   const anchorIndex = window.findIndex((message) => message.seq === anchor.seq);
-  if (anchorIndex < 0) return { anchor, content: anchor.content };
+  if (anchorIndex < 0) return { anchor, content: anchor.content, startIndex: -1 };
 
   let start = anchorIndex;
   if (BARE_ALEX_ADDRESS.test(anchor.content)) {
@@ -1199,12 +1233,87 @@ function requestBundleForAnchor(
 
   return {
     anchor,
+    startIndex: start,
     content: window
       .slice(start, anchorIndex + 1)
       .filter((message) => message.senderRole !== "ai")
       .map((message) => message.content)
       .join("\n"),
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * [T-C1-027] Carrying a request across Alex's own clarifying questions, and
+ * letting the lexical reading widen a scope the Observer under-read.
+ *
+ * T-C1-027 answered one request with four consecutive clarifying questions.
+ * Two independent causes, both here:
+ *
+ * 1. A follow-up fragment answers a question *Alex* asked, so it states no
+ *    request of its own: "full row" and "alphabetical order A, B, C, D" both
+ *    classify as `none`, and the turn is re-scoped from scratch while the
+ *    participant believes their original request is still being served.
+ * 2. With an opportunity selected the intent comes from the Observer and the
+ *    lexical classifier is never consulted, so "add all your attributes for
+ *    candidate A" — read by the Observer as `new_information_request` — was
+ *    scoped to a single trait. Narrow scope plus the layout ban plus a
+ *    one-trait cap leaves no legal way to comply, so the model asks instead.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+const CARRIED_REQUEST_MAX_HOPS = 3;
+
+/**
+ * Deliberately narrow: it requires an Alex *question* immediately before the
+ * fragment, so an ordinary Alex contribution cannot chain a stale request
+ * forward, and it is only ever consulted when the fragment itself asks for
+ * nothing. Bounded at three hops so a request cannot outlive the exchange that
+ * produced it.
+ */
+function carriedRequestIntent(window: TranscriptMessage[], bundleStartIndex: number): RequestIntent {
+  if (bundleStartIndex < 0) return NO_REQUEST_INTENT;
+  let index = bundleStartIndex;
+  for (let hop = 0; hop < CARRIED_REQUEST_MAX_HOPS; hop += 1) {
+    const question = window[index - 1];
+    if (!question || question.senderRole !== "ai" || !question.content.includes("?")) {
+      return NO_REQUEST_INTENT;
+    }
+    let humanIndex = index - 2;
+    while (humanIndex >= 0 && window[humanIndex]!.senderRole === "ai") humanIndex -= 1;
+    if (humanIndex < 0) return NO_REQUEST_INTENT;
+    const carried = classifyRequestIntent(window[humanIndex]!.content);
+    if (carried.kind !== "none") return carried;
+    index = humanIndex;
+  }
+  return NO_REQUEST_INTENT;
+}
+
+// Only these Observer readings may be widened: each one asserts a *narrower*
+// scope on the same axis, so replacing it with an explicit complete-list
+// reading adds nothing the participant did not ask for in so many words. A
+// reading on another axis — a preference, a count, a comparison — is left
+// exactly as the Observer made it.
+const OBSERVER_KINDS_OPEN_TO_WIDENING = new Set<RequestIntentKind>([
+  "none",
+  "scoped_information_request",
+  "new_information_request",
+]);
+const LEXICAL_KINDS_THAT_WIDEN = new Set<RequestIntentKind>([
+  "complete_single_candidate",
+  "complete_all_candidates",
+]);
+
+/**
+ * The mirror of D6. D6 lets the lexical reading *veto* a wide template the
+ * Observer's reading would have fired; this lets it *authorise* the scope the
+ * Observer under-read. Both rest on one rule: a complete-list scope requires
+ * explicit lexical evidence in a request directed at Alex — `completeMarker`
+ * and `allMarker` are both gated on `isRequestDirectedAtAlex` — which is why a
+ * procedural proposal about "each candidate" still widens nothing.
+ */
+export function widenRequestIntent(observed: RequestIntent, lexical: RequestIntent): RequestIntent {
+  if (!OBSERVER_KINDS_OPEN_TO_WIDENING.has(observed.kind)) return observed;
+  if (!LEXICAL_KINDS_THAT_WIDEN.has(lexical.kind)) return observed;
+  return lexical;
 }
 
 function requestScopeFromIntent(input: {
@@ -1622,12 +1731,26 @@ export function buildRouteUserContext(input: {
   const requestBundle = requestBundleForAnchor(window, input.anchorSeq);
   const anchor = requestBundle.anchor;
   const groundingSignal = taskGroundingSignal(requestBundle.content);
-  const requestIntent =
-    input.routeKind === "address" || input.routeKind === "followup"
-      ? (input.selectedOpportunity
+  // One lexical reading per turn, carried across Alex's own clarifying questions
+  // when the fragment states no request of its own. Both the intent below and
+  // the deterministic bypass read this same value; classifying twice is what let
+  // the two disagree silently in the first place.
+  const requestReadable = input.routeKind === "address" || input.routeKind === "followup";
+  const directLexicalIntent = requestReadable
+    ? classifyRequestIntent(requestBundle.content)
+    : NO_REQUEST_INTENT;
+  const lexicalIntent =
+    requestReadable && directLexicalIntent.kind === "none"
+      ? carriedRequestIntent(window, requestBundle.startIndex)
+      : directLexicalIntent;
+  const requestIntent = requestReadable
+    ? widenRequestIntent(
+        input.selectedOpportunity
           ? (input.selectedOpportunity.requestIntent ?? NO_REQUEST_INTENT)
-          : (input.requestIntentOverride ?? classifyRequestIntent(requestBundle.content)))
-      : NO_REQUEST_INTENT;
+          : (input.requestIntentOverride ?? lexicalIntent),
+        lexicalIntent,
+      )
+    : NO_REQUEST_INTENT;
   const focusControlOverridden = Boolean(input.selectedOpportunity) || requestOverridesFocusControl(
     input.routeKind,
     anchor,
@@ -1674,6 +1797,15 @@ export function buildRouteUserContext(input: {
       lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0));
   const completeRequestCandidate =
     requestIntent.kind === "complete_single_candidate" ? resolvedRequestCandidate : null;
+  // [Decline / T-C1-027] A request Alex must decline is not one the template may
+  // silently fulfil. Widening makes the complete-list templates reachable on
+  // turns the decline detectors also fire on, and the whole-board template would
+  // then have a Peer recite the group's board — the leader behaviour the
+  // collation refusal exists to prevent. Those turns go to generation, where the
+  // decline block is read and the widened scope still applies.
+  const declineTakesPrecedence =
+    layoutRequestSignal(requestBundle.content) ||
+    (!isLeaderCondition(input.conditionCode) && collationRequestSignal(requestBundle.content));
   const deterministicResponse =
     deterministicTaskGroundingResponse({
       signal: groundingSignal,
@@ -1687,7 +1819,7 @@ export function buildRouteUserContext(input: {
     // no list request at all — routed to the board recap. The deterministic
     // bypass now requires both readings to agree; disagreement falls through to
     // generation, never to a wider template.
-    (classifyRequestIntent(requestBundle.content).kind === requestIntent.kind
+    (!declineTakesPrecedence && lexicalIntent.kind === requestIntent.kind
       ? deterministicCompleteResponse({
           language: input.language,
           intent: requestIntent,

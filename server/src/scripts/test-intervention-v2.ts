@@ -26,6 +26,7 @@ import {
   layoutRequestSignal,
   collationRequestSignal,
   candidateLetterAddressSignal,
+  widenRequestIntent,
   buildRouteUserContext,
   classifyRequestIntent,
   decidePreferenceFromKnownCoverage,
@@ -3383,5 +3384,194 @@ assert.match(
   declinePrompt,
   /Both refusals are about what you have and how you write, never about a rule/i,
 );
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [Request scope — T-C1-027] The decline shipped before the scope it declines
+// from was right. Two causes, both measured on the same four turns.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// (0) "on the table" is this task's idiom for the visible board, not a request
+// for a table layout. Before this the layout detector fired on every whole-board
+// request phrased that way, so widening one would have been declined instead of
+// answered.
+assert.equal(
+  layoutRequestSignal("Alex, can you list everything on the table so far?"),
+  false,
+  "the visible-board idiom is not a formatting request",
+);
+assert.equal(
+  layoutRequestSignal("Let's put everything on the table for candidate A."),
+  false,
+  "a verb next to the idiom must not make it one either",
+);
+assert.equal(layoutRequestSignal("Can you put this in a table?"), true);
+assert.equal(layoutRequestSignal("give me a table format please"), true);
+
+// (1) Widening — the mirror of D6. The Observer under-reads the scope; the
+// lexical reading, which is gated on the request being directed at Alex, may
+// raise it to the explicit complete-list scope the participant asked for.
+const observedNarrow = { kind: "new_information_request", candidate: null, source: "alex_notes" } as any;
+const lexicalComplete = { kind: "complete_single_candidate", candidate: "A", source: "alex_notes" } as any;
+assert.equal(widenRequestIntent(observedNarrow, lexicalComplete).kind, "complete_single_candidate");
+assert.equal(
+  widenRequestIntent({ kind: "preference_request", candidate: null, source: "alex_notes" } as any, lexicalComplete)
+    .kind,
+  "preference_request",
+  "a reading on another axis is left exactly as the Observer made it",
+);
+assert.equal(
+  widenRequestIntent(observedNarrow, { kind: "insight_request", candidate: null, source: "alex_notes" } as any).kind,
+  "new_information_request",
+  "only an explicit complete-list reading may widen",
+);
+
+const widenedRequest = "Alex, can you add all your attributes for candidate A indicating which are matches and which are misses.";
+const widenedContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: [{ seq: 9, senderRole: "humanX", speaker: "Participant X", content: widenedRequest }],
+  revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+  selectedOpportunity: {
+    id: "opp-1",
+    kind: "direct_question",
+    expectation: "required",
+    sourceSeq: 9,
+    currentTriggerSeq: 9,
+    threadId: "t1",
+    targets: ["Alex"],
+    requestedAction: "answer",
+    sourceContent: widenedRequest,
+    evidenceSeqs: [9],
+    requestIntent: observedNarrow,
+  },
+} as any);
+assert.equal(
+  widenedContext.requestIntent.kind,
+  "complete_single_candidate",
+  "T-C1-027: the Observer read this as new_information_request and Alex answered with one trait",
+);
+assert.ok(
+  widenedContext.deterministicResponse?.includes("Candidate A"),
+  "once both readings agree the D6 template answers the request exactly",
+);
+
+// An undirected procedural proposal still widens nothing — the D6 direction
+// requirement is what keeps this from turning group talk into a list request.
+const proposalContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: [
+    {
+      seq: 9,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Let's do one candidate at a time and cover each candidate fully.",
+    },
+  ],
+  revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+  selectedOpportunity: {
+    id: "opp-2",
+    kind: "group_request",
+    expectation: "invited",
+    sourceSeq: 9,
+    currentTriggerSeq: 9,
+    threadId: "t1",
+    targets: ["Alex"],
+    requestedAction: "respond",
+    sourceContent: "Let's do one candidate at a time and cover each candidate fully.",
+    evidenceSeqs: [9],
+    requestIntent: observedNarrow,
+  },
+} as any);
+assert.equal(proposalContext.requestIntent.kind, "new_information_request");
+
+// (2) Carrying the request across Alex's own clarifying question. "full" answers
+// a question Alex asked and states no request of its own, so every turn was
+// re-scoped from scratch while the participant believed one request was live.
+const carryMessages = (fragment: string, alexTurn: string) => [
+  { seq: 7, senderRole: "humanX", speaker: "Participant X", content: widenedRequest },
+  { seq: 8, senderRole: "ai", speaker: "Alex", content: alexTurn },
+  { seq: 9, senderRole: "humanX", speaker: "Participant X", content: fragment },
+];
+const carried = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: carryMessages("full", "Compact or full?"),
+  revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+} as any);
+assert.equal(
+  carried.requestIntent.kind,
+  "complete_single_candidate",
+  "the fragment answers Alex's own question, so the original request is still the live one",
+);
+
+const notAQuestion = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: carryMessages("full", "Candidate A has strong operations experience."),
+  revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+} as any);
+assert.equal(
+  notAQuestion.requestIntent.kind,
+  "none",
+  "an ordinary Alex contribution must not chain a stale request forward",
+);
+
+const ownRequest = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: carryMessages("Which one do you think is best?", "Compact or full?"),
+  revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+} as any);
+assert.equal(
+  ownRequest.requestIntent.kind,
+  "preference_request",
+  "a fragment that states its own request is never overridden by the carried one",
+);
+
+// (3) Decline outranks the template. Widening makes the whole-board template
+// reachable on a collation request, and a Peer reciting the group's board is the
+// leader behaviour the collation refusal exists to prevent.
+const collationBoardRequest = "Alex, can you compile all your notes that are on the table so far?";
+const collationBoardContext = (conditionCode: "C1" | "C2") =>
+  buildRouteUserContext({
+    routeKind: "address",
+    conditionCode,
+    language: "en",
+    anchorSeq: 9,
+    messages: [
+      { seq: 9, senderRole: "humanX", speaker: "Participant X", content: collationBoardRequest },
+    ],
+    revealStats: { humanSurfacedIds: ["A_p1"], aiSurfacedIds: [], humanConfirmedIds: ["A_p1"] },
+  } as any);
+
+// The positive control matters more than the negative one here: this request
+// really does reach the whole-board template, so the Peer assertion below is
+// only meaningful because the Leader assertion shows the template firing.
+const leaderCollation = collationBoardContext("C2");
+assert.equal(leaderCollation.requestIntent.kind, "complete_all_candidates");
+assert.ok(
+  leaderCollation.deterministicResponse?.includes("on the table"),
+  "assembling the board is the leader's job, and the template answers it",
+);
+
+const peerCollation = collationBoardContext("C1");
+assert.equal(peerCollation.requestIntent.kind, "complete_all_candidates");
+assert.equal(
+  peerCollation.deterministicResponse,
+  undefined,
+  "a request a Peer must decline is not one the template may silently fulfil",
+);
+assert.match(peerCollation.userPrompt, /Requested collation \(server-derived\)/);
 
 console.log("intervention-v2 checks passed");

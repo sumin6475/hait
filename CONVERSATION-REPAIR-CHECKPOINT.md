@@ -55,9 +55,11 @@ and either location can be recovered from the other.
 | D3/D4 · per-turn reveal budget | **DONE**, enforcing only since D2 | Gate D table, §4i |
 | Honest decline (table / collation) | **DONE** | §4j |
 | Candidate-label reservation | **DONE** | §4j |
+| Request scope — classifier vocabulary, widening, carry | **DONE** | §4k |
+| Issue tracker / triage labels / domain docs config | **DONE** — `.scratch/`, default labels, single-context | `docs/agents/` |
 | B2, B3, B6, B7 · Observer accuracy | OPEN — **no latency benefit expected** | Gate B table, §4g |
-| Observer overlap | **DESIGNED, awaiting a decision** | §4h |
-| Gate C · Judge role goals | **BLOCKED on the user** (§ Open decisions) | Gate C |
+| Gate C · Judge role goals | **APPROVED 2026-09-07, not started** | Gate C, §7 |
+| Observer overlap | **DECIDED: Option 2, then Option 1** — no code yet | §4h |
 | Gate D · D1–D5 generator length, emptiness, anti-repeat | OPEN | Gate D |
 
 **Do next, in this order.**
@@ -67,19 +69,21 @@ and either location can be recovered from the other.
    contradictory observations should not recur), D2 (repair exhaustion should
    stay rare — it fails closed, costing the turn), and the decline and
    label-reservation blocks.
-2. **Fix the scope the decline refuses from** (§4j, "not done"). The Observer
-   classified all four table turns `new_information_request` while the lexical
-   classifier read the first as `complete_all_candidates`; with an opportunity
-   selected, `routeContext.ts:1479` never consults the classifier. Let the
-   classifier *widen* a scope the Observer under-read — the D6 asymmetry in the
-   other direction — and carry a request across follow-up fragments so "full row"
-   is not re-scoped to `none`.
-3. **Decide on the Observer overlap** — §4h, recommendation Option 2 then Option 1.
-4. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
+2. ~~Fix the scope the decline refuses from~~ **DONE — §4k.** Three causes, not
+   the two §4i recorded; the third was that the classifier read the request as no
+   request at all. Never observed live.
+3. **Observer overlap, Option 2** (§4h) — decided 2026-09-07. Record the cooldown
+   veto before paying for the Observer, gated on the conservative test that no
+   bypass is possible, with the observation still running off the decision path.
+   Then Option 1 once Option 2's measurement confirms the budget.
+4. **Gate C** (§7 invariant retired, approved 2026-09-07). C2 keeps the
+   orthogonality assertions unchanged; check the pre-registration/IRB wording on
+   where the manipulation is applied before the next run.
+5. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
    expectation (§4g).
 
-**Waiting on the user.** Gate C cannot start until the condition-blind Judge
-invariant is formally retired (§7, § Open decisions). Nothing else is blocked.
+**Waiting on the user.** Nothing. Gate C was approved on 2026-09-07 and the
+condition-blind Judge invariant is retired (§7).
 Note that T-C1-024 makes Gate C more pressing, not less: **every** silence in
 that session was `cooldown`, applied by the router after the Judge had already
 decided to contribute (§4f).
@@ -1302,6 +1306,83 @@ the underlying scope right. The Observer still classified all four table turns
 so Alex is declining from a scope that was already too narrow. Both are in the
 next-steps list.
 
+### 4k. The scope the decline refuses from (2026-09-07)
+
+§4j made Alex refuse well and said plainly that it did not make the underlying
+scope right. This does. **Three causes, not the two recorded in §4i** — the third
+only became visible once the first two were built and the request still read as
+`none`.
+
+**1. The lexical classifier could not read the request at all.** T-C1-027 asked
+four times using "attributes" and "items"; `EXPLICIT_COMPLETE_SINGLE` listed
+`traits|matches|misses|profiles|notes` and required the noun to follow
+`all|every|complete|full` with at most `the` between them. So "add all your
+attributes for candidate A" classified as **`none`** — not as a narrow request,
+as *no request*. Every consumer downstream of that reading was correct given its
+input. The noun set now covers `attributes|items|points` as well, and an optional
+possessive (`your|his|her|their`) may sit between.
+
+**2. Any all-marker suppressed the single-candidate reading.** Priority 1 is
+`completeMarker && named && !allMarker`, and `EXPLICIT_ALL_SCOPE` mixed two
+different things: markers that scope over the *field* ("every candidate") and
+markers that scope over an *inventory* ("all your notes"). So "all your notes for
+candidate A" — one named candidate — reached the whole-board recap. Split into
+`ALL_CANDIDATES_SCOPE` and `ALL_INVENTORY_SCOPE`; only the former suppresses
+Priority 1.
+
+**3. Widening — the mirror of D6.** With an opportunity selected the intent comes
+from the Observer and the classifier is never consulted (`routeContext.ts`). D6
+lets the lexical reading *veto* a wide template; `widenRequestIntent` now lets it
+*authorise* the scope the Observer under-read. Both rest on one rule: a
+complete-list scope needs explicit lexical evidence **in a request directed at
+Alex** — `completeMarker` and `allMarker` are both gated on
+`isRequestDirectedAtAlex` — which is why T-C1-024 seq 3's procedural proposal
+still widens nothing. Only three Observer readings are open to it (`none`,
+`scoped_information_request`, `new_information_request`): each asserts a narrower
+scope on the same axis. A reading on another axis — a preference, a count, a
+comparison — is left exactly as the Observer made it.
+
+**4. Carrying the request across Alex's own clarifying question.** "full row" and
+"alphabetical order A, B, C, D" answer a question *Alex* asked and state no
+request of their own, so every turn was re-scoped from scratch while the
+participant believed one request was still live. `carriedRequestIntent` walks back
+over at most three question/answer pairs, and only when the message immediately
+before the fragment is an Alex **question**, so an ordinary Alex contribution
+cannot chain a stale request forward. It is consulted only when the fragment
+itself asks for nothing.
+
+**5. Decline outranks the template.** Widening makes the complete-list templates
+reachable on turns the decline detectors also fire on, and the whole-board
+template would then have a **Peer recite the group's board** — the leader
+behaviour §4j's collation refusal exists to prevent. Those turns go to
+generation, where the decline block is read and the widened scope still applies.
+
+**A defect in §4j's own work, found on the way.** `layoutRequestSignal` matched a
+bare `table`, and "on the table" is this task's idiom for the visible board —
+`VISIBLE_BOARD_SCOPE` reads it that way, and T-C1-027 phrases whole-board requests
+exactly so. Every such request would have been declined as a formatting request
+instead of answered, and widening one would have made that worse. Layout nouns now
+need a formatting verb or preposition binding them, and the idiom is removed before
+matching so "put everything on the table" does not reach the verb pattern.
+
+**Method.** Five regressions, each verified to fail with its own fix reverted.
+**One was vacuous on the first attempt and is recorded rather than hidden**: the
+decline-precedence assertion used a request phrased "all of everyone's attributes",
+which does not classify as a complete-list request at all, so the template was
+never going to fire and the assertion passed with the fix reverted. Replaced with a
+request that genuinely reaches the template plus a **Leader positive control** —
+the Peer assertion is only meaningful because the Leader assertion shows the same
+request firing the template. That is the fourth vacuous first attempt in this
+repair; the pattern is always the same, asserting on a path the fix does not
+control.
+
+**Not done.** "all of everyone's attributes" still classifies as `none`
+(`everyone's` is not in the possessive set). It is caught by the collation
+detector and declined, so the turn is not broken, but the reading is still wrong.
+Left alone rather than grown further: the phrase list has been patched three times
+now, and the note above `EXPLICIT_ALL_SCOPE` already says that the next such
+failure should replace the wording matcher with one shared semantic classifier.
+
 ### 4h. Observer overlap — design (2026-09-07)
 
 §4g established that no payload change reaches the ≤5 s median target while the
@@ -1458,9 +1539,11 @@ Two prompt-only attempts have failed. Enforce it.
 
 ### Open decisions blocking work
 
-1. **Gate C — the only thing actually blocking work.** Approve retiring the
-   condition-blind Judge invariant (§7)? Until then Gate C cannot start; every
-   other open item can proceed.
+1. ~~**Gate C — the only thing actually blocking work.**~~ **Approved
+   2026-09-07.** The condition-blind Judge invariant is retired (§7) and Gate C
+   may start. C2 must keep the orthogonality assertions passing unchanged, and
+   the pre-registration/IRB wording about where the manipulation is applied needs
+   checking before the next run.
 2. ~~**Gate A5**: may `floorMs` be tuned?~~ **Withdrawn.** A6 recovered the same
    2 s by overlapping generation with the pause, so the design value stays at
    2000/3000 ms untouched. Reopen only if Gate B leaves turns too slow.
@@ -1520,11 +1603,13 @@ repair.
   opportunities, and floor state.
 - The Judge is condition-blind. Condition-specific behavior belongs at final
   generation, with the single exception that Leader-only mediation stays gated to
-  C2/C4. **Under review (Gate C, 2026-09-07):** this invariant is proposed for
-  retirement in favour of a role goal inside the Judge. It stands until the user
-  approves. Whatever replaces it, the orthogonality assertions at
-  `test-intervention-v2.ts:1317` remain binding — a Peer must never gain
-  mediation or task-standard correction.
+  C2/C4. **RETIRED 2026-09-07 with the user's approval (Gate C).** A role goal
+  inside the Judge replaces it: a leader differs in what they *decide*, not only
+  in how they phrase it. The orthogonality assertions at
+  `test-intervention-v2.ts:1317` remain binding and unchanged — a Peer must never
+  gain mediation or task-standard correction. The manipulation now sits upstream
+  of generation, so the pre-registration and IRB description of where the
+  manipulation is applied must be checked before the next run.
 - Successful broadcast is the only `consumed_by_alex` transition. Generation
   failure, cancellation, floor blocking, and supersession must not consume one.
 - Human floor, cooldown, lifecycle, supersession, and generation failure must
@@ -1540,6 +1625,29 @@ repair.
 
 Append one line per completed gate: date, gate, commit, tests run, measured effect.
 
+- 2026-09-07 — Request scope repaired (§4k), and the repo's agent-skill config
+  written. §4j declined well from a scope that was still wrong; this fixes the
+  scope. **Three causes, not the two §4i recorded** — the third and largest was
+  that the lexical classifier read "add all your attributes for candidate A" as
+  `none`, because its noun list had no "attributes" and no possessive slot, so
+  every consumer downstream was correct given its input. Also: any all-marker
+  suppressed the single-candidate reading (split into field-scope vs
+  inventory-scope); `widenRequestIntent` lets the lexical reading authorise a
+  scope the Observer under-read, the mirror of D6 and gated on the same
+  directed-request test; `carriedRequestIntent` carries a request across at most
+  three of Alex's own clarifying questions; and a decline now outranks the
+  deterministic template, without which widening would have had a **Peer recite
+  the group's board**. Found and fixed a defect in §4j on the way — the layout
+  detector matched a bare "table", so every whole-board request phrased "on the
+  table" would have been declined instead of answered. Five regressions, each
+  verified to fail with its own fix reverted; **one vacuous on the first attempt
+  and recorded** (the fourth in this repair), replaced with a version carrying a
+  Leader positive control. build + all four suites green, `git diff --check`
+  clean. Gate C approved by the user and the §7 invariant retired; Observer
+  overlap decided as Option 2 then Option 1. Issue tracker set to local markdown
+  under `.scratch/`, default triage labels, single-context domain docs —
+  `docs/agents/` plus an `## Agent skills` section in `CLAUDE.md`. Not measured
+  live.
 - 2026-09-07 — Honest decline and candidate-label reservation (uncommitted).
   Built to the requirement agreed after T-C1-027: the layout ban stays and Alex
   declines plainly instead of asking a fifth clarification question, and a Peer

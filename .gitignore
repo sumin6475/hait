@@ -52,7 +52,12 @@ INTERVENTION_LOGIC.md
 MEMORY.md
 
 # Analysis reports (local notes, not tracked)
-docs/
+# `docs/*` rather than `docs/`: git never descends into an excluded directory,
+# so the negation below only works if the directory itself stays visible.
+docs/*
+# The agent-skill configuration is the exception — CLAUDE.md points at it, so it
+# has to travel with the repo.
+!docs/agents/
 cursor_steps/
 IRB/
 # prompt-management-system (오서링타임 툴 — 산출물 캐시는 지금 제외)
