@@ -569,7 +569,7 @@ Generation 2.3 s (20%) → floor 2–3 s.**
 Ordered. Gate A first because 39% of turns are currently thrown away, and no
 later gate's effect can be measured through that much loss.
 
-### Gate A — Latency and flow — A1–A4 DONE (uncommitted), A5 open
+### Gate A — Latency and flow — A1–A4, A6 DONE (uncommitted); A5 not needed, A7 open
 
 | # | Change | Where |
 | --- | --- | --- |
@@ -647,8 +647,64 @@ It duplicates a check that already exists eight lines later, so its outcome is
 unchanged and only its timing differs; testing it needs a full runtime harness.
 Said plainly rather than left implied.
 
-**Not yet measured.** The effect on median turn latency and on the 39% discard
-rate needs a live run — the user's call.
+**Measured on T-C1-021 (2026-09-07), same script, first 10 turns:**
+
+| | T-C1-020 (before) | T-C1-021 (after A1–A4) |
+| --- | --- | --- |
+| All turns, mean | 14.6 s | **11.5 s** (−21%) |
+| Silent turns | 8.2 s | **6.8 s** |
+| Spoken turns, median | 19.6 s | **13.2 s** |
+
+Real, and not enough. The run also settled where the rest of the time is:
+**a spoken turn costs 6.5 s more than a silent one on the same decision path**,
+and `floorMs` is only 2 s of that. Two serializations account for the rest.
+
+### A5 — `floorMs` — NOT NEEDED, superseded by A6
+
+Cutting the floor would change an experimental design value to buy ≤2 s. A6
+buys the same 2 s with no design change at all, so A5 is off the table unless
+A6 and A7 together still leave the turn too slow.
+
+### A6 — Overlap the floor pause with generation — DONE (uncommitted)
+
+`reserveTurn` set `setTimeout(floorMs)` and only then ran generation, so the two
+costs were additive — yet typing is already displayed from the moment the turn
+is reserved, which means **the floor is a display delay and the server was idle
+through it**. Generation now starts at reservation time and waits on a
+`floorGate` immediately before the existing commit check in `routeTurn.ts`.
+Participant-visible timing is unchanged: typing starts at the same instant and
+no message can appear before the floor deadline.
+
+Because generation now runs while the turn is still retractable, four things had
+to move with it:
+
+1. The `reservation` → `busy` transition moved from the top of `runReservation`
+   into the floor timer. That transition *is* the moment the turn stops being
+   retractable, so `humanArrivalAction` keeps returning `cancel_floor_then_evaluate`
+   during the pause and `finish_generation_then_reevaluate` after it — unchanged
+   semantics.
+2. `cancelReservation` marks the reservation `abandoned` and opens the gate, so
+   parked generation unblocks, fails `commitGuard` (the timer never set
+   `activeGenerationId`) and commits nothing.
+3. An abandoned turn's second audit record is suppressed at both sites it would
+   have appeared — `AIIntervention` via `supersededRecordOwnedElsewhere`, and
+   `finishTurnTrace` via an early return. Cancellation owns the record.
+4. The summary route's `generating → pending` repair runs *before* that early
+   return, so an abandoned summary still releases its status.
+
+**Not covered by a regression.** There is no runtime harness for `reserveTurn` /
+`executeRouteTurn` in this repository — `test-intervention-v2.ts` tests
+`humanArrivalAction` as a pure function and never drives the engine. Building
+one means mocking `io`, `Session`, `Message`, `allocSeq`, `AIIntervention` and
+the model call; worth doing before Gate D (which needs generation-level
+post-conditions), but not silently claimed here. **A6's timing and cancellation
+behaviour is verified by reasoning and by build + the three suites only, and
+needs a live smoke run to confirm.**
+
+**Correction to the record:** A6 was proposed as having "no design impact",
+which is true, and was described as ready to start immediately, which
+understated it — it touches the reservation state machine at seven points. The
+scope was read properly only after the proposal.
 
 ### Gate B — Observer: read the facts, cheaply and correctly
 

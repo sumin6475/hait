@@ -79,6 +79,14 @@ export interface RouteTurnInput {
     transition: ReducerTransitionAudit;
   }>;
   commitGuard?: () => boolean;
+  /**
+   * Resolves when the conversational floor pause has elapsed. Generation runs
+   * during the pause; nothing is persisted or broadcast until this settles, so
+   * the participant-visible timing is unchanged.
+   */
+  floorGate?: Promise<void>;
+  /** True when a cancelled turn's audit record has already been written elsewhere. */
+  supersededRecordOwnedElsewhere?: () => boolean;
 }
 
 export function blocksConsecutiveAITurn(input: {
@@ -412,8 +420,13 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     });
   };
 
+  // Hold the finished message until the floor pause is over. Everything after
+  // this point — the lifecycle re-read, the second commit check, the seq
+  // allocation — runs on the far side of the pause exactly as before.
+  if (input.floorGate) await input.floorGate;
+
   if (input.commitGuard && !input.commitGuard()) {
-    await recordSupersededDuringGeneration();
+    if (!input.supersededRecordOwnedElsewhere?.()) await recordSupersededDuringGeneration();
     return { ok: false, error: "superseded_during_generation" };
   }
 
@@ -462,7 +475,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   // A lifecycle change can race with the read above; check the runtime guard
   // once more immediately before committing the message.
   if (input.commitGuard && !input.commitGuard()) {
-    await recordSupersededDuringGeneration();
+    if (!input.supersededRecordOwnedElsewhere?.()) await recordSupersededDuringGeneration();
     return { ok: false, error: "superseded_during_generation" };
   }
 

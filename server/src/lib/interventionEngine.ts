@@ -117,6 +117,22 @@ interface Reservation {
   ledgerJudgeAttempts?: ConversationLedgerJudgeCallAttempt[];
   selectedOpportunity?: SelectedOpportunityGenerationContext;
   timer: NodeJS.Timeout;
+  /**
+   * Resolves when the conversational floor pause has elapsed.
+   *
+   * The floor is a *display* delay, not a compute one: typing is already shown
+   * from the moment the turn is reserved, so the participant-visible timing is
+   * fixed by this gate alone. Generation used to start only after the timer
+   * fired, leaving the server idle through the pause and making the two costs
+   * additive — a spoken turn ran ~6.5s longer than a silent one on the same
+   * decision path. Generation now runs *inside* the pause and waits here before
+   * anything is committed, so nothing a participant sees moves earlier.
+   */
+  floorGate: Promise<void>;
+  /** Opens the gate early so a cancelled turn does not leave work parked on it. */
+  releaseFloor: () => void;
+  /** True once cancellation has already written this turn's audit record. */
+  abandoned: boolean;
 }
 
 interface RuntimeState {
@@ -676,6 +692,12 @@ async function cancelReservation(runtime: RuntimeState, reason: string) {
   if (!reservation) return;
   clearTimer(reservation.timer);
   runtime.reservation = undefined;
+  // Generation for this turn may already be running inside the floor pause.
+  // Mark it abandoned before opening the gate: the generation then unblocks,
+  // fails `commitGuard` (the floor timer never set `activeGenerationId`) and
+  // returns without writing a second audit record for the record written here.
+  reservation.abandoned = true;
+  reservation.releaseFloor();
   emitTyping(runtime, reservation.id, false);
   if (reservation.routeKind === "summary") {
     runtime.summaryStatus = "pending";
@@ -836,25 +858,45 @@ function scheduleLongSilence(runtime: RuntimeState) {
 
 async function reserveTurn(
   runtime: RuntimeState,
-  input: Omit<Reservation, "id" | "timer" | "conversationEpoch" | "traceSeq"> & {
+  input: Omit<
+    Reservation,
+    "id" | "timer" | "conversationEpoch" | "traceSeq" | "floorGate" | "releaseFloor" | "abandoned"
+  > & {
     traceSeq?: number;
   },
 ) {
   if (runtime.lifecycle !== "active" || runtime.reservation || runtime.busy) return;
   const id = randomUUID();
-  const timer = setTimeout(() => {
-    void runReservation(runtime, id).catch((error) =>
-      log.error(`[intervention-v2] reservation error (${runtime.sessionCode}):`, error),
-    );
-  }, input.floorMs);
   const traceSeq = input.traceSeq ?? input.anchorSeq;
-  runtime.reservation = {
+  let releaseFloor!: () => void;
+  const floorGate = new Promise<void>((resolve) => {
+    releaseFloor = resolve;
+  });
+  // The timer no longer starts the work; it only ends the pause. Reaching it is
+  // the moment the turn stops being retractable, which is exactly the state
+  // change the timer used to make on its way into generation — `reservation`
+  // clears and `busy` is set here rather than at the top of `runReservation`,
+  // so `humanArrivalAction` keeps seeing `cancel_floor_then_evaluate` during
+  // the pause and `finish_generation_then_reevaluate` after it.
+  const timer = setTimeout(() => {
+    if (runtime.reservation?.id === id) {
+      runtime.reservation = undefined;
+      runtime.busy = true;
+      runtime.activeGenerationId = id;
+    }
+    releaseFloor();
+  }, input.floorMs);
+  const reservation: Reservation = {
     ...input,
     traceSeq,
     conversationEpoch: runtime.conversationEpoch,
     id,
     timer,
+    floorGate,
+    releaseFloor,
+    abandoned: false,
   };
+  runtime.reservation = reservation;
   // The Judge has already committed to speaking. Surface that intent during
   // the conversational floor pause; cancellation clears it immediately if a
   // newer human message supersedes this reservation.
@@ -866,15 +908,14 @@ async function reserveTurn(
       `plan: ${input.routeKind} (${input.communicativeAct ?? "speak"}; ${input.routeReason ?? "route"}) ` +
       `after ${input.floorMs}ms`,
   });
+  void runReservation(runtime, reservation).catch((error) =>
+    log.error(`[intervention-v2] reservation error (${runtime.sessionCode}):`, error),
+  );
 }
 
-async function runReservation(runtime: RuntimeState, reservationId: string) {
-  const reservation = runtime.reservation;
-  if (!reservation || reservation.id !== reservationId) return;
-  runtime.reservation = undefined;
-  runtime.busy = true;
-  runtime.activeGenerationId = reservation.id;
-  // Typing already began with the committed floor reservation.
+async function runReservation(runtime: RuntimeState, reservation: Reservation) {
+  // The reservation/busy transitions belong to the floor timer now; this runs
+  // during the pause. Typing already began when the turn was reserved.
   emitTyping(runtime, reservation.id, true);
   if (reservation.routeKind === "summary") {
     runtime.summaryStatus = "generating";
@@ -964,13 +1005,35 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
               return { stateAfter: reduced.state, transition: reduced.transition };
             }
           : undefined,
-      // Once generation begins, a human arrival no longer retracts this turn.
-      // It is coalesced and evaluated after the current response is broadcast.
-      // Lifecycle changes can still cancel the in-flight generation.
+      // Nothing is committed before the conversational floor has elapsed.
+      floorGate: reservation.floorGate,
+      // Once the floor has elapsed, a human arrival no longer retracts this
+      // turn. It is coalesced and evaluated after the current response is
+      // broadcast. Lifecycle changes can still cancel the in-flight generation.
       commitGuard: () => runtime.activeGenerationId === reservation.id,
+      // A turn cancelled during the floor already has its `stay_silent` record
+      // from `cancelReservation`. Without this the same turn would also be
+      // logged as `superseded_during_generation`, and one abandoned turn would
+      // appear twice in the audit.
+      supersededRecordOwnedElsewhere: () => reservation.abandoned,
     });
 
     if (!result.ok) {
+      // Repair the summary state first: this turn marked it `generating` when
+      // it started, which is now inside the floor pause, so it must be released
+      // whether or not this turn also owns the audit record.
+      if (reservation.routeKind === "summary") {
+        runtime.summaryStatus = "pending";
+        await Session.updateOne(
+          { _id: runtime.sessionId, "aiState.summaryStatus": "generating" },
+          { $set: { "aiState.summaryStatus": "pending" } },
+        );
+      }
+      // A turn cancelled during the floor pause has already been recorded and
+      // its trace closed by `cancelReservation`. Generation only ran because it
+      // now overlaps the pause; reporting it a second time would make one
+      // abandoned turn appear twice in both the audit and the turn trace.
+      if (reservation.abandoned) return;
       traceTurnEvent({
         sessionId: runtime.sessionId,
         seq: reservation.traceSeq,
@@ -981,13 +1044,6 @@ async function runReservation(runtime: RuntimeState, reservationId: string) {
         seq: reservation.traceSeq,
         outcome: `not spoken — ${result.error ?? "route declined"}`,
       });
-      if (reservation.routeKind === "summary") {
-        runtime.summaryStatus = "pending";
-        await Session.updateOne(
-          { _id: runtime.sessionId, "aiState.summaryStatus": "generating" },
-          { $set: { "aiState.summaryStatus": "pending" } },
-        );
-      }
       return;
     }
 
