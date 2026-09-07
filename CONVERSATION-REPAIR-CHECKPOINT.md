@@ -3,7 +3,7 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-07
+Last updated: 2026-09-07 (second series)
 
 > Read this file first in a new session. It is the working contract for the
 > Observer / Judge / Generator repair. It replaces re-deriving the diagnosis.
@@ -46,6 +46,14 @@ The four things being optimized, in the user's words:
 4. **The reply matches the context that was read** — including natural uptake
    (a light acknowledging opener), answering questions that were asked, and not
    restating information already on the table.
+
+5. **Alex answers inside the conversation's tempo** — a decision that lands
+   after the humans have moved on is a lost turn, not a slow one. Added
+   2026-09-07: 39% of T-C1-020's turns were discarded as superseded.
+6. **Alex speaks like a participant, not a report** — length and per-turn
+   information release are bounded and enforced, not requested. Added
+   2026-09-07: Alex averaged 4× the humans' message length and released 15
+   traits in a single turn.
 
 Quality bars that must hold throughout: natural uptake on ordinary turns;
 per-condition speech style preserved; no single condition's weighting dominating.
@@ -454,38 +462,206 @@ style `ledger_judge_failure` and `..._capitulated_after_rejection:trait_present_
 should both reach zero, and a voluntary contribution should name the candidate
 the group is actually on.
 
-### Gate 4 — Speech quality (prompt layer; only after 1–3)
+### Gates 4 and 5 (original) — RETIRED 2026-09-07
 
-8. Rewrite the address/followup opener rule to preserve its real intent (do not
-   let a condition performance replace the answer) while permitting uptake:
-   *take up the previous turn briefly, then go straight to the substantive answer;
-   the uptake must not exceed one clause and must vary across turns.*
-9. Relax the "my notes" rule: the goal is source concealment, not a mandatory
-   opener. Forbid a source phrase in the first sentence.
-10. Replace the natural-language anti-repeat instruction with **deterministic
-    context**: inject `revealStats.aiSurfacedIds` for the relevant candidate as
-    "already stated by you", and forbid restatement outside an explicit full-list
-    request.
-11. Stop the C2 task-grounding regex from discarding the Observer snapshot. Pass
-    the equal-weight correction as a required generation-context block so the
-    reply also answers the substantive move in the same message. Add a C2
-    counterpart to C4's question-form variant.
+Superseded after two live runs (T-C1-020 Peer, T-C2-039 Leader) showed a
+different bottleneck than the one those gates were written for. Disposition of
+every original item, so nothing is lost by accident:
 
-Regression: condition-orthogonality assertions in
-`server/src/scripts/test-intervention-v2.ts:1317` must continue to pass — C1/C3
-Peer must not gain mediation or task-standard correction from any of these edits.
+| Original item | Disposition |
+| --- | --- |
+| 8. uptake opener on address/followup | → **Gate D3** (folded, unchanged in intent) |
+| 9. relax the "my notes" opener rule | → **Gate D5** (folded into the exception-clause trim) |
+| 10. deterministic anti-repeat via `revealStats.aiSurfacedIds` | → **Gate D4** (now evidenced: C profile recited 4×, D 3× in one session) |
+| 11. C2 task-grounding regex discards the Observer snapshot | → **Gate B6** (kept as its own item; it is a router defect, not prompt quality. Re-observed at T-C2-039 seq 5–6: the fixed sentence fired and the participant's candidate elimination went unanswered, exactly as at T-C2-034 seq 5) |
+| 12. always emit a turn trace | **DONE** — `[pooling] coverage: …` now prints on every turn including zero results, plus `traceTurnEvent` |
+| 13. separate failure from absence | **DONE for the human path** — `verifyHumanTraitCandidates` returns `no_candidates \| verified \| no_matches \| failed` with an error string, and logs a warning on `failed`. **NOT done for the AI path** → **Gate D2** |
+| 14. deduplicate repeated evidence quotes | **DONE** — the deterministic path resolves same-phrase entries (`poolingExtractor.ts:274`); no loss observed across 70 human messages in the two runs |
+| 15. wire the trait keyword registry | **DONE differently** — the runtime now imports `TRAIT_KEYWORD_REGISTRY` from `lib/traitKeywordRegistry.ts`, not from the YAML. `eval/trait_keyword_registry.draft.yaml` still says `runtime_enabled: false` and is now **stale and misleading**; delete it or mark it superseded. The TS registry's contents were not audited against the approved draft — do that before trusting extraction numbers in a paper. |
 
-### Gate 5 — Extractor
+**Human-side extraction is retired as a workstream.** It is off the critical
+path (`sockets/index.ts:298`, fired as `void`), deterministic-first with a
+bounded verifier, and across the two runs it missed nothing in list-style
+messages and correctly reported duplicates as `verified` / `no_matches`.
+A vector/RAG retrieval layer was considered and rejected: the target is a fixed
+closed set of 40 trait ids, where embedding search buys nothing over the
+existing deterministic matcher and adds latency and nondeterminism. Revisit only
+if the traces start showing misses.
 
-12. **Observability first.** Always emit a turn trace, including on empty results:
-    outcome (`ok` / `timeout` / `parse_fail`), mention count, accepted count, and
-    per-rejection rule codes. Nothing downstream is measurable until this exists.
-13. Separate failure from absence in the `catch`; represent timeout as an explicit
-    unknown rather than an empty result.
-14. Deduplicate repeated evidence quotes instead of dropping both mentions.
-15. Only then wire `trait_keyword_registry.draft.yaml` into the runtime.
-    **This step requires the user's explicit manual approval of the draft — an
-    agent must not enable `runtime_enabled` on its own.**
+---
+
+## 4b. Second evidence base — T-C1-020 and T-C2-039 (2026-09-07)
+
+Two live runs on the Gate 1–3R build. C1 = Peer, C2 = Leader.
+
+| Metric | T-C1-020 (Peer) | T-C2-039 (Leader) |
+| --- | --- | --- |
+| Human messages / Alex messages | 51 / 18 | 19 / 11 |
+| Decision turns | 51 | 19 |
+| Median turn latency | 10.2 s | 12.7 s |
+| Max turn latency | 31.1 s | 21.4 s |
+| **Turns discarded as superseded** | **20 / 51 (39%)** | 2 / 19 |
+| Alex words per message (mean / max) | 43.8 / 125 | 55.6 / 102 |
+| Human words per message (mean) | 10.6 | 24.2 |
+| Max traits revealed in one Alex message | **15** | 6 |
+| Observer latency (mean / max) | 6.9 s / 14.3 s | 6.8 s / 11.9 s |
+| Observer output tokens per turn | ~450 | ~450 |
+| Observer input tokens (first → last) | 2,600 → 6,682 | 2,677 → 5,330 |
+| Judge cached input tokens | **0 (always)** | **0 (always)** |
+| Open opportunities (first → last) | 0 → 3, total 11 | — |
+| Directive/procedural phrasing | 1 / 18 | 8 / 11 |
+
+Latency decomposition per turn: **Observer 6.8 s (60%) → Judge 1.8 s (16%) →
+Generation 2.3 s (20%) → floor 2–3 s.**
+
+### What the two runs settled
+
+1. **Gate 3R worked where it was aimed.** T-C2-039: the ledger Judge accepted on
+   attempt 1 on 17 of 17 calls. Zero `ledger_judge_failure`, zero
+   `ledger_judge_capitulated_after_rejection`. `trait_cleared_for_non_trait_evidence`
+   fired 8 times as a repair — eight turns that the old validator would have
+   turned into silence.
+
+2. **Gate 3R's salience ranking regressed on its own terms.** At T-C2-039 seq 10
+   Alex spoke about Candidate A while the group was on Candidate C, and the
+   participant corrected it directly at seq 11 ("No this is Candidate C"). Two
+   causes, both mine:
+   - the literal-candidate regex in `conversationObserver.ts` only matches a bare
+     `A` before `and/or/vs/,//`, so `"Okay let's lay out A first"` recorded **no**
+     mention and salience never learned about A;
+   - `candidateSalienceOrder()` puts `focusCandidate` first unconditionally, so
+     an observer focus of `A` with basis `carried_thread` — an *announcement* —
+     outranked salience `C: 5`, which was the candidate actually under discussion.
+   Recency beat focus here. The ordering rule was wrong.
+
+3. **The length contract is written and unenforced.** `outputDiscipline` already
+   says "at most two short sentences … 40 words or fewer" and "share at most one
+   trait". Measured: 44 and 56 words mean, 15 traits in one message.
+   `outputScopeViolation()` checks trait counts but never length, and the
+   `address` / `followup` routes carry **no `maxTraitIds` guard at all** unless a
+   request scope supplies one — so T-C1-020 seq 4 revealing 15 traits on the
+   third turn of the session was permitted, not a violation. That single message
+   collapsed the hidden-profile manipulation.
+
+4. **The Judge is not deciding anything.** T-C2-039: it answered `speak` on 18 of
+   19 turns; every silence was `cooldown`, applied by the router *after* the
+   Judge had already decided. The Judge is a rubber stamp and the cooldown
+   counter is the real controller.
+
+5. **Prompt caching is off.** The Judge reports `cachedInputTokens: 0` on every
+   call and the Observer caches only its system block. Both prompts put the
+   volatile ledger JSON *before* the append-only transcript, which is the exact
+   inverse of what prefix caching requires.
+
+6. **Opportunities never expire.** T-C1-020 accumulated 11 opportunities, ending
+   with 3 invitations still open; `opp:9:invitation:alex` stayed open for 58
+   turns. This inflates every downstream prompt and lets the Judge answer
+   half-hour-old invitations.
+
+7. **Condition orthogonality is holding.** Directive/procedural phrasing appeared
+   in 8 of 11 Leader messages and 1 of 18 Peer messages. No mediation route fired
+   in C1. **This is the one property that must survive the next four gates.**
+
+---
+
+## 4c. Repair gates, second series
+
+Ordered. Gate A first because 39% of turns are currently thrown away, and no
+later gate's effect can be measured through that much loss.
+
+### Gate A — Latency and flow (target: 13 s → 4–5 s median)
+
+| # | Change | Where |
+| --- | --- | --- |
+| A1 | **Burst coalescing.** Debounce the decision path 600–800 ms and coalesce consecutive messages from the same speaker inside the window into one anchored turn. T-C1-020 contains messages 234 ms apart (seq 24/25, identical text). | `sockets/index.ts:352` (`enqueueConversationObservation`) and `:359` (`onHumanMessage`) |
+| A2 | **Cancel in-flight work on supersession.** Supersession is already detected; the Observer/Judge calls are not aborted, so a discarded turn still burns its full latency and a queue slot. | `interventionEngine.ts`, `conversationObserver.ts` (both already build `AbortController`s) |
+| A3 | **Prompt-cache ordering.** Reorder every prompt to `[static system + task] → [append-only transcript] → [volatile ledger/state last]`. Judge caching is currently 0%. Prefix caching needs ≥1024 stable leading tokens and breaks on any change before that point. | `interventionJudge.ts:700` (user prompt), `conversationObserver.ts`, `routeContext.ts:1569` (`developerPrompt` + `transcriptPrompt`) |
+| A4 | **Never trim the transcript from the front.** A sliding window invalidates the cached prefix every turn. Cap by dropping *state* detail, not leading messages. | same |
+| A5 | *(user decision)* `floorMs` 2000/3000 is 20% of the observed turn time and is an experimental design value. Not changed without approval. | `config/triggers.ts` |
+
+Expected: Observer output cut (Gate B1) plus cache hits plus coalescing should
+remove roughly two thirds of the wall-clock. Measure before claiming it.
+
+**A1 pre-flight, checked 2026-09-07 — the risk is real, bounded, and now exact:**
+
+- `waitForConversationObservation({ sessionId, anchorSeq })`
+  (`conversationObserver.ts:1395`) looks up **one exact seq** and returns `null`
+  when that seq has no observation, dropping the turn to the degraded path. So a
+  coalescer must be a single upstream gate that picks the anchor seq **once**,
+  and hand that same seq to both `enqueueConversationObservation` and
+  `onHumanMessage`. Coalescing only one of the two silently disables the
+  Observer for that turn.
+- The Mongo index is `{ sessionId, anchorSeq }` **unique, not dense**
+  (`models/ConversationObservation.ts:308`), so skipping intermediate seqs is
+  schema-legal. No migration needed.
+- **New finding, and it strengthens A1 and A2:** the observer queue is strictly
+  serial per session — `enqueueConversationObservation` chains every job onto
+  `tails.get(sessionId)` (`conversationObserver.ts:1347`). At 6.8 s each, a
+  three-message burst puts ~20 s of backlog in front of the last message before
+  it is even observed. **This is the mechanism behind the 31.1 s worst turn**,
+  not a slow single call. Cancelling a superseded in-flight observation (A2)
+  therefore returns its queue slot immediately, and is worth as much as A1.
+
+Do the coalescer as one gate above both call sites, then run
+`test:conversation-recovery` before anything else.
+
+### Gate B — Observer: read the facts, cheaply and correctly
+
+| # | Change |
+| --- | --- |
+| B1 | **Shrink the output schema.** The model should return only what is judgeable *this turn*: addressees, speechAct, requestIntent, alexRelation, floor, thread status change, focus. Everything else — roster, participants, scopeCandidates, threadId/rootSeq, and `mentionedCandidates` — is derivable deterministically; `mentionedCandidates` is *already* recomputed by regex in the normalizer, so the model is paying ~450 output tokens per turn to emit fields that are then overwritten. Target ~100 tokens. |
+| B2 | **Fix the literal-candidate regex** so a bare `A` is detected in ordinary positions ("lay out A first"). Salience accuracy depends on it. Guard against the English article "a" as the prompt already warns. |
+| B3 | **Invert focus vs salience.** Focus wins only when `focusBasis === "current_explicit"`. A `carried_thread` focus is an inference about an announcement and must not outrank the candidate actually being named. Direct fix for T-C2-039 seq 10. |
+| B4 | **Opportunity TTL.** Expire an unconsumed `invitation` after N turns or one epoch. Fixes prompt bloat and stale selection together. |
+| B5 | **Compact the carried state.** Keep the transcript whole (cache-friendly); pass the previous ledger as a compact delta rather than a full JSON dump. |
+| B6 | *(from retired item 11)* Stop the C2 task-grounding regex from bypassing the Observer snapshot, and give C2 a question-form variant. Re-observed at T-C2-039 seq 5–6. |
+
+### Gate C — Judge: a goal, not a rubber stamp
+
+**This gate retires the "Judge is condition-blind" invariant in §7 and needs
+explicit approval before any code moves.** It raises construct validity — a
+leader differs in what they *decide*, not only in how they phrase it — but it
+moves the manipulation upstream, which may touch how the manipulation is
+described in the pre-registration and the IRB protocol.
+
+| # | Change |
+| --- | --- |
+| C1 | **Inject a role goal** in the developer message. Leader: actively guide the group toward a well-considered collective decision — structure the conversation, keep it focused and moving, address disagreements, take responsibility for a clear outcome. Peer: contribute cooperatively as an equal team member — share relevant information, respond constructively, help evaluate options, without directing, managing, or mediating. |
+| C2 | **Enforce orthogonality in the action space, not the prompt.** Remove `mediate` and directive acts from the Peer schema so they are unrepresentable rather than merely forbidden. The orthogonality assertions at `test-intervention-v2.ts:1317` must keep passing unchanged. |
+| C3 | **Give the Judge something real to decide.** Expose cooldown to it as a budget it can see and spend. Today it says `speak` and the router silently discards the decision, which is why 18 of 19 decisions were `speak`. |
+| C4 | Facts (Observer output) stay in the user message; the goal goes in the developer message; deterministic validation is unchanged. |
+
+### Gate D — Generator: length as a post-condition, not a request
+
+Two prompt-only attempts have failed. Enforce it.
+
+| # | Change |
+| --- | --- |
+| D1 | **Set `text: { verbosity: "low" }`.** The GPT-5 family's own length control, currently unused. `reasoning: { effort: "minimal" }` is already set. No prompt edit required. |
+| D2 | **Close the silent guard bypass.** `extractSurfacedTraits` (`poolingExtractor.ts:426`) ends in `catch { return [] }`, and an empty result reads as "this message revealed nothing", so every scope guard passes. It is also called *synchronously on the generation path* (`routeScopedGeneration.ts:213,351`). Represent failure as unknown and fail closed; move or cache the call. |
+| D3 | **Per-turn reveal budget as a hard guard.** Give `address` and `followup` a `maxTraitIds`; they currently have none. This is what permitted the 15-trait message. Violations go through the existing repair loop. *(absorbs original item 8 — a permitted brief uptake opener is part of this rewrite)* |
+| D4 | **Deterministic anti-repeat.** Inject `revealStats.aiSurfacedIds` as "already stated by you" and forbid restatement outside an explicit full-list request. C profile was recited 4× and D 3× in T-C1-020. |
+| D5 | **Add a length post-condition** to `outputScopeViolation()` (sentence and word count), and trim the `outputDiscipline` exception clause ("explicitly requested full list or comparison") that is currently firing on ordinary turns. |
+
+### Measurement targets
+
+| Metric | Now | Target |
+| --- | --- | --- |
+| Median turn latency | 10.2 / 12.7 s | ≤ 5 s |
+| Turns discarded as superseded | 39% (C1) | ≤ 10% |
+| Judge cache hit rate | 0% | ≥ 60% |
+| Observer output tokens | ~450 | ~100 |
+| Alex words per message (mean) | 44 / 56 | ≤ 30 |
+| Max traits per Alex message | 15 | ≤ 2 |
+| Wrong-candidate turns | 2 (both corrected by a participant) | 0 |
+| Directive phrasing, Leader : Peer | 8/11 : 1/18 | unchanged |
+
+### Open decisions blocking work
+
+1. **Gate C**: approve retiring the condition-blind Judge invariant?
+2. **Gate A5**: may `floorMs` be tuned? It is 20% of turn time and an experimental design value.
+3. `eval/trait_keyword_registry.draft.yaml` is stale — delete, or keep as a
+   record with a superseded marker?
 
 ## 5. How to verify
 
@@ -533,7 +709,11 @@ repair.
   opportunities, and floor state.
 - The Judge is condition-blind. Condition-specific behavior belongs at final
   generation, with the single exception that Leader-only mediation stays gated to
-  C2/C4.
+  C2/C4. **Under review (Gate C, 2026-09-07):** this invariant is proposed for
+  retirement in favour of a role goal inside the Judge. It stands until the user
+  approves. Whatever replaces it, the orthogonality assertions at
+  `test-intervention-v2.ts:1317` remain binding — a Peer must never gain
+  mediation or task-standard correction.
 - Successful broadcast is the only `consumed_by_alex` transition. Generation
   failure, cancellation, floor blocking, and supersession must not consume one.
 - Human floor, cooldown, lifecycle, supersession, and generation failure must
@@ -576,6 +756,15 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
   + recovery + intervention-v2 green. Cooldown bypass deliberately not added —
   its motivating turn is downstream of the ranking defect. Measured effect
   pending a live replay.
+- 2026-09-07 — Gate 3R measured on two live runs (T-C1-020 Peer, T-C2-039
+  Leader). Judge contract failures went to zero (17/17 first-attempt accepts,
+  no capitulation, no `ledger_judge_failure`), confirming the repair-not-reject
+  change. Salience ranking regressed: a `carried_thread` focus outranked a
+  higher-recency candidate and Alex spoke about the wrong one, corrected by a
+  participant in-channel. Original Gates 4 and 5 retired and their live items
+  folded into a new gate series A–D; see §4b and §4c. Human-side extraction
+  retired as a workstream; RAG/vector retrieval considered and rejected for a
+  fixed 40-item closed set. No code changed in this session.
 - 2026-09-06 — Gate 3 complete (uncommitted in the root checkout). 3a focus
   normalization no longer launders a contradicted focus; 3b trait eligibility
   reads the thread scope with focus as a ranking hint; 3c voluntary `follow`
