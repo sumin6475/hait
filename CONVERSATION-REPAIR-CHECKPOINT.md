@@ -14,15 +14,19 @@ Last updated: 2026-09-06
 
 ## 0. Branch and safety rules
 
-- **`main` is production.** Local `main` and `origin/main` must stay at `5263f0f`
-  until the user explicitly authorizes a merge or push. Never push this branch to
-  `origin/main`. Never `git switch main` and commit.
-- All work happens on `claude/hait-conversation-system-errors-0f5e58`, in the
-  worktree at `.claude/worktrees/hait-conversation-system-errors-0f5e58`.
-- The original checkout at the repo root still holds an identical dirty working
-  tree (49 files). It is the user's copy; **do not reset, clean, or edit it.**
-  Everything in it is already captured in commit `362416b`. If the user later
-  confirms, it can be discarded — that is their call, not the agent's.
+- **`origin/main` is production and must never be touched.** Do not push. Do not
+  merge into it. Local `main` stays at `5263f0f`.
+- **Work in the ordinary checkout at the repo root**
+  (`/Users/jadekim/Documents/Code HQ/HAIT`), on branch `main`, leaving the changes
+  **uncommitted**. This is deliberate: the user wants every change since
+  `origin/main` collected as one pending change set in one place, the way it was
+  before the repair work started. Do not create commits there without being asked.
+- The branch `claude/hait-conversation-system-errors-0f5e58` (worktree under
+  `.claude/worktrees/`) is a **frozen backup**, not the workspace. It holds the
+  same content as committed history, so any accidental loss in the root checkout
+  can be recovered from it. Do not resume work there unless the user says so.
+- Because the working tree sits on `main`, `git commit` in the root checkout would
+  move the production branch. **Never `git add -A && git commit` there.**
 - Never commit `.env`, credentials, tokens, or raw participant text.
 - `docs/`, `MEMORY.md`, `ARCHITECTURE.md`, `eval-results/` are gitignored. A
   document that must survive across sessions belongs in a tracked path (this file).
@@ -289,8 +293,8 @@ Peer must not gain mediation or task-standard correction from any of these edits
 
 ## 5. How to verify
 
-From `server/` in this worktree (`npm install` first — the worktree has no
-`node_modules` yet):
+From `server/` in the root checkout (it already has `node_modules` and a real
+`.env`):
 
 ```sh
 npm run build --silent
@@ -300,7 +304,11 @@ npm run test:conversation-recovery
 ```
 
 `tsx` tests may hit a managed-sandbox IPC `EPERM`; rerun with the local IPC
-permission granted. Run `git diff --check` before every commit.
+permission granted. Run `git diff --check` before finishing a change.
+
+Note: `tsx` does not typecheck, so a test can pass under `test:conversation-ledger`
+while `npm run build` fails. Always run `build` as well — `test:intervention-v2`
+depends on it.
 
 Live smoke runs are the user's call (they own the server on port 3001). Per-gate
 exit checks above should be measured against the Section 2 baseline table.
@@ -350,3 +358,6 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
   root cause A corrected downward: the dead standing id cost no speech in the
   observed run, so its keying was left unchanged and instrumented instead.
   Live-replay exit check for turn 16 not yet run (needs a model run).
+- 2026-09-06 — Working location moved back to the root checkout at the user's
+  request; all Gate 0+1 content now lives there as uncommitted changes on top of
+  `origin/main`. The repair branch is retained as a frozen backup at `ba582c3`.
