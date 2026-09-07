@@ -413,7 +413,10 @@ confirmed against the exported observations rather than the console log.
    yields `expectedNext: [human, alex]` with the floor open. The narrower rule
    is unchanged: an ordinary human-to-human question still reserves that human's
    turn. Detector checked against all 23 human messages of the session: it fires
-   on 28 and 30 and nothing else.
+   on 28 and 30 and nothing else. **Known limit:** the deterministic half is
+   English lexical matching, so a Korean-language session (`session.language`
+   supports `ko`) is covered only by the prompt rule. If ko sessions are in
+   scope, add the equivalent forms before running one.
 
 **Deliberately not done.**
 
