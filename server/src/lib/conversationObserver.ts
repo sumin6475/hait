@@ -19,7 +19,7 @@ import { log } from "./log.js";
 import { traceTurnEvent } from "./turnTrace.js";
 
 export const CONVERSATION_OBSERVER_VERSION = "conversation-observer-v10";
-export const CONVERSATION_OBSERVER_PROMPT_VERSION = "conversation-observer-prompt-v7";
+export const CONVERSATION_OBSERVER_PROMPT_VERSION = "conversation-observer-prompt-v8";
 export const CONVERSATION_OBSERVER_SCHEMA_VERSION = "conversation-observer-schema-v6";
 export const CONVERSATION_OBSERVER_MODEL = "gpt-4o-mini";
 export const CONVERSATION_OBSERVER_PARAMETERS = Object.freeze({
@@ -848,6 +848,8 @@ export async function observeConversationStructure(input: {
   previousLedgerState?: ConversationLedgerState | null;
   reviewObservation?: ConversationObserverResult | null;
   participantRoster?: readonly ConversationActor[];
+  /** Aborts the call when this turn has already been superseded. */
+  signal?: AbortSignal;
 }): Promise<
   | {
       ok: true;
@@ -883,6 +885,13 @@ export async function observeConversationStructure(input: {
   const participantRoster = input.participantRoster ?? ["alex", "humanX", "humanY", "humanZ"];
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  // A newer human message makes this observation dead work. Aborting returns
+  // the session's serial queue slot immediately, which is what actually costs
+  // time: the queue chains every job onto the previous one, so a three-message
+  // burst put ~20s of backlog in front of the turn that mattered.
+  const abortForSupersession = () => controller.abort();
+  if (input.signal?.aborted) controller.abort();
+  input.signal?.addEventListener("abort", abortForSupersession, { once: true });
   const started = Date.now();
   try {
     const response = await new OpenAI({
@@ -897,11 +906,16 @@ export async function observeConversationStructure(input: {
           { role: "system", content: SYSTEM },
           {
             role: "user",
-            content: `Authoritative participant roster (the only valid actor ids):\n${JSON.stringify(participantRoster)}\n\nPrevious cumulative state (may be null or imperfect):\n${JSON.stringify(input.previousState ?? null)}\n\nPrevious response-opportunity ledger (correct it using transcript evidence):\n${JSON.stringify(input.previousLedgerState ?? null)}\n\n${
+            // Ordered for prefix caching: roster then transcript first, since
+            // both only ever grow at the end; the two state dumps and the
+            // anchor change every turn and sit behind them. The previous order
+            // led with the volatile state, so only the system block was ever
+            // cacheable (512-1590 of ~5000 input tokens in the observed runs).
+            content: `Authoritative participant roster (the only valid actor ids):\n${JSON.stringify(participantRoster)}\n\nComplete conversation transcript:\n${completeTranscript}\n\nPrevious cumulative state (may be null or imperfect):\n${JSON.stringify(input.previousState ?? null)}\n\nPrevious response-opportunity ledger (correct it using transcript evidence):\n${JSON.stringify(input.previousLedgerState ?? null)}\n\n${
               input.reviewObservation
                 ? `A first observation was uncertain or internally inconsistent. Re-read the evidence and return a corrected complete observation:\n${JSON.stringify(input.reviewObservation)}\n\n`
                 : ""
-            }Complete conversation transcript:\n${completeTranscript}\n\nOpen Alex question hint (syntax-derived only; verify against the transcript and cumulative thread):\n${pending}\n\nCurrent anchor: [${anchor.seq}] ${anchor.speaker}: ${anchor.content}\n\nOutput JSON only.`,
+            }Open Alex question hint (syntax-derived only; verify against the transcript and cumulative thread):\n${pending}\n\nCurrent anchor: [${anchor.seq}] ${anchor.speaker}: ${anchor.content}\n\nOutput JSON only.`,
           },
         ],
         text: { format: zodTextFormat(ObserverSchema, "conversation_observation") },
@@ -909,6 +923,7 @@ export async function observeConversationStructure(input: {
       { signal: controller.signal },
     );
     clearTimeout(timeout);
+    input.signal?.removeEventListener("abort", abortForSupersession);
     const usage = response.usage
       ? {
           inputTokens: response.usage.input_tokens,
@@ -960,9 +975,12 @@ export async function observeConversationStructure(input: {
     };
   } catch (error) {
     clearTimeout(timeout);
+    input.signal?.removeEventListener("abort", abortForSupersession);
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: input.signal?.aborted
+        ? "superseded_by_newer_human_message"
+        : error instanceof Error ? error.message : String(error),
       model: MODEL,
       latencyMs: Date.now() - started,
     };
@@ -1043,6 +1061,7 @@ export async function observeConversationTurnInMemory(input: {
   previousThread?: QuestionThreadSnapshot | null;
   previousStateAfter?: ConversationStateAfter | null;
   previousLedgerState?: ConversationLedgerState | null;
+  signal?: AbortSignal;
 }): Promise<
   | {
       ok: true;
@@ -1072,6 +1091,7 @@ export async function observeConversationTurnInMemory(input: {
     previousState: input.previousStateAfter,
     previousLedgerState: input.previousLedgerState,
     participantRoster: input.participantRoster,
+    signal: input.signal,
   });
   const callAttempts: ConversationObserverCallAttempt[] = [
     {
@@ -1103,6 +1123,7 @@ export async function observeConversationTurnInMemory(input: {
     previousLedgerState: input.previousLedgerState,
       reviewObservation: result.observation,
       participantRoster: input.participantRoster,
+      signal: input.signal,
     });
     callAttempts.push({
       purpose: "review",
@@ -1199,7 +1220,9 @@ async function runObservation(input: {
   conversationEpoch: number;
   explicitAlexDefer: boolean;
   explicitAlexDeferEvidence?: string;
+  signal?: AbortSignal;
 }): Promise<ConversationObserverSnapshot | null> {
+  if (input.signal?.aborted) return null;
   const [docs, prior, participants] = await Promise.all([
     Message.find({
       sessionId: input.sessionId,
@@ -1247,7 +1270,13 @@ async function runObservation(input: {
     previousThread,
     previousStateAfter,
     previousLedgerState,
+    signal: input.signal,
   });
+  // A superseded turn leaves no record. Writing an error row for it would put
+  // a permanent failure in the audit for work that was correctly abandoned,
+  // and `runObservation` reads the newest *existing* prior observation
+  // (`anchorSeq: { $lt: … }`), so a gap costs the next turn nothing.
+  if (input.signal?.aborted) return null;
   if (!result.ok) {
     await mergeObservation(input.sessionId, input.anchorSeq, {
       observerVersion: CONVERSATION_OBSERVER_VERSION,
@@ -1336,6 +1365,30 @@ async function mergeObservation(
   }
 }
 
+/**
+ * The newest observation each session has asked for, and the handle that
+ * cancels it.
+ *
+ * Observations run on a strictly serial per-session queue, so a burst of human
+ * messages does not cost one observation's latency — it costs their sum, ahead
+ * of the only turn whose answer will still be wanted. T-C1-020 discarded 20 of
+ * 51 turns as superseded and reached a 31 s turn that way, with every one of
+ * those turns paying a full ~7 s observation first.
+ *
+ * Alex answers the conversation as it stands, so at most one observation per
+ * session is ever live: a newer human message cancels the older one, whether it
+ * is still queued or already in flight.
+ */
+const liveObservation = new Map<
+  string,
+  { anchorSeq: number; controller: AbortController }
+>();
+
+/** Test/inspection hook: is an observation for this anchor still cancellable? */
+export function liveObservationAnchorSeq(sessionId: string): number | null {
+  return liveObservation.get(sessionId)?.anchorSeq ?? null;
+}
+
 export function enqueueConversationObservation(input: {
   sessionId: string;
   anchorSeq: number;
@@ -1344,11 +1397,25 @@ export function enqueueConversationObservation(input: {
   explicitAlexDeferEvidence?: string;
 }): Promise<ConversationObserverSnapshot | null> {
   if (config.conversationObserverMode === "off") return Promise.resolve(null);
+  const live = liveObservation.get(input.sessionId);
+  // Strictly newer only: a re-observation of the same anchor must not cancel
+  // the observation it is refining.
+  if (live && live.anchorSeq < input.anchorSeq) {
+    live.controller.abort();
+    log.debug(
+      `[conversation-observer] superseded anchor=${live.anchorSeq} by=${input.anchorSeq} session=${input.sessionId}`,
+    );
+  }
+  const controller = new AbortController();
+  liveObservation.set(input.sessionId, { anchorSeq: input.anchorSeq, controller });
   const prior = tails.get(input.sessionId) ?? Promise.resolve(null);
   const current = prior
     .catch(() => null)
-    .then(() => runObservation(input))
+    // `runObservation` returns immediately on an aborted signal, before any
+    // database read, so a job cancelled while still queued costs nothing.
+    .then(() => runObservation({ ...input, signal: controller.signal }))
     .catch((error) => {
+      if (controller.signal.aborted) return null;
       log.error(`[conversation-observer] failed session=${input.sessionId}:`, error);
       return null;
     });
@@ -1358,6 +1425,9 @@ export function enqueueConversationObservation(input: {
   void current.finally(() => {
     if (tails.get(input.sessionId) === current) tails.delete(input.sessionId);
     if (jobs.get(key) === current) jobs.delete(key);
+    if (liveObservation.get(input.sessionId)?.controller === controller) {
+      liveObservation.delete(input.sessionId);
+    }
   });
   return current;
 }

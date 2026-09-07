@@ -377,7 +377,7 @@ const ConversationLedgerJudgeSchema = z.object({
 export type ConversationLedgerJudgeDecision = z.infer<typeof ConversationLedgerJudgeSchema>;
 export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v4";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v5";
+  "conversation-ledger-judge-prompt-v6";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
   "conversation-ledger-judge-schema-v2";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
@@ -748,7 +748,13 @@ export async function judgeConversationLedgerTurn(input: {
     ? decisionState.threads.find((thread) => thread.id === decisionState.foregroundThreadId)
     : undefined;
   const openOpportunities = decisionState.opportunities.filter((item) => item.status === "open");
-  const user = `Current selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nInfrastructure availability:\n- Messages since Alex: ${input.messagesSinceAlex}\n- Ordinary cooldown available: ${input.cooldownAvailable}\n- Backchannel interval available: ${input.backchannelAvailable}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nComplete transcript:\n${transcript}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  // Ordered for prefix caching: the transcript is append-only, so leading it
+  // gives every later turn a long stable prefix, while the ledger changes on
+  // every turn and must sit behind it. The previous order put the volatile
+  // ledger first and the judge reported `cachedInputTokens: 0` on every call in
+  // both T-C1-020 and T-C2-039 — the system block alone falls under the 1024
+  // token minimum, so nothing was cacheable at all.
+  const user = `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nInfrastructure availability:\n- Messages since Alex: ${input.messagesSinceAlex}\n- Ordinary cooldown available: ${input.cooldownAvailable}\n- Backchannel interval available: ${input.backchannelAvailable}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
   const attempts: ConversationLedgerJudgeCallAttempt[] = [];
   let priorRuleCodes: string[] = [];
   let priorDecisionJson = "none";

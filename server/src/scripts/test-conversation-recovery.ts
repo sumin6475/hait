@@ -6,7 +6,7 @@ import { ConversationObservation } from "../models/ConversationObservation.js";
 import { Message } from "../models/Message.js";
 import { Participant } from "../models/Participant.js";
 import {
-  enqueueConversationObservation, normalizeConversationObservation,
+  enqueueConversationObservation, liveObservationAnchorSeq, normalizeConversationObservation,
   reduceConversationStateAfter, type ConversationObserverResult,
 } from "../lib/conversationObserver.js";
 import {
@@ -206,6 +206,14 @@ try {
     if (parseCalls === 1) throw new Error("injected transient observer failure");
     assert.match(request.input[1].content, /opp:1:direct_question:alex/, "last successful ledger reaches the recovering observer");
     assert.match(request.input[1].content, /\[3\]/, "missed turn remains in the transcript");
+    // Gate A3: the append-only transcript leads so it can form a cacheable
+    // prefix; the per-turn state dumps follow it. Leading with the volatile
+    // state is why the judge reported `cachedInputTokens: 0` on every call.
+    assert.ok(
+      request.input[1].content.indexOf("Complete conversation transcript") <
+        request.input[1].content.indexOf("Previous cumulative state"),
+      "the transcript precedes the volatile state in the observer prompt",
+    );
     return { model: "test", output_parsed: { ...observation, ...quiet, opportunityTransitions: [{ opportunityId: id, toStatus: "withdrawn", reason: "request withdrawn during missed turn", evidenceSeqs: [3, 4], correctedThreadId: null }] } };
   }) as any);
   assert.equal(await enqueueConversationObservation({ sessionId: "recovery-test", anchorSeq: 3, conversationEpoch: 3, explicitAlexDefer: false }), null);
@@ -219,4 +227,91 @@ try {
   config.conversationObserverMode = oldMode;
   config.openaiApiKey = oldKey;
 }
-console.log("[conversation-recovery] semantic authority, lifecycle, generation and observer failure recovery passed");
+// --- Gate A1/A2: one live observation per session -----------------------------
+//
+// Observations run on a strictly serial per-session queue, so a burst of human
+// messages costs the *sum* of their observation latencies ahead of the only
+// turn whose answer is still wanted. T-C1-020 discarded 20 of 51 turns as
+// superseded and reached a 31 s turn that way, each discarded turn having paid
+// a full ~7 s observation first. A newer human message must now cancel the
+// older observation, whether it is still queued or already in flight.
+{
+  const burstRecords: any[] = [
+    { sessionId: "burst-test", anchorSeq: 1, stateAfter: priorState, ledgerStateAfter: initial },
+  ];
+  const burstMessages = [1, 5, 6].map((seq) => ({
+    seq,
+    senderRole: "humanX",
+    content: seq === 1 ? "Compare A and B" : `burst message ${seq}`,
+  }));
+  const bq = (value: unknown) => ({ sort() { return this; }, select() { return this; }, lean: async () => value });
+  const anchorsParsed: number[] = [];
+  const oldMode2 = config.conversationObserverMode;
+  const oldKey2 = config.openaiApiKey;
+  try {
+    config.conversationObserverMode = "active";
+    config.openaiApiKey = "test-no-network";
+    mock.method(Message, "find", (filter: any) => bq(burstMessages.filter((m) => m.seq <= filter.seq.$lte)) as any);
+    mock.method(Participant, "find", () => bq([{ role: "humanX" }, { role: "humanY" }]) as any);
+    mock.method(ConversationObservation, "findOne", (filter: any) => bq([...burstRecords].reverse().find((r) => r.anchorSeq < filter.anchorSeq.$lt && (!filter.stateAfter || r.stateAfter) && (!filter.ledgerStateAfter || r.ledgerStateAfter))) as any);
+    mock.method(ConversationObservation, "updateOne", async (filter: any, update: any) => {
+      let record = burstRecords.find((item) => item.anchorSeq === filter.anchorSeq);
+      if (!record) { record = { ...filter }; burstRecords.push(record); }
+      Object.assign(record, update.$set);
+      return {} as any;
+    });
+    mock.method(Responses.prototype, "parse", (async (request: any, options: any) => {
+      const anchor = Number(/Current anchor: \[(\d+)\]/.exec(request.input[1].content)?.[1] ?? 0);
+      anchorsParsed.push(anchor);
+      if (anchor === 5) {
+        // Stand in for a call that is still in flight when the next human
+        // message lands: it settles only when the request is aborted.
+        return await new Promise((_resolve, reject) => {
+          // Match the SDK: an already-aborted signal rejects at once rather
+          // than waiting for an abort event that has already fired.
+          if (options.signal.aborted) { reject(new Error("aborted")); return; }
+          options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      }
+      return { model: "test", output_parsed: { ...observation, ...quiet } };
+    }) as any);
+
+    // Case 1 — superseded while still queued: the call is never made at all.
+    const queued5 = enqueueConversationObservation({ sessionId: "burst-test", anchorSeq: 5, conversationEpoch: 5, explicitAlexDefer: false });
+    const queued6 = enqueueConversationObservation({ sessionId: "burst-test", anchorSeq: 6, conversationEpoch: 6, explicitAlexDefer: false });
+    assert.equal(await queued5, null, "an observation superseded before it starts resolves to nothing");
+    assert.ok(await queued6, "the newest anchor is still observed");
+    assert.deepEqual(anchorsParsed, [6], "a superseded queued observation costs no model call");
+    assert.equal(
+      burstRecords.some((record) => record.anchorSeq === 5),
+      false,
+      "a superseded turn leaves no error row in the audit",
+    );
+
+    // Case 2 — superseded while in flight: the request is aborted, which is
+    // what returns the serial queue slot to the turn that matters.
+    anchorsParsed.length = 0;
+    const inflight5 = enqueueConversationObservation({ sessionId: "burst-test", anchorSeq: 5, conversationEpoch: 5, explicitAlexDefer: false });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(anchorsParsed, [5], "the first observation did start");
+    const newer6 = enqueueConversationObservation({ sessionId: "burst-test", anchorSeq: 6, conversationEpoch: 6, explicitAlexDefer: false });
+    assert.equal(await inflight5, null, "an in-flight observation is abandoned when a newer message arrives");
+    assert.ok(await newer6, "the newer anchor completes behind it");
+    assert.deepEqual(anchorsParsed, [5, 6], "the newer observation is not blocked by the abandoned one");
+    assert.equal(
+      burstRecords.some((record) => record.anchorSeq === 5),
+      false,
+      "an aborted observation still writes no row",
+    );
+
+    // A re-observation of the same anchor must never cancel the observation it
+    // is refining, so the guard is strictly-newer only.
+    assert.equal(liveObservationAnchorSeq("burst-test"), null, "the live handle is released when the queue drains");
+  } finally {
+    mock.restoreAll();
+    config.conversationObserverMode = oldMode2;
+    config.openaiApiKey = oldKey2;
+  }
+}
+
+console.log("[conversation-recovery] semantic authority, lifecycle, generation, observer failure recovery and burst supersession passed");

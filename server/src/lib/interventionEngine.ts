@@ -1715,6 +1715,14 @@ export async function onHumanMessage(input: {
     };
   }
 
+  // The same supersession rule as below, applied before the wait instead of
+  // after it. Waiting first meant a discarded turn still paid a full ~7s
+  // observation and, because that queue is serial per session, delayed the turn
+  // that would actually be answered. 20 of 51 turns in T-C1-020 took that path.
+  if (runtime.latestPushSeq !== input.messageSeq) {
+    finishSupersededTurnTrace(runtime, input.messageSeq);
+    return;
+  }
   const snapshot =
     controllerMode !== "legacy" || config.conversationObserverMode === "active"
       ? await waitForConversationObservation({

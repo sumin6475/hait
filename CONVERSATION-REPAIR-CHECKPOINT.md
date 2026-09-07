@@ -569,7 +569,7 @@ Generation 2.3 s (20%) → floor 2–3 s.**
 Ordered. Gate A first because 39% of turns are currently thrown away, and no
 later gate's effect can be measured through that much loss.
 
-### Gate A — Latency and flow (target: 13 s → 4–5 s median)
+### Gate A — Latency and flow — A1–A4 DONE (uncommitted), A5 open
 
 | # | Change | Where |
 | --- | --- | --- |
@@ -604,6 +604,51 @@ remove roughly two thirds of the wall-clock. Measure before claiming it.
 
 Do the coalescer as one gate above both call sites, then run
 `test:conversation-recovery` before anything else.
+
+**Shipped 2026-09-07 (A1–A4).** The pre-flight above changed the design: a
+timer-based debounce would have added 600–800 ms to every *isolated* turn to
+save time only on bursts. What the queue actually needs is an invariant, not a
+delay — **at most one live observation per session, always for the newest human
+turn** — so no isolated turn pays anything.
+
+1. `conversationObserver.ts` — `enqueueConversationObservation` keeps a
+   per-session `liveObservation` handle; a **strictly newer** anchor aborts the
+   older one, queued or in flight. Strictly-newer matters: a re-observation of
+   the same anchor must not cancel the observation it is refining.
+   `runObservation` returns at its first line on an aborted signal, before any
+   database read, and returns `null` without persisting when the signal fired
+   during the call — so a superseded turn leaves **no error row** in the audit.
+   The signal is threaded to the OpenAI request, so an in-flight call is really
+   aborted and the serial queue slot comes back immediately.
+2. `interventionEngine.ts` — the supersession check that already existed *after*
+   `waitForConversationObservation` now also runs *before* it. This adds no new
+   rule; it moves an existing one earlier, so a discarded turn stops paying a
+   full observation first.
+3. `interventionJudge.ts`, `conversationObserver.ts` — prompts reordered to
+   `[static system] → [append-only transcript] → [volatile ledger] → [instruction]`.
+   Prompt versions bumped: observer prompt `v7→v8`, ledger judge prompt `v5→v6`.
+
+**Deliberately not done: generator prompt reordering.** Its system block (task
+environment + notes + policies) is already large enough to cache; moving the
+transcript ahead of the developer block would buy roughly 700 tokens of caching
+while changing the order instructions and evidence reach the model. Not worth
+the behavioural risk. Revisit only with a measurement.
+
+**Regressions** in `test-conversation-recovery.ts`: a burst superseded while
+queued costs no model call; a burst superseded in flight is aborted and does not
+block the newer turn; neither writes an audit row; and the observer prompt keeps
+the transcript ahead of the volatile state. Each verified to fail with its own
+fix reverted. One redundant guard was found and removed during that check — the
+queue-level skip could not fail any test because `runObservation` already
+returns on an aborted signal at its first line.
+
+**Not covered by a regression:** the engine-side early supersession check (2).
+It duplicates a check that already exists eight lines later, so its outcome is
+unchanged and only its timing differs; testing it needs a full runtime harness.
+Said plainly rather than left implied.
+
+**Not yet measured.** The effect on median turn latency and on the 39% discard
+rate needs a live run — the user's call.
 
 ### Gate B — Observer: read the facts, cheaply and correctly
 
@@ -756,6 +801,13 @@ Append one line per completed gate: date, gate, commit, tests run, measured effe
   + recovery + intervention-v2 green. Cooldown bypass deliberately not added —
   its motivating turn is downstream of the ranking defect. Measured effect
   pending a live replay.
+- 2026-09-07 — Gate A1–A4 complete (uncommitted in the root checkout; backed up
+  on the repair branch). One live observation per session, superseded work
+  aborted instead of paid for, and both model prompts reordered for prefix
+  caching. Four regressions, each verified to fail with its own fix reverted;
+  one redundant guard removed after the check showed it could not fail. A5
+  (`floorMs`) untouched pending the user's decision. build + ledger + recovery
+  + intervention-v2 green. Measured effect pending a live run.
 - 2026-09-07 — Gate 3R measured on two live runs (T-C1-020 Peer, T-C2-039
   Leader). Judge contract failures went to zero (17/17 first-attempt accepts,
   no capitulation, no `ledger_judge_failure`), confirming the repair-not-reject
