@@ -1,5 +1,5 @@
 import { callAIStructured, type AIStructuredResult } from "./openai.js";
-import { extractSurfacedTraits } from "./poolingExtractor.js";
+import { extractHumanTraitsFast } from "./poolingExtractor.js";
 import { candidatesForIds } from "./informationPools.js";
 import type { RouteOutputScopeGuard } from "./routeContext.js";
 import { log } from "./log.js";
@@ -106,6 +106,30 @@ export function internalMetadataSoftViolations(content: string): string[] {
   return SOFT_METADATA_PATTERNS.some((pattern) => pattern.test(content))
     ? ["metadata_reference"]
     : [];
+}
+
+/**
+ * [D2] What this turn disclosed, for the output guards.
+ *
+ * This was `await extractSurfacedTraits(content)` — an LLM round trip whose body
+ * ends in `catch { return [] }`. An empty result is indistinguishable from "this
+ * message revealed nothing", so **every scope guard passed whenever extraction
+ * failed**, silently. T-C1-027 shipped three messages carrying six traits each
+ * on turns whose guard was correctly set to one new trait and two restated: the
+ * guard was right, the evidence handed to it was empty.
+ *
+ * The deterministic closed-pool matcher replaces it, exactly as A7 did for the
+ * pre-broadcast ledger update: it is network-free, so it cannot time out, and it
+ * has no failure mode that reads as absence. Alex's own text stays close to the
+ * pool because the output contract requires it ("preserve the key wording of a
+ * trait"), which is why the matcher fits Alex's output at least as well as the
+ * model extractor did — A7 measured it finding two disclosed misses the model
+ * extractor had dropped twice.
+ *
+ * It also takes one or two synchronous model calls off the generation path.
+ */
+function disclosedTraitIds(content: string): string[] {
+  return [...new Set(extractHumanTraitsFast({ messageText: content }).acceptedIds)];
 }
 
 export function outputScopeViolation(
@@ -219,7 +243,7 @@ export async function generateScopedRouteMessage(input: {
   });
   if (!result.ok) return { result };
 
-  let extractedIds = input.guard ? await extractSurfacedTraits(result.parsed.content) : undefined;
+  let extractedIds = input.guard ? disclosedTraitIds(result.parsed.content) : undefined;
   const metadataViolation = internalMetadataLeak(result.parsed.content);
   const scopeViolation = input.guard
     ? outputScopeViolation(
@@ -372,7 +396,7 @@ export async function generateScopedRouteMessage(input: {
     }
     lastFailureError = null;
 
-    extractedIds = input.guard ? await extractSurfacedTraits(repaired.parsed.content) : undefined;
+    extractedIds = input.guard ? disclosedTraitIds(repaired.parsed.content) : undefined;
     const repairedMetadataViolation = internalMetadataLeak(repaired.parsed.content);
     const repairedScopeViolation = input.guard
       ? outputScopeViolation(

@@ -2299,6 +2299,36 @@ assert.equal(
   null,
 );
 
+// [D2] The guard was right; the evidence handed to it was empty. `extractSurfacedTraits`
+// ended in `catch { return [] }`, and an empty result is indistinguishable from
+// "this message revealed nothing", so every scope guard passed whenever
+// extraction failed. T-C1-027 shipped these three messages on turns whose guard
+// was correctly `{maxTraitIds: 1, maxRestatedTraitIds: 2}` — verified by
+// rebuilding that turn's context — and recorded no violation. They are Alex's
+// own output, quoted verbatim; the deterministic matcher cannot fail open.
+const d2Guard = { candidate: "A" as const, maxTraitIds: 1, maxRestatedTraitIds: 2, reason: "focus_depth" as const };
+const d2Ids = (text: string) => [
+  ...new Set(extractHumanTraitsFast({ messageText: text }).acceptedIds),
+];
+const d2Escaped = "Noting those additions, my notes for Candidate A still list: matches\u2014very good at recognizing dangerous situations, good overview of complex contexts, excellent spatial awareness, very well organized; misses\u2014unfriendly and transmits restlessness. From my perspective, the new comments about not tolerating criticism, being a show-off, or not open to new ideas align with the pattern that A\u2019s interpersonal misses are consistent but do not add new confirmed operational strengths.";
+assert.ok(d2Ids(d2Escaped).length > 5, "the shipped message really does carry a recital");
+assert.equal(
+  outputScopeViolation(d2Escaped, d2Ids(d2Escaped), d2Guard, []),
+  "too_many_traits",
+  "a recital of new traits is caught once the evidence is deterministic",
+);
+const d2Restated = "Noting the latest point about D\u2019s misses being mostly behavioral, my notes for Candidate D list matches: can react adequately to unforeseen events; can concentrate very well; is very resilient; is very responsible. Misses: is considered moody; has strong prejudices.";
+assert.equal(
+  outputScopeViolation(d2Restated, d2Ids(d2Restated), d2Guard, d2Ids(d2Restated)),
+  "too_many_restated_traits",
+  "and a recital of already-surfaced traits is caught by the restated bound",
+);
+// An empty extraction must no longer read as compliance: the matcher returns
+// what is there, so a compliant message passes on its merits, not by default.
+const d2Fine = "Agreed. My notes add that Candidate A is unfriendly.";
+assert.equal(d2Ids(d2Fine).length, 1);
+assert.equal(outputScopeViolation(d2Fine, d2Ids(d2Fine), d2Guard, []), null);
+
 // An explicit request keeps its own scope, including the decision to impose no
 // trait-count limit — that is the turn which may legitimately name many traits.
 const d3ExplicitAll = buildRouteUserContext({

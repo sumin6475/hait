@@ -3,7 +3,7 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-07 — after T-C1-025, D3/D4 and B8; overlap designed in §4h
+Last updated: 2026-09-07 — after T-C1-027; B1 rolled back, D2 done
 
 > **This file is the single source of truth for this work.** Read it first in a
 > new session; it replaces re-deriving the diagnosis. Status is maintained here,
@@ -45,9 +45,11 @@ and either location can be recovered from the other.
 | B9 · one "addresses Alex" predicate | **DONE**, still unverified live (§4f) | Gate B table |
 | D6 · deterministic template under the output contract | **DONE** | Gate D table, §4f |
 | B4 · opportunity lifetime | **DONE** | Gate B table |
-| B1 · Observer output schema | **DONE**, but its premise was wrong | Gate B table, §4g |
-| B8 · bound the Observer review path | **DONE** | Gate B table |
-| D3/D4 · per-turn reveal budget | **DONE** — fixes the D6 regression | Gate D table, §4f-bis |
+| B1 · Observer output schema | **ROLLED BACK** — it destabilized `alexRelevance` | §4i |
+| B8 · bound the Observer review path | **DONE**, confirmed live (review rate 10% → 2%) | Gate B table, §4i |
+| D2 · silent guard bypass | **DONE** — without it D3/D4 never fired | Gate D table, §4i |
+| D3/D4 · per-turn reveal budget | **DONE**, enforcing only since D2 | Gate D table, §4i |
+| Honest decline (table / collation) | **OPEN — next**, requirement agreed | §4i |
 | B2, B3, B6, B7 · Observer accuracy | OPEN — **no latency benefit expected** | Gate B table, §4g |
 | Observer overlap | **DESIGNED, awaiting a decision** | §4h |
 | Gate C · Judge role goals | **BLOCKED on the user** (§ Open decisions) | Gate C |
@@ -55,16 +57,21 @@ and either location can be recovered from the other.
 
 **Do next, in this order.**
 
-1. **Run a live session.** D3/D4 and B8 have never been observed live, and D3 is
-   a regression fix on the study's central variable — confirm that Alex's opening
-   turn now discloses at most one trait, and that repair exhaustion (which fails
-   closed, costing the turn) is rare rather than routine.
-2. **Decide on the Observer overlap** — §4h sets out three options with measured
-   expectations and the behaviour change each one implies. Recommendation:
-   Option 2, then Option 1.
-3. **Gate D, D1/D2/D5.** D3, D4 and D6 are done. D5's length post-condition is
-   the natural companion to D3's trait budget.
-4. **B2, B3, B7, B6** as accuracy work, with no latency expectation (§4g).
+1. **Honest decline** (§4i, requirement agreed with the user). A table request is
+   declined, not deferred with a question; a request to collate everything posted
+   is declined in C1/C3 because Alex sees only its own card. This is the largest
+   remaining quality defect and the one participants actually complained about.
+2. **Carry a request across follow-up fragments.** "full row" answers a question
+   Alex asked and currently classifies as `none`. Related: let the lexical
+   classifier *widen* a scope the Observer under-read, which is the D6 asymmetry
+   in the other direction.
+3. **Reserve A/B/C/D as candidate labels** so Alex cannot accept one as its name.
+4. **Run a live session** to confirm D2 (repair exhaustion should stay rare — it
+   fails closed, costing the turn) and the rolled-back Observer (`alexRelevance`
+   should vary again).
+5. **Decide on the Observer overlap** — §4h, recommendation Option 2 then Option 1.
+6. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
+   expectation (§4g).
 
 **Waiting on the user.** Gate C cannot start until the condition-blind Judge
 invariant is formally retired (§7, § Open decisions). Nothing else is blocked.
@@ -1103,6 +1110,90 @@ The attribution matters and is mine: D6 is right in itself, but it removed an
 work and already produced a 15-trait message in T-C1-020. **D6 must not ship
 without D3**, and D3 was therefore done immediately rather than in gate order.
 
+### 4i. Seventh measurement — T-C1-027, first full real session (2026-09-07)
+
+C1 Peer, 81 messages, 50 observations, 49 decisions, 28 spoken (57%). First run
+with D3/D4 and B8 live. **Contains real participant text — quote nothing from
+the human messages into any tracked file.**
+
+**Confirmed working.**
+
+- **B8**: 49 of 50 observations made a single call (review rate ~10% → **2%**),
+  and the one review recorded `reason: "unresolved_conflict"` — the attribution
+  field added with B8, so reviews can now be explained after the fact.
+- **Observer median 6.5 s → 5.3 s**, max 11.2 → 9.4 s. Caching recovered to
+  33/51, so T-C1-025's 0/5 was the small-sample artifact flagged there rather
+  than a B1 side effect.
+- **Length**: Alex mean **34.7 words**, max 68 (T-C1-025: 138 / 144). No dumps.
+- B4 and D6 continue to behave correctly.
+
+**Two defects in this repair's own work.**
+
+**1. B1 destabilized the Observer's Alex-relation fields — ROLLED BACK.**
+`alexRelevance` came back `not_relevant` on **50 of 50** observations and
+`activeThread.alexParticipation` `invited` on 50 of 50. **32 of those also report
+`alexRelation: "explicit_addressee"`** — Alex directly addressed and
+simultaneously judged not relevant, which is incoherent without needing a
+baseline to compare against. The last v10 run of the same opening script was 7 of
+8 `relevant`.
+
+Both stuck fields sit immediately after a field B1 removed, and structured output
+is generated in schema order, so the removed fields were doing work as reasoning
+scaffold rather than only as data. This is not cosmetic: both reach the Judge and
+the generator through `describeConversationSituation`. Against a measured saving
+of 7% of observer output and no latency effect (§4g), there was nothing to trade.
+
+`mentionedCandidates` and `activeThread.participants` are asked for again;
+`evidenceSeqs` stays capped, since it is the last field of `activeThread`, nothing
+semantic follows it, and it was the unbounded accumulator. Observer `v11→v12`,
+prompt `v9→v10`. **Method note:** §4g measured the schema as output cost and did
+not consider that a field can carry reasoning value after its own value is
+discarded. Measure the fields you keep, not only the tokens you cut.
+
+**2. D3/D4 were not actually enforcing — D2 was the reason.** Three messages
+shipped carrying six to eight traits each on turns whose guard was correctly
+`{maxTraitIds: 1, maxRestatedTraitIds: 2}` — verified by rebuilding that turn's
+context — and recorded no violation. `extractSurfacedTraits` ends in
+`catch { return [] }`, and an empty result is indistinguishable from "this
+message revealed nothing", so **every scope guard passed whenever extraction
+failed**. The length improvement above is the prompt working, not the guard.
+Fixed by the same move A7 made: the deterministic closed-pool matcher replaces
+the model extractor on the guard path. It is network-free, cannot time out, has
+no failure mode that reads as absence, and it removes one or two synchronous
+model calls from generation. All three shipped messages are now rejected.
+
+**Speech quality is the open front, and the user's reading of it is recorded
+here because it sets the requirement.**
+
+- **Alex accepted a candidate label as its own name.** Asked whether to call it
+  "C" or "Alex", it answered that either works. `C` is a candidate identifier;
+  accepting it corrupts the board Alex is helping build. Nothing in the contract
+  reserves A/B/C/D.
+- **Four consecutive turns answered a direct request with another clarifying
+  question** — asked for a table, Alex asked compact-or-full; told "full row", it
+  asked which order; given the order, it asked exact-phrases-or-labels; and so
+  on, until the participant wrote that they had hoped the AI could just make the
+  table. At one point Alex promised to arrange pasted items and never did.
+  Measured cause: the **Observer** classified all four as
+  `new_information_request` while the lexical classifier reads the first as
+  `complete_all_candidates`. With an opportunity selected, `routeContext.ts:1479`
+  takes the Observer's intent and never consults the classifier — the same
+  asymmetry D6 addressed, except D6 only ever *narrows*. Narrow scope plus the
+  layout ban plus a one-trait cap leaves no legal way to comply, so the model
+  asks instead.
+- **Follow-up fragments lose the request.** "full row" and "alphabetical order
+  A, B, C, D" classify as `none`: they answer a question *Alex* asked, and
+  nothing carries the original request forward. Every turn is re-scoped from
+  scratch.
+
+**Decided with the user (2026-09-07), and this is the requirement for the fix:**
+the layout ban **stays**. Alex must **decline honestly instead of asking another
+question**. A request for a table is declined. A request to collate everything
+posted so far is declined **in C1/C3** on the honest ground that Alex sees only
+its own card — "I can't put together everyone's; here is mine." That is an
+orthogonality point as much as a tone one: a Peer is not the group's aggregator,
+and claiming a view of the whole board is false for a Peer.
+
 ### 4g. Gate B's premise does not survive the T-C1-024 measurement
 
 B1 was written on the assumption that the Observer's ~450 output tokens are
@@ -1287,7 +1378,7 @@ Two prompt-only attempts have failed. Enforce it.
 | # | Change |
 | --- | --- |
 | D1 | **Set `text: { verbosity: "low" }`.** The GPT-5 family's own length control, currently unused. `reasoning: { effort: "minimal" }` is already set. No prompt edit required. |
-| D2 | **Close the silent guard bypass.** `extractSurfacedTraits` (`poolingExtractor.ts:426`) ends in `catch { return [] }`, and an empty result reads as "this message revealed nothing", so every scope guard passes. It is also called *synchronously on the generation path* (`routeScopedGeneration.ts:213,351`). Represent failure as unknown and fail closed; move or cache the call. |
+| D2 | **DONE (uncommitted).** The deterministic closed-pool matcher replaces the model extractor on the guard path, the same move A7 made for the pre-broadcast ledger update: network-free, so it cannot time out, and with no failure mode that reads as absence. This also removes one or two synchronous model calls from generation. **It was not cosmetic** — T-C1-027 shipped three messages of six to eight traits on turns whose guard was correctly set to one new trait, because the empty extraction made the check pass. D3 and D4 have only actually been enforcing since this landed. |
 | D3 | **DONE (uncommitted).** A turn on `address`/`followup` that carries **no request at all** now gets a default guard of one new trait. The scoping rule is deliberate: when the human asked something specific — a preference, a count, a full list, an explicit narrowing — the request-scope machinery already decides what Alex may say and is entitled to decide that no limit applies, so those paths are untouched and an explicit all-candidate request still answers in full. Violations go through the existing repair loop, which **fails closed** (a lost turn, not an unbounded one). **This required changing an existing assertion**, recorded per §6: `bareAddressContext` asserted `maxTraitIds` must be undefined under a `focus_depth` guard, on the design note that focus and trait-count limits are independent. That note is still right about scope — the candidate lock is unchanged and asserted — but it was wrong that anything else bounded the count: nothing did, so a bare "Alex?" could answer with every trait Alex holds. |
 | D4 | **PARTLY DONE (uncommitted).** The hard half shipped with D3: `maxTraitIds` counts only *newly introduced* traits, so a message reciting nothing but already-surfaced ones passed every guard — T-C1-025 seq 7 restated fifteen and introduced none. Guards now also carry `maxRestatedTraitIds` (2 on the default budget), violated as `too_many_restated_traits`. **Still open:** injecting `revealStats.aiSurfacedIds` into the prompt as "already stated by you", which is the positive half — the bound stops the recital, it does not yet tell the generator what it has already said. |
 | D5 | **Add a length post-condition** to `outputScopeViolation()` (sentence and word count), and trim the `outputDiscipline` exception clause ("explicitly requested full list or comparison") that is currently firing on ordinary turns. |
@@ -1393,6 +1484,20 @@ repair.
 
 Append one line per completed gate: date, gate, commit, tests run, measured effect.
 
+- 2026-09-07 — T-C1-027 measured (first full real session, 81 messages).
+  **B8 confirmed live**: review rate ~10% → 2%, Observer median 6.5 → 5.3 s, and
+  the one review carried the new `reason` field. **B1 rolled back**: it left
+  `alexRelevance` at `not_relevant` on 50/50 observations, 32 of them alongside
+  `explicit_addressee` — incoherent on its face — and `alexParticipation` stuck
+  too; both fields follow a removed one in schema order, so the removed fields
+  were reasoning scaffold, not just data. Observer `v11→v12`. **D2 done**, and it
+  turned out to be load-bearing: D3/D4 were passing vacuously on empty extraction,
+  so three messages of six to eight traits shipped against a one-trait guard.
+  Four regressions, each verified to fail with its own fix reverted — one vacuous
+  first attempt again (it pre-computed the ids instead of driving the real
+  generation path) and was replaced with an end-to-end test through
+  `generateScopedRouteMessage`. build + all four suites green. Speech quality is
+  now the open front; the decline requirement is recorded in §4i.
 - 2026-09-07 — T-C1-025 measured; D3/D4 and B8 completed (uncommitted).
   **B4 and D6 confirmed firing in production**, B4 by its exact transition code
   at the exact turn. **D6 also caused a regression and D3 was pulled forward to

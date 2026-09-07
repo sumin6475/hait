@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { mock } from "node:test";
 import { Responses } from "openai/resources/responses/responses";
+import { generateScopedRouteMessage } from "../lib/routeScopedGeneration.js";
 import { config } from "../config.js";
 import { ConversationObservation } from "../models/ConversationObservation.js";
 import { Message } from "../models/Message.js";
 import { Participant } from "../models/Participant.js";
 import {
-  CONVERSATION_OBSERVER_OUTPUT_SCHEMA, observerResultFromParsed,
+  CONVERSATION_OBSERVER_OUTPUT_SCHEMA,
   conversationObserverReviewReason, observationRosterConflicts,
   enqueueConversationObservation, liveObservationAnchorSeq, normalizeConversationObservation,
   reduceConversationStateAfter, type ConversationObserverResult,
@@ -374,16 +375,23 @@ try {
 
 const b1Shape = CONVERSATION_OBSERVER_OUTPUT_SCHEMA.shape;
 
-// The model is not asked for a field the normalizer overwrites. Every token
-// spent on `mentionedCandidates` was discarded before any consumer saw it: the
-// normalizer recomputes it by regex from the anchor text.
+// [B1 ROLLED BACK] `mentionedCandidates` and `activeThread.participants` are
+// asked for again. Removing them was correct about the data — the normalizer
+// derives both and overwrites the model's answers — and wrong about the effect:
+// T-C1-027 returned `alexRelevance: "not_relevant"` on 50 of 50 observations
+// (7 of 8 were `relevant` on the last v10 run of the same script) and
+// `alexParticipation: "invited"` on 50 of 50, with 32 observations reporting
+// `explicit_addressee` and `not_relevant` at once. Both stuck fields follow a
+// removed one in schema order, and structured output is generated in order, so
+// the removed fields were reasoning scaffold, not only data. These assertions
+// pin the fields as REQUESTED so the removal cannot be repeated by accident.
 assert.equal(
   Object.hasOwn(b1Shape, "mentionedCandidates"),
-  false,
-  "the model is not asked for mentionedCandidates",
+  true,
+  "the model is asked for mentionedCandidates — removing it destabilized alexRelevance",
 );
-// It is still on the observation every consumer reads, and still derived from
-// the anchor text rather than from anything the model said.
+// The normalizer still overwrites the value from the anchor text; asking for it
+// is about what the model reasons through, not about trusting its answer.
 const b1Normalized = normalizeConversationObservation(
   { ...observation, mentionedCandidates: [] },
   false,
@@ -400,44 +408,23 @@ assert.deepEqual(
   "mentionedCandidates is derived from the anchor text, not from model output",
 );
 
-// activeThread.participants is the session roster in a fixed three-participant
-// room, so the model is not asked for it either.
 const b1ThreadShape = (b1Shape.activeThread as any)._def.innerType.shape;
 assert.equal(
   Object.hasOwn(b1ThreadShape, "participants"),
-  false,
-  "the model is not asked for activeThread.participants",
-);
-// The field still reaches consumers, resolved from the roster by the widening
-// step rather than by anything the model returned.
-const b1Widened = observerResultFromParsed(
-  {
-    ...observation,
-    activeThread: { ...observation.activeThread!, participants: undefined },
-  } as any,
-  roster,
+  true,
+  "the model is asked for activeThread.participants — alexParticipation follows it in schema order",
 );
 assert.deepEqual(
-  b1Widened.activeThread?.participants,
+  b1Normalized.activeThread?.participants,
   [...roster],
-  "participants is resolved from the session roster, not from model output",
-);
-assert.deepEqual(
-  b1Widened.mentionedCandidates,
-  [],
-  "mentionedCandidates starts empty and is only ever filled by the normalizer",
+  "participants still reaches consumers, filtered to the session roster",
 );
 
 // activeThread.evidenceSeqs carries only the current turn. The reducer unions
 // thread evidence itself, so re-emitting the whole history was redundant — and
 // it was the largest single driver of the Observer's growing output, reaching
 // ten entries by seq 14 of T-C1-024 with no bound.
-const b1Base = {
-  ...observation,
-  activeThread: { ...observation.activeThread!, participants: undefined },
-} as any;
-delete b1Base.mentionedCandidates;
-delete b1Base.activeThread.participants;
+const b1Base = { ...observation } as any;
 assert.equal(
   CONVERSATION_OBSERVER_OUTPUT_SCHEMA.safeParse({
     ...b1Base,
@@ -573,5 +560,58 @@ assert.equal(
   "alex_participation_contradiction",
 );
 assert.equal(conversationObserverReviewReason(b8Contradiction, ["something_unresolved"]), "unresolved_conflict");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [D2] The reveal guard has to see what the message actually disclosed. The old
+// extractor ended in `catch { return [] }`, and an empty result is
+// indistinguishable from "nothing was revealed", so every scope guard passed
+// whenever extraction failed — silently, with no audit trace. This drives the
+// real generation path rather than pre-computing the ids the way the unit
+// assertions do, so it fails if the wiring stops using the deterministic matcher.
+// ─────────────────────────────────────────────────────────────────────────────
+{
+  const d2Draft = "Noting those additions, my notes for Candidate A still list: matches\u2014very good at recognizing dangerous situations, good overview of complex contexts, excellent spatial awareness, very well organized; misses\u2014unfriendly and transmits restlessness. From my perspective, the new comments about not tolerating criticism, being a show-off, or not open to new ideas align with the pattern that A\u2019s interpersonal misses are consistent but do not add new confirmed operational strengths.";
+  const oldKeyD2 = config.openaiApiKey;
+  let d2Calls = 0;
+  try {
+    config.openaiApiKey = "test-no-network";
+    mock.method(Responses.prototype, "parse", (async () => {
+      d2Calls++;
+      return { model: "test", output_parsed: { content: d2Draft } };
+    }) as any);
+    const generated = await generateScopedRouteMessage({
+      systemPrompt: "system",
+      userPrompt: "user",
+      limits: { maxOutputTokens: 600, maxContentChars: 2400, timeoutMs: 45_000 } as any,
+      guard: { candidate: "A", maxTraitIds: 1, maxRestatedTraitIds: 2, reason: "focus_depth" },
+      previouslySurfacedTraitIds: [],
+      logContext: "d2-test",
+    });
+    const d2Initial = generated.repairAudit?.attempts.find((a) => a.stage === "initial");
+    assert.ok(
+      (d2Initial?.extractedTraitIds ?? []).length > 5,
+      "the guard sees the traits the message really discloses, without a model call",
+    );
+    assert.deepEqual(
+      d2Initial?.violations,
+      ["too_many_traits"],
+      "and records the violation rather than accepting on empty evidence",
+    );
+    assert.equal(
+      generated.result.ok,
+      false,
+      "a draft reciting the board is rejected instead of passing on empty evidence",
+    );
+    assert.match(
+      String((generated.result as any).error ?? ""),
+      /too_many_traits/,
+      "and it is rejected for the reveal budget, not for something incidental",
+    );
+    assert.equal(d2Calls, 2, "one draft plus one repair attempt; extraction adds no model call");
+  } finally {
+    mock.restoreAll();
+    config.openaiApiKey = oldKeyD2;
+  }
+}
 
 console.log("[conversation-recovery] semantic authority, lifecycle, generation, observer failure recovery and burst supersession passed");
