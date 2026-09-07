@@ -3,7 +3,7 @@
 Branch: `claude/hait-conversation-system-errors-0f5e58`
 Baseline: `5263f0f` (= `origin/main` at time of writing = production)
 Snapshot commit: `362416b` — relocated prior uncommitted work off the `main` checkout.
-Last updated: 2026-09-07 — after T-C1-024, D6 and B4
+Last updated: 2026-09-07 — after T-C1-024, D6, B4 and B1
 
 > **This file is the single source of truth for this work.** Read it first in a
 > new session; it replaces re-deriving the diagnosis. Status is maintained here,
@@ -45,20 +45,25 @@ and either location can be recovered from the other.
 | B9 · one "addresses Alex" predicate | **DONE**, still unverified live (§4f) | Gate B table |
 | D6 · deterministic template under the output contract | **DONE** | Gate D table, §4f |
 | B4 · opportunity lifetime | **DONE** | Gate B table |
-| B1, B8 · Observer cost and hygiene | **OPEN — next** | Gate B table |
-| B2, B3, B6, B7 · Observer accuracy and hygiene | OPEN | Gate B table |
+| B1 · Observer output schema | **DONE**, but its premise was wrong | Gate B table, §4g |
+| B8 · bound the Observer review path | **OPEN — next** | Gate B table |
+| B2, B3, B6, B7 · Observer accuracy | OPEN — **no latency benefit expected** | Gate B table, §4g |
+| Observer overlap (new) | **OPEN — the only item that can reach ≤5 s** | §4g |
 | Gate C · Judge role goals | **BLOCKED on the user** (§ Open decisions) | Gate C |
 | Gate D · D1–D5 generator length, emptiness, anti-repeat | OPEN | Gate D |
 
 **Do next, in this order.**
 
-1. **B1 then B8.** B4 has landed, so the clutter half of the Observer's growth is
-   handled and the schema cut is next. B8 comes straight after because the review
-   path makes a second full call — 12.2 s on one turn in T-C1-022 — and would
-   erase B1's saving on exactly the slowest turns.
-2. **B2 and B3** (literal-candidate regex, focus-vs-salience inversion), which
-   are accuracy rather than cost, then **B7** and **B6**.
-3. **Gate D, D1–D5.** D6 is done. The remaining items are evidenced verbatim in
+1. **Read §4g first.** B1 landed, and measuring it showed Gate B's premise does
+   not hold: the Observer's output is not mostly padding (a full cut is 7%) and
+   its latency does not track output size within the observed range. Plan the
+   rest of Gate B accordingly.
+2. **B8**, which is unaffected by that finding — a second full Observer call is
+   the one mechanism that demonstrably doubles a turn (12.2 s in T-C1-022).
+3. **Decide on overlapping the Observer** (§4g item 2). At ~6.5 s mean and ~2 s
+   standard deviation it is the only remaining item that can reach the ≤5 s
+   median target, and it is the structural analogue of A6.
+4. **Gate D, D1–D5.** D6 is done. The remaining items are evidenced verbatim in
    §4d, §4e and §4f; D4 (anti-repeat) has the sharpest evidence — T-C1-024 seq 13
    contained *zero* new information.
 
@@ -1053,7 +1058,7 @@ common-ground behaviour. Flagged for the user to adjudicate before any change.
 
 | # | Change |
 | --- | --- |
-| B1 | **Shrink the output schema.** The model should return only what is judgeable *this turn*: addressees, speechAct, requestIntent, alexRelation, floor, thread status change, focus. Everything else — roster, participants, scopeCandidates, threadId/rootSeq, and `mentionedCandidates` — is derivable deterministically; `mentionedCandidates` is *already* recomputed by regex in the normalizer, so the model is paying ~450 output tokens per turn to emit fields that are then overwritten. Target ~100 tokens. |
+| B1 | **DONE (uncommitted), but the target was wrong — see §4g.** The model's output contract and the observation consumers read are now separate types, so the cut is confined to what the model is *asked* for and no saved observation, consumer, or replay fixture changes shape. Three fields removed from the model contract: `mentionedCandidates` (the normalizer already recomputed it by regex and overwrote the model's answer, so every token spent on it was discarded), `activeThread.participants` (the session roster in a fixed three-participant room), and `activeThread.evidenceSeqs` capped from 32 to 4 with the prompt stating that the thread's earlier evidence is already accumulated by the reducer. Observer `v10→v11`, prompt `v8→v9`. **Measured against T-C1-024's real observations, this is a 7% output reduction, not the ~78% the item assumed, and it barely dents the growth curve (+120 → +108 chars).** The remaining output is not padding: ~93% of it is content some consumer reads, and most of the growth is legitimate (the thread genuinely accumulates candidates and a longer `requestedAction`). |
 | B2 | **Fix the literal-candidate regex** so a bare `A` is detected in ordinary positions ("lay out A first"). Salience accuracy depends on it. Guard against the English article "a" as the prompt already warns. |
 | B3 | **Invert focus vs salience.** Focus wins only when `focusBasis === "current_explicit"`. A `carried_thread` focus is an inference about an announcement and must not outrank the candidate actually being named. Direct fix for T-C2-039 seq 10. |
 | B4 | **DONE (uncommitted).** Two deterministic rules in `reduceConversationLedger`, both pure seq arithmetic over state the reducer already holds, so the Observer/reducer split is untouched. (1) *Alex answering a thread retires that thread's older standing invitations* — in T-C1-024 `opp:5` and `opp:6` were one invitation restated, the Judge selected `opp:6`, and `opp:5` outlived the request it stood for. (2) A TTL backstop (`OPPORTUNITY_TTL_SEQS = 8`) for the case rule 1 cannot reach, where Alex never speaks and no consumption ever retires the backlog — T-C1-020 held one invitation open for 58 turns that way. Neither rule touches a `direct_question` or a `required` expectation: an unanswered obligation is a failure to keep in the record, not clutter to sweep. Verified by replaying T-C1-024's **recorded** ledger deltas and consumption transitions through the reducer: rule 1 fires exactly once, at the seq where Alex answered, and the session ends with 0 live opportunities instead of 1. This also addresses the Gate 1 deferral without changing the keying — a thread-root-keyed id is now retired by the first consumption on its thread. |
@@ -1062,6 +1067,58 @@ common-ground behaviour. Flagged for the user to adjudicate before any change.
 | B7 | **Revise the thread's `requestedAction`.** It is written once when the thread is created and never updated, so a thread rooted at Alex's greeting told the generator "greet participants" for a whole session (T-C1-022, seq 10). It must track what the group is currently doing, or stop being passed to generation as an instruction. |
 | B9 | **DONE (uncommitted).** One predicate for "this turn addresses Alex": the floor rule now accepts `alexRelation === "explicit_addressee"` exactly as Gate 1's opportunity derivation does, so a turn can no longer open an Alex invitation and close the floor against it at the same time. **This required changing an existing assertion** — `test-conversation-recovery.ts` asserted "addressing Alex cannot cancel the observed human floor". That invariant cannot coexist with Gate 1, and T-C1-023 cost three consecutive turns to the contradiction. The narrower invariant that replaces it is asserted instead: a turn addressing Alex makes the floor **shared** (`expectedNext: [human, "alex"]`, human first), and a turn that does *not* address Alex still leaves the human floor exclusive. Both directions have regressions; the new one was verified to fail with the predicate reverted. |
 | B8 | **Bound the Observer review path.** `observerReviewed: true` makes a second full call — 12.2 s of observer on one turn in T-C1-022, against a 3.9 s single-call floor. Either the review inherits B1's smaller schema or it is capped, otherwise B1's savings are erased on exactly the turns that are already slowest. |
+
+### 4g. Gate B's premise does not survive the T-C1-024 measurement
+
+B1 was written on the assumption that the Observer's ~450 output tokens are
+mostly derivable padding, and that cutting them to ~100 cuts the Observer's
+latency proportionally. Both halves were tested against the run. Neither holds.
+
+**The output is not mostly padding.** Reconstructing every schema field from
+T-C1-024's first and last observations: the fields sum to 1,001 and 1,121
+characters — roughly 280 dense tokens against a measured 527, so a large part of
+the "output" is JSON formatting, not content that removing a field can reclaim.
+Removing every provably-free field (§ Gate B, B1) takes 1,121 → 1,041 characters,
+**a 7% reduction**. Growth across the session falls only from +120 to +108
+characters, because most of it is legitimate: the thread really does accumulate
+candidates and a longer `requestedAction`.
+
+`activeThread` alone is 34% of the output and 66% of the growth. Cutting it
+further means not re-emitting the thread every turn — a delta contract, not a
+field trim — which changes what the reducer can reconcile and needs its own gate.
+
+**Latency does not track output size within the observed range.** Across the
+nine Observer calls:
+
+| relationship | r |
+| --- | ---: |
+| latency vs output tokens | +0.53 |
+| latency vs input tokens | −0.11 |
+| latency vs cached input tokens | +0.09 |
+
+and the per-call ratio ranges **8.6 to 21.6 ms per output token**, a 2.5× spread.
+Two calls emitting 488 tokens took 7,259 ms and 7,680 ms while a 481-token call
+took 4,150 ms and a 384-token call took 6,056 ms. Caching makes no difference
+either: cached calls averaged **6,752 ms** against **6,250 ms** uncached. With
+n=9 and a 1.4× spread in output size, the +0.53 is not something to spend a gate
+on. Mean 6,474 ms with a 2,063 ms standard deviation is consistent with the
+variance being upstream API latency rather than anything in the payload.
+
+**What this redirects.** B1 is still worth keeping — the removed fields were
+genuinely discarded, and the `evidenceSeqs` cap stops an unbounded accumulator —
+but it is a hygiene fix, not a latency fix, and B2/B3/B7 should be planned as
+*accuracy* work with no latency expectation attached. The remaining levers on
+Observer latency, in order:
+
+1. **B8** — bound the review path. A second full call is the one mechanism that
+   demonstrably doubles a turn (12.2 s in T-C1-022), and it is unaffected by any
+   of the above.
+2. **Overlap the Observer the way A6 overlapped the floor.** At ~6.5 s mean and
+   ~2 s standard deviation, no payload change reaches the ≤5 s median target
+   while the Observer is a blocking serial call. This is the structural analogue
+   of A6 and is probably the only item that can reach the target.
+3. **A faster observer model.** `gpt-4o-mini` at 4–11 s is the floor being
+   measured; this is a cost/accuracy decision for the user, not a code change.
 
 ### Gate C — Judge: a goal, not a rubber stamp
 
@@ -1191,6 +1248,19 @@ repair.
 
 Append one line per completed gate: date, gate, commit, tests run, measured effect.
 
+- 2026-09-07 — B1 completed (uncommitted). The model's output contract is now
+  separate from the observation consumers read, so three fields the normalizer
+  already discarded left the model contract without changing any downstream
+  shape. Observer `v10→v11`, prompt `v8→v9`. Four regressions, each verified to
+  fail with its own fix reverted — one was **vacuous on the first attempt** and
+  is recorded as such: it asserted against the normalizer's roster filter rather
+  than the widening step that actually fills the field, and was rewritten to
+  exercise the real code. **Measuring B1 disconfirmed Gate B's premise** (§4g):
+  the full field cut is 7% of output, growth falls only +120 → +108, and Observer
+  latency does not track output size (r=+0.53 over a 1.4× range, with a 2.5×
+  spread in ms per output token; cached calls average slower than uncached).
+  B1 is kept as hygiene; the latency target moves to B8 and to overlapping the
+  Observer. build + intervention-v2 + ledger + recovery + pooling-extractor green.
 - 2026-09-07 — T-C1-024 measured, then D6 and B4 completed (uncommitted in the
   root checkout). **A7 confirmed live**: the pre-broadcast tail fell from
   2.5–3.5 s to 0.2–1.5 s and superseded turns from 39% to 11%, which closes

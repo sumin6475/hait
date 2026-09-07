@@ -6,6 +6,7 @@ import { ConversationObservation } from "../models/ConversationObservation.js";
 import { Message } from "../models/Message.js";
 import { Participant } from "../models/Participant.js";
 import {
+  CONVERSATION_OBSERVER_OUTPUT_SCHEMA, observerResultFromParsed,
   enqueueConversationObservation, liveObservationAnchorSeq, normalizeConversationObservation,
   reduceConversationStateAfter, type ConversationObserverResult,
 } from "../lib/conversationObserver.js";
@@ -362,5 +363,95 @@ try {
     config.openaiApiKey = oldKey2;
   }
 }
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// [B1] The model's output contract and the observation consumers read are two
+// different shapes. Measured on T-C1-024, whose Observer output grew 384 → 527
+// tokens across nine decisions.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const b1Shape = CONVERSATION_OBSERVER_OUTPUT_SCHEMA.shape;
+
+// The model is not asked for a field the normalizer overwrites. Every token
+// spent on `mentionedCandidates` was discarded before any consumer saw it: the
+// normalizer recomputes it by regex from the anchor text.
+assert.equal(
+  Object.hasOwn(b1Shape, "mentionedCandidates"),
+  false,
+  "the model is not asked for mentionedCandidates",
+);
+// It is still on the observation every consumer reads, and still derived from
+// the anchor text rather than from anything the model said.
+const b1Normalized = normalizeConversationObservation(
+  { ...observation, mentionedCandidates: [] },
+  false,
+  "humanX",
+  "Let us compare Candidate C and Candidate D",
+  9,
+  new Set([1, 9]),
+  null,
+  roster,
+);
+assert.deepEqual(
+  b1Normalized.mentionedCandidates,
+  ["C", "D"],
+  "mentionedCandidates is derived from the anchor text, not from model output",
+);
+
+// activeThread.participants is the session roster in a fixed three-participant
+// room, so the model is not asked for it either.
+const b1ThreadShape = (b1Shape.activeThread as any)._def.innerType.shape;
+assert.equal(
+  Object.hasOwn(b1ThreadShape, "participants"),
+  false,
+  "the model is not asked for activeThread.participants",
+);
+// The field still reaches consumers, resolved from the roster by the widening
+// step rather than by anything the model returned.
+const b1Widened = observerResultFromParsed(
+  {
+    ...observation,
+    activeThread: { ...observation.activeThread!, participants: undefined },
+  } as any,
+  roster,
+);
+assert.deepEqual(
+  b1Widened.activeThread?.participants,
+  [...roster],
+  "participants is resolved from the session roster, not from model output",
+);
+assert.deepEqual(
+  b1Widened.mentionedCandidates,
+  [],
+  "mentionedCandidates starts empty and is only ever filled by the normalizer",
+);
+
+// activeThread.evidenceSeqs carries only the current turn. The reducer unions
+// thread evidence itself, so re-emitting the whole history was redundant — and
+// it was the largest single driver of the Observer's growing output, reaching
+// ten entries by seq 14 of T-C1-024 with no bound.
+const b1Base = {
+  ...observation,
+  activeThread: { ...observation.activeThread!, participants: undefined },
+} as any;
+delete b1Base.mentionedCandidates;
+delete b1Base.activeThread.participants;
+assert.equal(
+  CONVERSATION_OBSERVER_OUTPUT_SCHEMA.safeParse({
+    ...b1Base,
+    activeThread: { ...b1Base.activeThread, evidenceSeqs: [1, 2, 3, 4] },
+  }).success,
+  true,
+  "four evidence seqs is the current-turn budget and parses",
+);
+assert.equal(
+  CONVERSATION_OBSERVER_OUTPUT_SCHEMA.safeParse({
+    ...b1Base,
+    activeThread: { ...b1Base.activeThread, evidenceSeqs: [1, 2, 3, 4, 5] },
+  }).success,
+  false,
+  "a whole accumulated evidence history is rejected by the contract",
+);
 
 console.log("[conversation-recovery] semantic authority, lifecycle, generation, observer failure recovery and burst supersession passed");
