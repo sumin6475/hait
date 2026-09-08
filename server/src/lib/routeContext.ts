@@ -24,6 +24,27 @@ export interface TranscriptMessage {
 }
 
 // 리더 조건은 여기서만 정의한다 (interventionEngine도 이 함수를 사용).
+/**
+ * Whether this condition's Alex is forbidden to put a question in its output.
+ *
+ * [T-C2-046] The xai conditions' prompts all carry "Do not ask a question, end
+ * with a question mark, or request information. If a request is ambiguous,
+ * state the limitation briefly instead of asking for clarification", and C2
+ * answered three requests with a menu of options anyway — two of them back to
+ * back, which the same prompt separately forbids. A prompt rule alone has now
+ * failed at this four times, counting T-C1-027, so it becomes a post-condition
+ * like length and trait count.
+ *
+ * The axis is the strategy, not the role: question-led prompting *is* the aci
+ * manipulation, so an xai Alex that clarifies by asking is not merely wordy, it
+ * is performing the condition it is supposed to be contrasted against. That is
+ * why this reads the condition and not the route — every xai route prompt
+ * carries the rule, and a test pairs the two so the guard cannot outrun them.
+ */
+export function forbidsQuestionOutput(conditionCode: ConditionCode): boolean {
+  return conditionCode === "C1" || conditionCode === "C2";
+}
+
 export function isLeaderCondition(conditionCode: ConditionCode): boolean {
   return conditionCode === "C2" || conditionCode === "C4";
 }
@@ -999,6 +1020,39 @@ const EXPLICIT_COMPLETE_SINGLE = [
 ];
 const EVERYTHING_REQUEST = /\beverything\s+(?:you\s+(?:have|got|know)|you've\s+got|on)\b/i;
 
+/**
+ * [T-C1-021] An inventory question about one candidate, with no quantifier.
+ *
+ * `EXPLICIT_COMPLETE_SINGLE` requires "all/every/complete/full" in front of the
+ * noun, so "What misses do we have for Candidate A?" carried the noun and
+ * classified `none`. Nothing then scoped the turn or lifted the reveal budget,
+ * and the honest answer — C's three already-visible misses — tripped
+ * `maxRestatedTraitIds: 2` and was dropped after repair. Eight turns went that
+ * way in one session, seven consecutive, because a `direct_question` stays open
+ * and Alex re-attempted the same answer each turn while the group waited.
+ *
+ * The quantifier was never what made these requests inventory requests; the
+ * interrogative is. That form also keeps [D6] intact — "we should go through
+ * what information we have" is a first-person proposal about procedure and has
+ * no interrogative inventory head, so it still falls through.
+ *
+ * The captured noun carries the valence into `countKind`, because "what misses"
+ * asks for the misses and `complete_single_candidate` otherwise means the whole
+ * card.
+ */
+const VALENCE_SCOPED_INVENTORY =
+  /\b(?:what|which)\s+(?:other\s+)?(matches|misses|traits?|attributes?|points?|items?)\b(?=[^?]*?\b(?:do|does|did|have|has|are|is)\b)/i;
+
+function scopedInventoryCountKind(text: string): RequestCountKind | null {
+  const match = VALENCE_SCOPED_INVENTORY.exec(text);
+  if (!match) return null;
+  const noun = match[1]!.toLowerCase();
+  if (noun === "matches") return "matches";
+  if (noun === "misses") return "misses";
+  return "all";
+}
+
+
 // [D6 / T-C1-024 seq 3] "I think it would be best to just go through what
 // information we have on each candidate" is a proposal about procedure, not a
 // request that Alex enumerate the board — but "each candidate" matches
@@ -1220,6 +1274,21 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   // guard.
   if (completeMarker && named && !allCandidatesMarker) {
     return { kind: "complete_single_candidate", candidate: named, source };
+  }
+  // Priority 1b — the same request without the quantifier. Gated on a named
+  // candidate rather than falling back to the conversational focus: an
+  // inventory question that names nobody is a question to the room, and
+  // guessing a candidate for it is how a scope block starts answering
+  // something nobody asked.
+  const scopedInventory =
+    !allCandidatesMarker && named ? scopedInventoryCountKind(text) : null;
+  if (scopedInventory) {
+    return {
+      kind: "complete_single_candidate",
+      candidate: named,
+      source,
+      countKind: scopedInventory,
+    };
   }
   // A request to compare all candidates is synthesis, not a request to dump
   // every trait. Explicit list/notes wording above still keeps inventory
@@ -1543,8 +1612,17 @@ function requestScopeFromIntent(input: {
           "Request scope (server-derived): this is a complete-list request, but no single candidate can be established from the request or the current discussion. Do not dump notes or expand across candidates; give a brief scope limitation consistent with the condition style.",
       };
     }
+    // The valence the request carried travels into the instruction. Answering
+    // "what misses do we have for A?" with A's matches as well is the same
+    // over-answering the scope block exists to stop, one level in.
+    const wanted =
+      intent.countKind === "misses"
+        ? `every miss you hold for Candidate ${focus}, and no matches`
+        : intent.countKind === "matches"
+          ? `every match you hold for Candidate ${focus}, and no misses`
+          : `every match and every miss you hold for Candidate ${focus}`;
     return {
-      block: `Request scope (server-derived): the explicit complete-list request applies only to Candidate ${focus}. List every match and every miss you hold for Candidate ${focus}, and do not expand to another candidate.`,
+      block: `Request scope (server-derived): the explicit complete-list request applies only to Candidate ${focus}. List ${wanted}, and do not expand to another candidate.`,
       guard: { candidate: focus, reason: "explicit_complete_request" },
     };
   }

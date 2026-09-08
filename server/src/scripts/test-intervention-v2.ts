@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
+import type { ConditionCode, RouteKind } from "../types.js";
 import {
   detectDirectAddress,
   detectExplicitAlexDefer,
@@ -29,6 +30,7 @@ import {
   widenRequestIntent,
   buildRouteUserContext,
   classifyRequestIntent,
+  forbidsQuestionOutput,
   decidePreferenceFromKnownCoverage,
   deriveFocusDepthState,
   deriveMainJudgeSignalFromRules,
@@ -56,6 +58,8 @@ import {
   outputScopeSoftViolations,
   outputScopeViolation,
   sentenceCount,
+  outputAsksAQuestion,
+  outputVerdict,
 } from "../lib/routeScopedGeneration.js";
 import { extractHumanTraitsFast, validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
 import {
@@ -2013,6 +2017,120 @@ assert.deepEqual(explicitCompleteCandidateContext.outputScopeGuard, {
 assert.equal(explicitCompleteCandidateContext.requestIntent.kind, "complete_single_candidate");
 assert.equal(explicitCompleteCandidateContext.requestIntent.source, "alex_notes");
 
+// [T-C1-021] And the whole point of the classification is what reaches the
+// turn: the scope block must ask for the valence that was requested, and the
+// trait-count cap that dropped eight turns must be gone.
+const scopedMissesContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  messages: [
+    {
+      seq: 34,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "What misses do we have for Candidate C?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  language: "en",
+  anchorSeq: 34,
+});
+assert.match(
+  scopedMissesContext.userPrompt,
+  /List every miss you hold for Candidate C, and no matches/,
+  "the request's valence reaches the turn, so the answer is not padded with matches",
+);
+assert.deepEqual(
+  scopedMissesContext.outputScopeGuard,
+  { candidate: "C", reason: "explicit_complete_request" },
+  "and the reveal budget that silenced the honest answer no longer applies",
+);
+
+// [T-C2-046] An explanatory condition may not answer with a question.
+//
+// Every C1 and C2 route prompt says "Do not ask a question, end with a question
+// mark, or request information", and C2-046 answered three requests with a
+// menu of options anyway — seq 14 -> 15 and 16 -> 17 back to back, which the
+// same prompt separately forbids. A prompt rule has now failed at this four
+// times, so it becomes a post-condition like length and trait count.
+//
+// It is not a style preference. Question-led prompting is the *aci* strategy;
+// an xai Alex that asks question-led clarifications leaks the manipulation into
+// the axis it is supposed to be contrasted with.
+for (const condition of ["C1", "C2"] as const) {
+  assert.equal(
+    forbidsQuestionOutput(condition),
+    true,
+    `${condition} is explanatory, so a question is a violation`,
+  );
+}
+for (const condition of ["C3", "C4"] as const) {
+  assert.equal(
+    forbidsQuestionOutput(condition),
+    false,
+    `${condition} is inquiry-based, where asking is the strategy`,
+  );
+}
+// The guard must not outrun the prompts it enforces: if an xai prompt ever
+// stops carrying the rule, this pairing is what says so.
+for (const key of listRoutePromptKeys()) {
+  const [condition, routeKind] = key.split(".") as [ConditionCode, RouteKind];
+  const forbidden = getRoutePrompt(condition, routeKind).systemPrompt.includes(
+    "Do not ask a question, end with a question mark",
+  );
+  assert.equal(
+    forbidden,
+    forbidsQuestionOutput(condition),
+    `${key}: the post-condition and the prompt must agree about questions`,
+  );
+}
+
+// The three real T-C2-046 turns, and what must still pass.
+for (const asked of [
+  "Do you want me to share what I have in my notes for Candidate C, or are you asking whether I hold any additional information beyond the negatives already listed?",
+  "Do you want new insight about a specific candidate or a fresh observation about the overall candidate pool?",
+  "Do you want a concise comparison across all four candidates, or a focused comparison of the two or three frontrunners you have in mind?",
+]) {
+  assert.equal(outputAsksAQuestion(asked), true, "a clarification request is a question");
+}
+assert.equal(
+  outputAsksAQuestion(
+    "For Candidate C I have three matches and three misses. Matches: can make the right decisions very quickly.",
+  ),
+  false,
+  "an ordinary answer is not",
+);
+assert.equal(
+  outputAsksAQuestion(
+    "I only have my own notes, so I cannot compile everyone's; here is what I hold for C.",
+  ),
+  false,
+  "and neither is a plain decline, which is what the condition asks for instead",
+);
+
+// A question violation has to reach the repair loop on its own. Two of the
+// three T-C2-046 turns had no output guard at all, so a check folded in beside
+// the scope branch would have been skipped on exactly the turns that broke it.
+assert.deepEqual(
+  outputVerdict({ metadata: null, question: "answered_with_a_question", scope: null }),
+  { needsRepair: true, violations: ["answered_with_a_question"], primary: "answered_with_a_question" },
+  "a question alone is enough to send the draft back",
+);
+assert.equal(
+  outputVerdict({ metadata: null, question: null, scope: null }).needsRepair,
+  false,
+  "and a clean draft is still returned untouched",
+);
+assert.equal(
+  outputVerdict({
+    metadata: "internal_metadata_leak",
+    question: "answered_with_a_question",
+    scope: "too_many_words",
+  }).primary,
+  "internal_metadata_leak",
+  "a metadata leak still leads, because it is the class that makes a message unusable",
+);
+
 // [RequestIntent] 분류기 단위 판정표 — 표면 문장 추가가 아니라 카테고리 흡수 확인.
 assert.deepEqual(classifyRequestIntent("Can you give me all traits of Candidate B?"), {
   kind: "complete_single_candidate",
@@ -2028,6 +2146,56 @@ assert.equal(
   classifyRequestIntent("What do you have for all candidates?").kind,
   "complete_all_candidates",
 );
+
+// [T-C1-021] A bare inventory noun asked of Alex about one candidate is an
+// inventory request, and the quantifier is not what makes it one. seq 34 "What
+// misses do others have for Candidate C?" and seq 37 "What misses do we have
+// for Candidate A?" both classified `none`, so no scope block and no guard
+// exemption applied; the honest answer restated three already-visible misses,
+// tripped `maxRestatedTraitIds: 2`, and the turn was dropped after repair.
+// Eight turns died that way, seven of them consecutive, because a required
+// direct_question stays open and Alex retried the same answer each time.
+//
+// The valence travels with the classification: "what misses" is not a request
+// for the matches too, and `complete_single_candidate` otherwise means the
+// whole card.
+assert.deepEqual(
+  classifyRequestIntent("What misses do we have for Candidate A?"),
+  { kind: "complete_single_candidate", candidate: "A", source: "alex_notes", countKind: "misses" },
+  "an inventory question about one candidate is an inventory request",
+);
+assert.deepEqual(
+  classifyRequestIntent("What misses do others have for Candidate C?"),
+  { kind: "complete_single_candidate", candidate: "C", source: "alex_notes", countKind: "misses" },
+  "and asking the room does not make it less of one",
+);
+assert.equal(
+  classifyRequestIntent("What matches do you have for Candidate B?").countKind,
+  "matches",
+  "the other valence classifies the same way",
+);
+assert.equal(
+  classifyRequestIntent("What traits do you have for Candidate B?").countKind,
+  "all",
+  "an unscoped inventory noun still means the whole card",
+);
+// D6 must survive: a first-person proposal about procedure is not a request
+// that Alex enumerate anything, and it has no interrogative inventory form.
+assert.equal(
+  classifyRequestIntent(
+    "I think it would be best to just go through what information we have on each candidate",
+  ).kind,
+  "none",
+  "a proposal about how to proceed is still not an inventory request",
+);
+// Without a named candidate this stays out of the complete-list path rather
+// than guessing one from the conversation.
+assert.notEqual(
+  classifyRequestIntent("What misses does everyone have?").kind,
+  "complete_single_candidate",
+  "an inventory question naming no candidate does not become a complete list",
+);
+
 assert.equal(
   classifyRequestIntent("Yeah, what do you have, Alex?").kind,
   "scoped_information_request",

@@ -16,6 +16,7 @@ import { allocSeq } from "./seq.js";
 import { getRoutePrompt } from "./routePromptRegistry.js";
 import {
   buildRouteUserContext,
+  forbidsQuestionOutput,
   formatDeterministicSummary,
   type RequestIntent,
   type RouteOutputScopeGuard,
@@ -480,6 +481,10 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         limits: routeGenerationLimits(input.routeKind, context.requestIntent),
         guard: generationGuard,
         previouslySurfacedTraitIds,
+        // [T-C2-046] Not folded into `generationGuard`: two of the three turns
+        // that broke this rule had no guard at all, so a question check hung
+        // off the guard would have missed them.
+        forbidQuestion: forbidsQuestionOutput(input.conditionCode),
         logContext:
           `stage=${input.decisionStage ?? "system"} route=${input.routeKind} ` +
           `reason=${input.routeReason ?? "none"} anchor=${input.anchorSeq} session=${input.sessionCode}`,

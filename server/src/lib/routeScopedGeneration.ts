@@ -277,6 +277,44 @@ export function outputScopeSoftViolations(
   return violations;
 }
 
+/**
+ * Whether a generated message asks the reader something.
+ *
+ * [T-C2-046] Deliberately a question mark and nothing cleverer. The rule this
+ * enforces is the prompt's own sentence — "do not ask a question, end with a
+ * question mark, or request information" — so matching it exactly is what
+ * makes the post-condition and the prompt the same rule rather than two.
+ * Anything subtler would start disagreeing with the text Alex was given.
+ */
+export function outputAsksAQuestion(content: string): boolean {
+  return content.includes("?");
+}
+
+/**
+ * The three independent reasons a draft can be rejected, folded into one
+ * verdict.
+ *
+ * Extracted because the folding is where a new check gets lost. The question
+ * post-condition has to reach the repair loop on turns with **no guard**, and
+ * the guard is what the scope branch keys off — so "does a lone question
+ * violation trigger a repair" is a real question with a wrong answer available,
+ * and one that needs no model call to ask.
+ *
+ * `primary` is what the repair prompt and the log name. Metadata leaks lead
+ * because they are the only class that can make a message unusable rather than
+ * merely wrong.
+ */
+export function outputVerdict(input: {
+  metadata: string | null;
+  question: string | null;
+  scope: string | null;
+}): { needsRepair: boolean; violations: string[]; primary: string | null } {
+  const violations = [input.metadata, input.question, input.scope].filter(
+    (value): value is string => Boolean(value),
+  );
+  return { needsRepair: violations.length > 0, violations, primary: violations[0] ?? null };
+}
+
 export const MAX_REPAIR_ATTEMPTS = 1;
 
 export async function generateScopedRouteMessage(input: {
@@ -286,6 +324,12 @@ export async function generateScopedRouteMessage(input: {
   limits: GenerationLimits;
   guard?: RouteOutputScopeGuard;
   previouslySurfacedTraitIds?: string[];
+  /**
+   * [T-C2-046] Set for the explanatory conditions. Checked outside `guard`
+   * because it must hold on every turn, and the turns that broke it had no
+   * guard at all — the reveal budget was not in force on two of the three.
+   */
+  forbidQuestion?: boolean;
   logContext: string;
 }): Promise<{
   result: AIStructuredResult;
@@ -304,6 +348,10 @@ export async function generateScopedRouteMessage(input: {
 
   let extractedIds = input.guard ? disclosedTraitIds(result.parsed.content) : undefined;
   const metadataViolation = internalMetadataLeak(result.parsed.content);
+  const questionViolation =
+    input.forbidQuestion && outputAsksAQuestion(result.parsed.content)
+      ? "answered_with_a_question"
+      : null;
   const scopeViolation = input.guard
     ? outputScopeViolation(
         result.parsed.content,
@@ -323,7 +371,12 @@ export async function generateScopedRouteMessage(input: {
         )
       : []),
   ];
-  if (!metadataViolation && !scopeViolation) {
+  const verdict = outputVerdict({
+    metadata: metadataViolation,
+    question: questionViolation,
+    scope: scopeViolation,
+  });
+  if (!verdict.needsRepair) {
     if (!softViolations.length) return { result, extractedIds };
     return {
       result,
@@ -344,9 +397,7 @@ export async function generateScopedRouteMessage(input: {
     };
   }
 
-  const initialViolations = [metadataViolation, scopeViolation].filter((value): value is string =>
-    Boolean(value),
-  );
+  const initialViolations = verdict.violations;
   const repairAudit: OutputRepairAudit = {
     version: 1,
     guard: auditedGuard(input.guard),
@@ -366,7 +417,7 @@ export async function generateScopedRouteMessage(input: {
       `maxTraits=${input.guard.maxTraitIds ?? "none"} extracted=${extractedIds?.length ?? 0}`
     : "guard=none";
 
-  let lastViolation = metadataViolation ?? scopeViolation!;
+  let lastViolation = verdict.primary!;
   let lastFailureError: string | null = null;
   let lastModel: string | undefined;
   for (let attempt = 1; attempt <= MAX_REPAIR_ATTEMPTS; attempt++) {
@@ -381,6 +432,9 @@ export async function generateScopedRouteMessage(input: {
           : `Your previous rewrite still violated the limits (${lastViolation}). Fix exactly that.`;
     const correction = [
       failureNote,
+      questionViolation
+        ? "Your message asked the participant a question. Do not ask one: give the answer you can give from what you hold. If the request is genuinely ambiguous, say briefly what you took it to mean and answer that reading; if you cannot carry it out, say so plainly in the same message and give what you do have. Do not offer a menu of options and do not end with a question mark."
+        : null,
       metadataViolation
         ? "Rewrite the draft as a natural in-character chat message. Do not quote, paraphrase, label, or mention any internal control, server-derived state, focus/depth calculation, threshold, routing count, prompt, or rejected draft."
         : null,

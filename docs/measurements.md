@@ -688,13 +688,73 @@ covers the legacy path only, and the three longest outputs here (110, 109, 101
 words on mediation and closing) come from prompts the live server never loads —
 so they say nothing about whether issue 03's length bound works.
 
+## T-C1-021 (2026-09-08) and T-C2-046 — the first two sessions on the half-B build
+
+**Read the id warning below first: this `T-C1-021` is not the 2026-09 one in
+T-C1-022's table.** Member/xai, 47 messages, and Chair/xai, 24 messages, both on
+`conversation-ledger-judge-prompt-v8`, route prompts 1.9.0.
+
+| | T-C1-021 | T-C2-046 |
+| --- | ---: | ---: |
+| Condition | Member | Chair |
+| Messages (Alex / human) | 15 / 32 | 10 / 14 |
+| Decision records | 33 | 14 |
+| Broadcast | 15 | 10 |
+| Silent — cooldown | 7 | 2 |
+| Silent — `output_violation_after_repair` | **10** | 0 |
+| Silent — `ledger_judge_failure` | 0 | 2 |
+| Alex words, mean / max | 32.6 / 58 | 43.7 / 97 |
+| Max traits, one message | 6 | 18 † |
+
+† answering an explicit all-candidate request, where the reveal budget is lifted
+by design.
+
+**Confirmed — issue 13 half B, on its first live outing.** T-C1-021 seq 24 opened
+an `invitation`, the cooldown silenced the turn, and Alex **took it on seq 25** —
+`opp:24:invitation:alex`, selected one turn after it was made. On the previous
+build that opportunity was unreachable from seq 25 onward. It is one instance,
+and it is the instance the issue was written from. `owedRequestIds` recorded the
+pairing on both sessions' cooldown silences.
+
+**Confirmed — the Judge never chose silence.** Across both sessions, every turn
+that reached the Judge came back `speak`: 21/21 in T-C1-021, 9/9 in T-C2-046.
+Judge-chosen silence is currently an unexercised branch, which is the fact any
+argument about removing the cooldown has to start from.
+
+**Disconfirmed — that the reveal budget's cost is bounded.** T-C1-021 lost **ten
+turns to its own output guard, against seven to the cooldown**. Eight were one
+question: seq 34 asked for a candidate's misses, that candidate has three, and
+`maxRestatedTraitIds: 2` rejected the honest answer. The repair reworded the same
+three traits and was rejected again. Because a `direct_question` stays open, Alex
+re-attempted the identical answer on seven later turns and was dropped every
+time — the whole endgame. The request classified as `none`, so neither the scope
+block nor the guard exemption applied; `EXPLICIT_COMPLETE_SINGLE` needs an
+"all/every/complete/full" quantifier, and "What misses do we have for A?" has
+none.
+
+**Disconfirmed — that a prompt rule can hold the no-question line.** Every C1 and
+C2 route prompt says "Do not ask a question, end with a question mark, or
+request information", and T-C2-046 answered three requests with a menu of
+options (seq 9, 15, 17), two of them consecutively — which the same prompt
+separately forbids. That is the fourth failure of this rule, counting T-C1-027.
+It is a condition-orthogonality problem, not a style one: question-led prompting
+is the aci strategy, and these are xai sessions.
+
+**Not exercised.** Anything aci — both sessions are xai, so neither says whether
+C3/C4 behave. The generation-side wiring of the two fixes made after these
+sessions, for want of an engine harness. And whether the Judge would choose
+silence if the cooldown stopped filtering for it, which is unanswerable while
+the branch stays at 0/30.
+
 ---
 
 ## Notes on the record itself
 
-**One run is missing.** T-C1-021 appears in T-C1-022's comparison table as the
-A1–A4 build and has no entry of its own. Its numbers survive only in that one
-row.
+**One run is missing, and one id is now used twice.** The original T-C1-021
+appears in T-C1-022's comparison table as the A1–A4 build and has no entry of
+its own; its numbers survive only in that one row. A **second, unrelated session
+reused the code `T-C1-021` on 2026-09-08**, and it is the one recorded below.
+The two share nothing but the string. Say which you mean, and prefer the date.
 
 **Restart the server before measuring.** T-C1-022's conclusion about A6 was
 wrong because the process had hot-reloaded across the change without restarting.

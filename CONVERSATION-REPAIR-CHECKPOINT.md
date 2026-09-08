@@ -42,11 +42,12 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
-**What is open.** Sixteen issues in `.scratch/conversation-repair/issues/`. Two
-are open: issue 10 (the Observer split, blocked on a latency measurement) and
-issue 16 (Alex announces a next step and nothing holds it to it, filed out of
-issue 13 rather than folded into it). Thirteen are done and one records a
-decision not to act. Start at the lowest-numbered issue whose blockers are done.
+**What is open.** Nineteen issues in `.scratch/conversation-repair/issues/`.
+Three are open: issue 10 (the Observer split, blocked on a latency measurement),
+issue 16 (Alex announces a next step and nothing holds it to it) and issue 17 (a
+repair that cannot succeed still costs a call, then drops the turn). Fifteen are
+done and one records a decision not to act. Start at the lowest-numbered issue
+whose blockers are done.
 
 **The pooling DV changed on 2026-09-08.** Issue 15 corrected the extractor, which
 means `sharedInfoIds` and `revealStats` from sessions after that date are not
@@ -68,10 +69,26 @@ request becomes an option only on turns where Alex could already have spoken.
 The Judge prompt is now `conversation-ledger-judge-prompt-v8` and lists the
 requests it owes. See `docs/adr/0006-a-request-outlives-its-turn.md`.
 
-**Nothing since 2026-09-07 has been measured live.** Thirteen issues' worth of
-changes are verified by build, the six `test:*` suites, `docs:check` and
-deliberate breakages only. §5 lists the four the gate requires; `test:seq` and
+**Two sessions ran on the half-B build on 2026-09-08** — a Member session under
+the reused code `T-C1-021` and a Chair session `T-C2-046`. See the measurement
+log; the id collision is flagged there. Issue 13 half B is **confirmed live**
+(an invitation silenced by cooldown at seq 24 was taken at seq 25, which the
+previous build could not reach). Everything from issues 14, 15, 18 and 19 is
+still verified by build, the six `test:*` suites, `docs:check` and deliberate
+breakages only. §5 lists the four suites the gate requires; `test:seq` and
 `test:conversation-gold` exist and pass but are not in that list.
+
+**The reveal budget silenced more turns than the cooldown did.** T-C1-021 lost
+ten turns to `output_violation_after_repair` against seven to the cooldown, and
+eight of the ten were one unanswerable question repeated. Issue 18 removed that
+request's conflict; issue 17 holds the general shape. Do not reason about Alex's
+speech volume from the cooldown alone.
+
+**The Judge has never chosen silence.** 21/21 and 9/9 across the two sessions:
+every turn that reached it came back `speak`. Any proposal to remove the
+cooldown and let the Judge decide silence has to start there — the branch it
+would rely on is currently unexercised, and the Judge is condition-aware while
+the cooldown is not.
 
 **The golden set does not cover the live prompts, and never did.** `run-golden`
 builds its prompt through `buildSystemPromptForTask`, which reads
@@ -124,10 +141,11 @@ abandoned (issue 13); and a count request ignores its own source (issue 14).
 for `reserveTurn` / `executeRouteTurn` — the intervention suite tests
 `humanArrivalAction` as a pure function and never drives the engine. So A6's
 timing and cancellation behaviour, A7's broadcast-before-verification ordering,
-the engine-side early supersession check, and issue 13B's `owedRequestIds` on
-the silence record are all verified by reasoning plus live measurement only.
+the engine-side early supersession check, issue 13B's `owedRequestIds` on the
+silence record, and issue 19's `forbidQuestion` hand-off in `routeTurn` are all
+verified by reasoning plus live measurement only.
 Building that harness is worth doing before the generator work, which needs
-generation-level post-conditions. **Do not describe those four as
+generation-level post-conditions. **Do not describe those five as
 regression-covered.**
 
 `owedRequestIds` is the sharpest current example of why the harness is owed. Its
