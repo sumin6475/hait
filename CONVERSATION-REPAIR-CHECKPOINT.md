@@ -49,8 +49,22 @@ to `ledger_judge_failure`. Nine are done and one records a decision not to act.
 Start at the lowest-numbered issue whose blockers are done.
 
 **Nothing since 2026-09-07 has been measured live.** Nine issues' worth of
-changes are verified by build, four suites and deliberate breakages only. The
-prompt source moved 1.8.0 → 1.9.0, so the golden set needs re-running as well.
+changes are verified by build, four suites and deliberate breakages only.
+
+**The golden set does not cover the live prompts, and never did.** `run-golden`
+builds its prompt through `buildSystemPromptForTask`, which reads
+`compiled-prompts.json` — the legacy path `aiTurn.ts` uses, and `aiTurn.ts` says
+of itself "LEGACY EVALUATION PATH ONLY". Live turns read
+`route-prompts.snapshot.v1.json` through `getRoutePrompt`. The two prompt systems
+share no text: the 1.9.0 edit appears in all 30 route keys and nowhere in
+`prompts.ts`. **A route-prompt version bump is not a reason to re-run the golden
+set**, and saying so once already cost a run. The route prompts are covered
+structurally instead — startup hash verification plus the assertions in
+`test-intervention-v2.ts`.
+
+**Nothing offline exercises the live route prompts against the model.** That is a
+real gap, not a decision; name it before assuming a session is the only way to
+see a prompt regression.
 
 **T-C2-043 does not change that.** It is a full Chair session run on the
 pre-repair build — `promptVersion 1.8.0`, no `outputGuard` on any row — so it is

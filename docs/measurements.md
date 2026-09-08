@@ -1,9 +1,10 @@
 # Session measurements
 
 Every live session run against the conversation repair, in one place and in one
-shape. Twelve entries: three diagnostic sessions that the early gates were built from,
-the seven measured rounds of the repair, one partial session run after them, and
-one full baseline session run before the 2026-09-08 issues landed.
+shape. Twelve session entries: three diagnostic sessions that the early gates were built
+from, the seven measured rounds of the repair, one partial session run after
+them, and one full baseline session run before the 2026-09-08 issues landed. One
+further entry records a golden baseline, which is not a session.
 
 Each entry says what the session **confirmed**, what it **disconfirmed**, and
 what it **did not exercise**. The three are kept apart on purpose. A record that
@@ -582,6 +583,41 @@ that preceded them.
   whether the 13 budget-exceeding messages would have been caught, because the
   build that produced them had no enforcement and no record — which is issue 09's
   argument, stated by a session rather than by an issue.
+
+---
+
+## Golden baseline 2026-09-08 — first run on the gateway model
+
+Not a session. 11 cases × 4 conditions = 36 pairs, all `ok`, no empty outputs.
+Recorded because the model changed underneath the previous baseline, which is the
+one reason a golden re-run was actually owed: `openai.ts` had carried the note
+"파일럿의 gpt-5.4-mini에서 교체 — golden 재실행 필요" since the U-M gateway
+migration, and the last baseline (2026-06-09) predates it.
+
+| | 2026-06-09 | 2026-09-08 |
+| --- | --- | --- |
+| Model | gpt-5.4-mini-2026-03-17 | **gpt-5-mini** (U-M gateway) |
+| Outputs identical to previous | — | **0 of 36** |
+| Words, mean | 47.9 | 51.1 |
+| Words, max | 80 | 110 |
+| Latency, median | — | 2.0 s |
+
+**Confirmed.** The gateway model answers every case, in every condition, with no
+failures. Median 2.0 s for a single generation, which is the figure to hold
+against the Observer's 5–7 s when issue 10 is finally measured.
+
+**Disconfirmed — about the record, not the model.** The checkpoint said the 1.9.0
+route-prompt bump made a golden re-run necessary. **It does not.** `run-golden`
+prompts through `buildSystemPromptForTask` → `compiled-prompts.json`, the path
+`aiTurn.ts` uses and describes as "LEGACY EVALUATION PATH ONLY"; live turns read
+`route-prompts.snapshot.v1.json`. The 1.9.0 text appears in all 30 route keys and
+zero times in `prompts.ts`. The claim was written into the checkpoint and acted
+on before it was checked.
+
+**Not exercised.** The live route prompts, by anything offline. The golden set
+covers the legacy path only, and the three longest outputs here (110, 109, 101
+words on mediation and closing) come from prompts the live server never loads —
+so they say nothing about whether issue 03's length bound works.
 
 ---
 
