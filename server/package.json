@@ -27,7 +27,8 @@
     "prompts:import": "node scripts/import-route-prompts.mjs",
     "prompts:compile": "node scripts/compile-route-prompts.mjs",
     "test:intervention-v2": "npm run build --silent && node dist/scripts/test-intervention-v2.js",
-    "docs:check": "tsx src/scripts/check-docs.ts"
+    "docs:check": "tsx src/scripts/check-docs.ts",
+    "build:id": "node scripts/build-id.mjs"
   },
   "dependencies": {
     "cors": "^2.8.6",
