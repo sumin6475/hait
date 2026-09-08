@@ -48,6 +48,12 @@ issue 10 needs a live Observer latency figure, and issue 16 needs a frequency
 count before a guard for it is worth its cost. Eighteen are done and one records
 a decision not to act.
 
+**T-C1-023 measured the guard fixes on a near-identical script: guard deaths
+10 → 3, repair success 23% → 57%, and both questions that cost T-C1-021 its
+endgame were answered.** One of the three remaining deaths was issue 22 (taking
+up a participant's own words counted as reciting) and is fixed. One is the bound
+working. One is a possible side effect of issue 21 — see the measurement log.
+
 **Issues 20 and 21 close the guard audit.** 20 removed eight of T-C1-021's ten
 guard deaths, verified by replaying all ten through the built context with the
 real opportunities and the intent the Observer actually stored. 21 covers the

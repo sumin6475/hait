@@ -186,9 +186,28 @@ export function outputScopeViolation(
   extractedIds: string[],
   guard: RouteOutputScopeGuard,
   previouslySurfacedTraitIds: readonly string[] = [],
+  /**
+   * [Issue 22] The traits already present in the message Alex is replying to.
+   *
+   * A trait the other person just said, repeated in the reply to them, is
+   * neither a disclosure nor a recital — it is uptake, which every route prompt
+   * explicitly asks for ("briefly takes up the latest human point"). Counting
+   * it made the bound penalise the behaviour the prompt requires: T-C1-023 seq
+   * 22 was dropped twice for naming four traits when two of them were the
+   * participant's own words and Alex had put two on the table.
+   *
+   * Excluded from both counts, not just the restated one. If the participant
+   * introduced it, Alex echoing it is not Alex introducing it.
+   */
+  echoedTraitIds: readonly string[] = [],
 ): string | null {
   const previouslySurfaced = new Set(previouslySurfacedTraitIds);
-  const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
+  const echoed = new Set(echoedTraitIds);
+  // What this turn actually put on the table, as opposed to what it repeated
+  // back. Measured with the same extractor on both sides, so the comparison
+  // cannot drift.
+  const contributedIds = extractedIds.filter((id) => !echoed.has(id));
+  const newlyIntroducedIds = contributedIds.filter((id) => !previouslySurfaced.has(id));
   // Hard scope checks are factual only. Already-visible human traits may be
   // referenced naturally; only facts newly introduced by this Alex turn are
   // constrained.
@@ -221,7 +240,7 @@ export function outputScopeViolation(
   // that gate D2 was built to refuse.
   if (
     guard.maxRestatedTraitIds !== undefined &&
-    extractedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
+    contributedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
   ) {
     return "too_many_restated_traits";
   }
@@ -349,9 +368,17 @@ export function evaluateDraft(input: {
   content: string;
   guard?: RouteOutputScopeGuard;
   previouslySurfacedTraitIds?: readonly string[];
+  /**
+   * [Issue 22] The text Alex is replying to. The echo set is derived from it
+   * here, with the same extractor the draft is measured by, so the two sides of
+   * the comparison cannot drift apart.
+   */
+  repliedToContent?: string;
   forbidQuestion?: boolean;
 }): DraftEvaluation {
   const extractedIds = input.guard ? disclosedTraitIds(input.content) : undefined;
+  const echoedTraitIds =
+    input.guard && input.repliedToContent ? disclosedTraitIds(input.repliedToContent) : [];
   const metadata = internalMetadataLeak(input.content);
   const question =
     input.forbidQuestion && outputAsksAQuestion(input.content)
@@ -363,6 +390,7 @@ export function evaluateDraft(input: {
         extractedIds ?? [],
         input.guard,
         input.previouslySurfacedTraitIds,
+        echoedTraitIds,
       )
     : null;
   const verdict = outputVerdict({ metadata, question, scope });
@@ -466,6 +494,8 @@ export async function generateScopedRouteMessage(input: {
   limits: GenerationLimits;
   guard?: RouteOutputScopeGuard;
   previouslySurfacedTraitIds?: string[];
+  /** [Issue 22] The message this turn is replying to, for the echo exemption. */
+  repliedToContent?: string;
   /**
    * [T-C2-046] Set for the explanatory conditions. Checked outside `guard`
    * because it must hold on every turn, and the turns that broke it had no
@@ -493,6 +523,7 @@ export async function generateScopedRouteMessage(input: {
       content,
       guard: input.guard,
       previouslySurfacedTraitIds: input.previouslySurfacedTraitIds,
+      repliedToContent: input.repliedToContent,
       forbidQuestion: input.forbidQuestion,
     });
   const initial = evaluate(result.parsed.content);

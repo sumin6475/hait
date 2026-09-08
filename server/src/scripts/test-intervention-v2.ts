@@ -2303,6 +2303,104 @@ assert.match(
   "mediation keeps its instruction rather than being reduced to a trait count",
 );
 
+// [Issue 22] Repeating what the person just said is not reciting the board.
+//
+// T-C1-023 seq 22. A participant wrote that D's misses are being "a know it all"
+// and "quick tempered". Alex replied taking that up and adding its own two:
+//
+//   human  -> D_n3, D_n4
+//   Alex   -> D_n3, D_n4, D_n5, D_n6
+//
+// Four counted against `maxRestatedTraitIds: 2`, so the turn was dropped — twice,
+// because the rewrite said the same thing again. But two of the four were the
+// other person's own words, in the reply to them. Alex put two traits on the
+// table, not four.
+//
+// Every route prompt asks for exactly this uptake ("briefly takes up the latest
+// human point"), so the bound was penalising the behaviour the prompt requires.
+const echoBudget = {
+  candidate: null,
+  maxTraitIds: 1,
+  maxRestatedTraitIds: 2,
+  maxSentences: 3,
+  maxWords: 80,
+  revealBudget: true,
+  reason: "route_reveal_budget",
+} as const;
+const echoDraft =
+  "I see your point about D being a \u201cknow it all\u201d and quick-tempered; my notes list D as considered moody and having strong prejudices.";
+const echoAll = ["D_n3", "D_n4", "D_n5", "D_n6"];
+assert.equal(
+  outputScopeViolation(echoDraft, echoAll, echoBudget, echoAll, ["D_n3", "D_n4"]),
+  null,
+  "an uptake of the other person's own words is not Alex reciting",
+);
+// The exemption is exactly the echo and nothing wider. A recital of traits the
+// participant did not just say is still a recital.
+assert.equal(
+  outputScopeViolation(echoDraft, echoAll, echoBudget, echoAll, []),
+  "too_many_restated_traits",
+  "with nothing echoed, four restated traits is still four",
+);
+assert.equal(
+  outputScopeViolation(
+    "Candidate D matches on reacting to unforeseen events, concentrating well, resilience and responsibility.",
+    ["D_p1", "D_p2", "D_p3", "D_p4"],
+    echoBudget,
+    ["D_p1", "D_p2", "D_p3", "D_p4"],
+    ["D_n3"],
+  ),
+  "too_many_restated_traits",
+  "echoing one trait does not licence reciting four others",
+);
+// And an echo is not a free slot for disclosure either: what the participant
+// said is theirs, so Alex neither restates nor introduces it.
+assert.equal(
+  outputScopeViolation(
+    "You are right that D is quick-tempered, and my notes add that D is moody and has strong prejudices.",
+    ["D_n4", "D_n5", "D_n6"],
+    echoBudget,
+    [],
+    ["D_n4"],
+  ),
+  "too_many_traits",
+  "the two traits Alex brought are still counted as its own",
+);
+// The echo is excluded from the disclosure count too, not only the restated
+// one. A trait the participant introduced is theirs even when the board had not
+// recorded it yet, so Alex repeating it is not Alex spending its budget on it.
+assert.equal(
+  outputScopeViolation(
+    "Quick-tempered, yes \u2014 and my notes add that D is moody.",
+    ["D_n4", "D_n5"],
+    echoBudget,
+    [],
+    ["D_n4"],
+  ),
+  null,
+  "an echoed trait does not consume the one new trait this turn may introduce",
+);
+// And the echo set is read from the message being replied to, not from the
+// draft. Derived from the draft it would exempt everything Alex said, which is
+// every bound switched off at once.
+assert.equal(
+  evaluateDraft({
+    content: echoDraft,
+    guard: echoBudget,
+    previouslySurfacedTraitIds: echoAll,
+    repliedToContent:
+      'The misses I have from Candidate D is that they are a "know it all" and is "quick tempered."',
+  }).scope,
+  null,
+  "the live path derives the echo from the participant's message",
+);
+assert.equal(
+  evaluateDraft({ content: echoDraft, guard: echoBudget, previouslySurfacedTraitIds: echoAll })
+    .scope,
+  "too_many_restated_traits",
+  "and with nothing to echo, the same draft is still four restated traits",
+);
+
 // [Issue 17] The restated-trait bound was twice suspected of being what cost
 // T-C1-021 eight turns, and twice it was not.
 //

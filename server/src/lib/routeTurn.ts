@@ -503,6 +503,12 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         limits: routeGenerationLimits(input.routeKind, context.requestIntent),
         guard: generationGuard,
         previouslySurfacedTraitIds,
+        // [Issue 22] The human turn this one is answering. Traits Alex repeats
+        // back from it are uptake, not disclosure, and the prompts ask for that
+        // uptake by name.
+        repliedToContent: messages.find(
+          (message) => message.seq === input.anchorSeq && message.senderRole !== "ai",
+        )?.content,
         // [T-C2-046] Not folded into `generationGuard`: two of the three turns
         // that broke this rule had no guard at all, so a question check hung
         // off the guard would have missed them.
