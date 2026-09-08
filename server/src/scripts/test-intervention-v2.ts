@@ -62,6 +62,7 @@ import {
   outputAsksAQuestion,
   outputVerdict,
   evaluateDraft,
+  repairCorrectionFor,
 } from "../lib/routeScopedGeneration.js";
 import { extractHumanTraitsFast, validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
 import {
@@ -2233,6 +2234,73 @@ assert.equal(
   carriedFrom("", observerReadNothing).kind,
   "none",
   "an absent source message widens nothing",
+);
+
+// [Issue 21] A rewrite is told every bound it must satisfy, not only the one it
+// broke.
+//
+// T-C1-021 seq 25. The draft named fourteen traits under the full reveal budget.
+// `too_many_traits` fired, correctly, and the correction told the model about
+// trait counts and then said "keep it to a short chat message" — an adjective,
+// where the guard holds `maxSentences: 3` and `maxWords: 80`. The rewrite
+// complied on traits, fourteen down to two, and was rejected for
+// `too_many_sentences`. `MAX_REPAIR_ATTEMPTS` is 1, so a turn the guard had
+// successfully improved was thrown away.
+const fullBudget = {
+  candidate: null,
+  maxTraitIds: 1,
+  maxRestatedTraitIds: 2,
+  maxSentences: 3,
+  maxWords: 80,
+  revealBudget: true,
+  reason: "route_reveal_budget",
+} as const;
+const traitCorrection = repairCorrectionFor({
+  violation: "too_many_traits",
+  guard: fullBudget,
+});
+assert.match(
+  traitCorrection,
+  /at most 3 sentences/,
+  "a trait rewrite is told the sentence bound it must also satisfy",
+);
+assert.match(traitCorrection, /under 80 words/, "and the word bound");
+assert.match(
+  traitCorrection,
+  /^Your message introduced more new candidate traits/,
+  "and it still leads with what was actually wrong",
+);
+// The reverse direction: a length rewrite is told the trait bounds too, and
+// keeps the advice that stops it packing the same content into fewer sentences.
+const lengthCorrection = repairCorrectionFor({
+  violation: "too_many_sentences",
+  guard: fullBudget,
+});
+assert.match(lengthCorrection, /at most 1 new candidate trait/);
+assert.match(lengthCorrection, /at most 2 already-surfaced traits/);
+assert.match(lengthCorrection, /Cut content, do not compress/);
+// A guard with no length bound does not invent one. `focus_depth` carries a
+// candidate scope and a trait cap and nothing else.
+const focusCorrection = repairCorrectionFor({
+  violation: "candidate_outside_current_focus",
+  guard: { candidate: "A", maxTraitIds: 1, reason: "focus_depth" },
+});
+assert.match(focusCorrection, /Candidate A only/);
+assert.doesNotMatch(
+  focusCorrection,
+  /sentence|words/,
+  "a bound the guard does not hold is not stated as though it did",
+);
+// Mediation keeps its own instruction rather than being reduced to a count.
+assert.match(
+  repairCorrectionFor({
+    violation: "new_trait_in_mediation",
+    guard: { candidate: null, maxTraitIds: 0, reason: "mediation_no_new_traits" },
+  }),
+  // The lead sentence for this violation also mentions visibility, so match the
+  // instruction's own wording instead — otherwise this passes on the lead alone.
+  /stating only the discussion state and next direction/,
+  "mediation keeps its instruction rather than being reduced to a trait count",
 );
 
 // [Issue 17] The restated-trait bound was twice suspected of being what cost

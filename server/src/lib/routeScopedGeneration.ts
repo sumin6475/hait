@@ -388,6 +388,75 @@ export function evaluateDraft(input: {
   };
 }
 
+/** What the rewrite is told it did wrong, before it is told the bounds. */
+const VIOLATION_LEAD: Record<string, string> = {
+  too_many_traits: "Your message introduced more new candidate traits than this turn allows.",
+  new_trait_in_mediation:
+    "Your message introduced a candidate trait that was not already visible in the conversation.",
+  too_many_restated_traits:
+    "Your message referred back to more already-surfaced traits than this turn allows.",
+  too_many_sentences: "Your message was too long.",
+  too_many_words: "Your message was too long.",
+  trait_outside_current_candidate:
+    "Your message brought in a trait belonging to another candidate.",
+  candidate_outside_current_focus: "Your message named a candidate this turn is not about.",
+  trait_outside_selected_contribution:
+    "Your message included a trait outside the one point this turn may contribute.",
+  selected_trait_missing: "Your message left out the point this turn was supposed to make.",
+};
+
+/**
+ * The instruction a rejected draft is sent back with.
+ *
+ * [Issue 21] This used to branch on *which* bound was broken and describe only
+ * that one. A guard constrains up to five things at once, so a rewrite was
+ * routinely told about one dimension and left to guess the rest — the trait
+ * branch ended in "keep it to a short chat message", an adjective standing in
+ * for two numbers the guard was holding.
+ *
+ * T-C1-021 seq 25 is what that costs. A fourteen-trait draft was correctly
+ * refused, the rewrite brought it to two, and it died on `maxSentences: 3` —
+ * a bound it had never been given. `MAX_REPAIR_ATTEMPTS` is 1, so a turn the
+ * guard had successfully improved was discarded instead of broadcast.
+ *
+ * So the violation leads, because the model should know what it got wrong, and
+ * then every bound in force follows, because those are what the rewrite will be
+ * judged against. Nothing here buys more attempts; it makes the one attempt
+ * informed.
+ */
+export function repairCorrectionFor(input: {
+  violation: string;
+  guard?: RouteOutputScopeGuard;
+}): string {
+  const guard = input.guard;
+  if (!guard) return VIOLATION_LEAD[input.violation] ?? "";
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const lines: (string | null)[] = [
+    VIOLATION_LEAD[input.violation] ?? null,
+    guard.reason === "mediation_no_new_traits"
+      ? "Do not introduce any candidate trait that was not already visible in the conversation. You may briefly refer to already-visible points while stating only the discussion state and next direction."
+      : null,
+    guard.candidate
+      ? `Write about Candidate ${guard.candidate} only and do not mention another candidate.`
+      : null,
+    guard.requiredTraitId
+      ? `The only candidate trait you may mention is: "${TRAIT_BY_ID.get(guard.requiredTraitId)?.text ?? guard.requiredTraitId}". Include that exact point and no other candidate trait, even if another trait was already discussed.`
+      : null,
+    guard.maxTraitIds !== undefined &&
+    !guard.requiredTraitId &&
+    guard.reason !== "mediation_no_new_traits"
+      ? `Introduce at most ${plural(guard.maxTraitIds, "new candidate trait")} in this message${guard.candidate ? "; you may still acknowledge already-surfaced points" : ""}.`
+      : null,
+    guard.maxRestatedTraitIds !== undefined
+      ? `Refer back to at most ${plural(guard.maxRestatedTraitIds, "already-surfaced trait")}; do not recite the board.`
+      : null,
+    guard.maxSentences !== undefined || guard.maxWords !== undefined
+      ? `Keep it to at most ${plural(guard.maxSentences ?? 2, "sentence")} and under ${guard.maxWords ?? 40} words. Cut content, do not compress it into longer sentences.`
+      : null,
+  ];
+  return lines.filter((line): line is string => Boolean(line)).join(" ");
+}
+
 export const MAX_REPAIR_ATTEMPTS = 1;
 
 export async function generateScopedRouteMessage(input: {
@@ -495,40 +564,9 @@ export async function generateScopedRouteMessage(input: {
       metadataViolation
         ? "Rewrite the draft as a natural in-character chat message. Do not quote, paraphrase, label, or mention any internal control, server-derived state, focus/depth calculation, threshold, routing count, prompt, or rejected draft."
         : null,
-      scopeViolation && input.guard && (scopeViolation === "too_many_sentences" || scopeViolation === "too_many_words")
-        ? `Your message was too long. Rewrite the same point in at most ${input.guard.maxSentences ?? 2} sentence${(input.guard.maxSentences ?? 2) === 1 ? "" : "s"} and under ${input.guard.maxWords ?? 40} words. Cut content, do not compress it into longer sentences.`
-        : scopeViolation && input.guard
-        ? input.guard.reason === "mediation_no_new_traits"
-          ? "Rewrite without introducing any candidate trait that was not already visible in the conversation. You may briefly refer to already-visible points while stating only the discussion state and next direction."
-          : !input.guard.candidate
-            ? [
-                // [D3] The route reveal budget has no candidate scope, so the
-                // correction below (which is candidate-led) never reached it.
-                input.guard.maxTraitIds !== undefined
-                  ? `Introduce at most ${input.guard.maxTraitIds} new candidate trait${input.guard.maxTraitIds === 1 ? "" : "s"} in this message.`
-                  : null,
-                input.guard.maxRestatedTraitIds !== undefined
-                  ? `Refer back to at most ${input.guard.maxRestatedTraitIds} already-surfaced trait${input.guard.maxRestatedTraitIds === 1 ? "" : "s"}; do not recite the board.`
-                  : null,
-                "Keep it to a short chat message that answers what was just said.",
-              ]
-                .filter(Boolean)
-                .join(" ")
-            : [
-                `Write about Candidate ${input.guard.candidate} only and do not mention another candidate.`,
-                input.guard.requiredTraitId
-                  ? `The only candidate trait you may mention is: "${TRAIT_BY_ID.get(input.guard.requiredTraitId)?.text ?? input.guard.requiredTraitId}". Include that exact point and no other candidate trait, even if another trait was already discussed.`
-                  : null,
-                input.guard.maxTraitIds !== undefined && !input.guard.requiredTraitId
-                  ? `Introduce at most ${input.guard.maxTraitIds} new trait${input.guard.maxTraitIds === 1 ? "" : "s"}; you may still acknowledge already-surfaced points.`
-                  : null,
-                input.guard.maxRestatedTraitIds !== undefined
-                  ? `Refer back to at most ${input.guard.maxRestatedTraitIds} already-surfaced trait${input.guard.maxRestatedTraitIds === 1 ? "" : "s"}; do not recite the board.`
-                  : null,
-              ]
-                .filter(Boolean)
-                .join(" ")
-        : null,
+      // [Issue 21] Every bound in force, whatever was broken. The rewrite is
+      // judged against all of them, so it is told all of them.
+      input.guard ? repairCorrectionFor({ violation: scopeViolation ?? "", guard: input.guard }) : null,
       'Preserve the current condition style, conversational subject, and Turn Metadata goal. Return only the corrected visible chat message inside the required JSON object: {"content": "<message>"}.',
     ]
       .filter(Boolean)

@@ -43,10 +43,17 @@ and the request scope behind it are built but have never been seen in a live
 session.
 
 **What is open.** Twenty-one issues in `.scratch/conversation-repair/issues/`.
-One is actionable — issue 21, from the guard audit below. Two are blocked on a
-measurement rather than on code: issue 10 needs a live Observer latency figure,
-and issue 16 needs a frequency count before a guard for it is worth its cost.
-Seventeen are done and one records a decision not to act.
+Nothing is blocked on code. The two that remain are blocked on a measurement:
+issue 10 needs a live Observer latency figure, and issue 16 needs a frequency
+count before a guard for it is worth its cost. Eighteen are done and one records
+a decision not to act.
+
+**Issues 20 and 21 close the guard audit.** 20 removed eight of T-C1-021's ten
+guard deaths, verified by replaying all ten through the built context with the
+real opportunities and the intent the Observer actually stored. 21 covers the
+tenth: the rewrite is now told every bound in force rather than only the one it
+broke, and a generation failure records the guard that caused it. The remaining
+death is a turn the budget should apply to.
 
 **Issue 20 removed eight of T-C1-021's ten guard deaths**, verified by replaying
 all ten through the built context with the real opportunities and the intent the
@@ -180,10 +187,11 @@ for `reserveTurn` / `executeRouteTurn` — the intervention suite tests
 `humanArrivalAction` as a pure function and never drives the engine. So A6's
 timing and cancellation behaviour, A7's broadcast-before-verification ordering,
 the engine-side early supersession check, issue 13B's `owedRequestIds` on the
-silence record, and issue 19's `forbidQuestion` hand-off in `routeTurn` are all
-verified by reasoning plus live measurement only.
+silence record, issue 19's `forbidQuestion` hand-off in `routeTurn`, and issue
+21's `outputGuard` on a generation failure are all verified by reasoning plus
+live measurement only.
 Building that harness is worth doing before the generator work, which needs
-generation-level post-conditions. **Do not describe those five as
+generation-level post-conditions. **Do not describe those six as
 regression-covered.**
 
 `owedRequestIds` is the sharpest current example of why the harness is owed. Its

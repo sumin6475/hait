@@ -409,6 +409,17 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       routeReason: input.routeReason,
       outcome: "generation_failed",
       silenceReason: silenceReasonForGenerationFailure(error),
+      // [Issue 21] The bounds that were in force, on the one class of turn where
+      // they decided the outcome. Only `repairAudit.guard` carried them before,
+      // so a guard-caused silence did not say which guard, and the audit that
+      // found this had to reconstruct it from a nested field.
+      outputGuard: outputGuardAudit({
+        guard: generationGuard,
+        broadcastTraitIds: [],
+        ...(silenceReasonForGenerationFailure(error) === "output_violation_after_repair"
+          ? { violation: error.replace(/^output_violation_after_repair:\s*/, "") }
+          : {}),
+      }),
       // [Issue 17] This path recorded no `owedRequestIds`, and it is the
       // largest silence class there is: ten of T-C1-021's silences came
       // through here and none of them said what the group was still waiting
