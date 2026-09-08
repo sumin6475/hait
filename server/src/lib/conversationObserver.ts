@@ -311,6 +311,33 @@ export function observationRosterConflicts(
   return [...conflicts].sort();
 }
 
+/**
+ * Whether this message literally names Candidate A.
+ *
+ * B, C and D are decided by a case-sensitive `\bX\b` and nothing else. `A` needs
+ * its own rule because it is also the English article, and the old one bought
+ * that safety far too dearly: it took a bare `A` only when a conjunction, comma,
+ * slash or the end of the string followed. Every ordinary sentence position was
+ * therefore invisible — "let's lay out A first" recorded no mention at all, so
+ * salience, which exists to be deterministic and always defined, was neither.
+ *
+ * The article is capitalised in exactly one place: where a sentence begins.
+ * Anywhere else an upper-case standalone `A` is the candidate. So sentence
+ * position does the work, and the old evidence is kept for the one position that
+ * stays ambiguous — plus a following verb or possessive, which an article cannot
+ * take ("A is the one", "A's notes", never "A good point").
+ */
+function namesCandidateA(text: string): boolean {
+  const SUBJECT_AFTER_A =
+    /^\s*(?:and\b|or\b|vs\.?\b|versus\b|,|\/|$|['’]s\b|is\b|are\b|was\b|were\b|has\b|have\b|had\b|does\b|do\b|did\b|seems?\b|looks?\b|matches\b|misses\b|scores?\b|stays?\b|remains?\b|wins?\b|would\b|will\b|can\b|could\b|might\b)/;
+  for (const match of text.matchAll(/(?<![\p{L}\p{N}_])A(?![\p{L}\p{N}_])/gu)) {
+    const sentenceInitial = /(?:^|[.!?\n])[\s"'“‘([]*$/.test(text.slice(0, match.index));
+    if (!sentenceInitial) return true;
+    if (SUBJECT_AFTER_A.test(text.slice(match.index + 1))) return true;
+  }
+  return false;
+}
+
 export function normalizeConversationObservation(
   observation: ConversationObserverResult,
   hasPendingAlexQuestion: boolean,
@@ -329,7 +356,7 @@ export function normalizeConversationObservation(
     ? (["A", "B", "C", "D"] as Candidate[]).filter((candidate) =>
         new RegExp(`\\bcandidate\\s+${candidate}\\b`, "i").test(anchorContent) ||
         (candidate === "A"
-          ? /\bA\b(?=\s*(?:and|or|vs\.?|versus|,|\/|$))/.test(anchorContent)
+          ? namesCandidateA(anchorContent)
           : new RegExp(`\\b${candidate}\\b`).test(anchorContent)),
       )
     : observation.mentionedCandidates;

@@ -554,16 +554,25 @@ function mergeCandidateSalience(
 
 /**
  * The thread's candidates ordered by what the group is currently on: the
- * observer's explicit focus first when it has one, then the most recently named
- * candidate, then the rest of the scope in its stable order.
+ * candidate the current turn explicitly named first when the observer decided
+ * one, then the most recently named candidate, then the rest of the scope in its
+ * stable order.
  *
  * This is the ranking signal that `focusCandidate` alone could not carry. It is
  * a pure derivation over recorded mentions — no model call, no reinterpretation
  * of wording — so it stays available on the comparison and continuation turns
  * where focus is structurally null.
+ *
+ * Focus only outranks salience on a `current_explicit` basis. That basis is a
+ * claim about *this* turn — normalization drops it when the turn's literal
+ * mentions contradict it — so promoting it adds the observer's reading of which
+ * named candidate the turn is about, which recency alone cannot express. Every
+ * other basis is an inference about an announcement further back, and at
+ * T-C2-039 seq 10 a focus carried from an earlier thread outranked the candidate
+ * a participant had just named. A hint does not overrule the transcript.
  */
 export function candidateSalienceOrder(
-  thread: Pick<ConversationThread, "focusCandidate" | "candidates" | "scopeCandidates" | "candidateSalience">,
+  thread: Pick<ConversationThread, "focusCandidate" | "focusBasis" | "candidates" | "scopeCandidates" | "candidateSalience">,
 ): Candidate[] {
   const scope = thread.scopeCandidates?.length ? thread.scopeCandidates : thread.candidates;
   const salience = thread.candidateSalience ?? {};
@@ -575,6 +584,7 @@ export function candidateSalienceOrder(
   });
   const focus = thread.focusCandidate;
   if (!focus || !ranked.includes(focus)) return ranked;
+  if (thread.focusBasis !== "current_explicit") return ranked;
   return [focus, ...ranked.filter((candidate) => candidate !== focus)];
 }
 

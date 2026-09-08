@@ -178,6 +178,29 @@ for (let seq = 2; seq <= 4; seq++) {
 }
 assert.equal(normalizeConversationObservation({ ...observation, focusCandidate: null }, false, "humanX", "B", 5, undefined, priorState).focusCandidate, null, "explicit semantic null clears focus");
 assert.deepEqual(normalizeConversationObservation({ ...observation, mentionedCandidates: ["B"] }, false, "humanX", "A good point about B.").mentionedCandidates, ["B"]);
+// The literal-candidate detector, and the article it has to keep refusing.
+//
+// Salience ranks a candidate's claim on Alex's attention precisely because it is
+// deterministic and defined on every turn. A detector that misses a name makes
+// it neither, and the old rule missed every ordinary sentence position: it took
+// a bare `A` only when a conjunction, comma, slash or end-of-string followed it.
+// "Let's lay out A first" recorded nothing at all.
+const mentioned = (anchorContent: string) =>
+  normalizeConversationObservation({ ...observation, mentionedCandidates: [] }, false, "humanX", anchorContent)
+    .mentionedCandidates;
+assert.deepEqual(mentioned("Let's lay out A first."), ["A"], "a bare A in an ordinary sentence position is a name");
+assert.deepEqual(mentioned("I would drop A honestly"), ["A"]);
+assert.deepEqual(mentioned("Between the two I prefer A."), ["A"]);
+assert.deepEqual(mentioned("What do you have on A?"), ["A"]);
+assert.deepEqual(mentioned("A is the one I keep coming back to."), ["A"], "a sentence-initial A with a verb after it is a name");
+assert.deepEqual(mentioned("A's notes are thin."), ["A"]);
+assert.deepEqual(mentioned("A and B are close."), ["A", "B"]);
+// The English article. Capitalised only where a sentence starts, which is the
+// one position the detector still has to treat as ambiguous.
+assert.deepEqual(mentioned("A good point about B."), ["B"], "a sentence-initial article is not a name");
+assert.deepEqual(mentioned("A lot of that depends on C."), ["C"]);
+assert.deepEqual(mentioned("I agree. A fair summary of where we are."), [], "the article after a sentence boundary is still an article");
+assert.deepEqual(mentioned("a bit hectic is what my notes say"), [], "the lower-case article was never a name and still is not");
 const normalizedAssertion = normalizeConversationObservation({
   ...observation,
   speechAct: "answer",

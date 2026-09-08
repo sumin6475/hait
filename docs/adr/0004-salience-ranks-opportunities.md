@@ -26,3 +26,24 @@ Salience is a cruder signal: it tracks what was *named*, not what is being
 *discussed*, so a candidate mentioned in passing outranks one under sustained
 discussion by implication. We prefer a cruder signal that is always present to a
 sharper one that is absent when it counts.
+
+## Amendment, 2026-09-08: which hint, and when
+
+"Focus remains as a hint" was too loose. Focus arrives with a basis, and the two
+that matter are not the same kind of claim.
+
+`current_explicit` says the speaker named that candidate *on this turn*.
+Normalization already drops the basis when the turn's literal mentions
+contradict it, so what survives is the observer's reading of which named
+candidate the turn is about — something recency cannot express, and worth
+promoting above it.
+
+Every other basis is an inference about an announcement further back. At
+T-C2-039 seq 10 a focus carried from an earlier thread outranked the candidate a
+participant had just named, which is the failure this ADR was written to stop,
+reappearing through the hint it left in place.
+
+So focus outranks salience on a `current_explicit` basis and on no other. The
+consequence recorded above stands: a cruder signal that is always present beats a
+sharper one that is absent when it counts — and a *stale* sharper one does not
+get to overrule the transcript at all.

@@ -1253,9 +1253,43 @@ assert.equal(
   "salience reorders eligibility, it does not shrink it",
 );
 assert.deepEqual(
-  candidateSalienceOrder({ ...salienceThread, focusCandidate: "D" }).slice(0, 1),
+  candidateSalienceOrder({ ...salienceThread, focusCandidate: "D", focusBasis: "current_explicit" }).slice(0, 1),
   ["D"],
   "an explicit focus still outranks recency",
+);
+// --- T-C2-039 seq 10: a carried focus does not outrank a name -----------------
+//
+// Focus is a hint, and it is a hint of two quite different qualities. On a
+// "current_explicit" basis the speaker named that candidate on this turn, and
+// the observer's reading of which one the turn is about is worth more than
+// recency. On a "carried_thread" basis it is an inference about an announcement
+// several turns back, and it was beating the candidate a participant had just
+// named. Salience ranks in that case; the observer's guess does not get to
+// overrule the transcript.
+assert.deepEqual(
+  candidateSalienceOrder({ ...salienceThread, focusCandidate: "D", focusBasis: "carried_thread" }).slice(0, 1),
+  ["C"],
+  "a focus carried from an earlier thread does not outrank the candidate just named",
+);
+assert.deepEqual(
+  candidateSalienceOrder({ ...salienceThread, focusCandidate: "D", focusBasis: "multiple_explicit" }).slice(0, 1),
+  ["C"],
+  "a focus the turn could not decide does not outrank the candidate just named",
+);
+assert.deepEqual(
+  candidateSalienceOrder({ ...salienceThread, focusCandidate: "D", focusBasis: "none" }).slice(0, 1),
+  ["C"],
+);
+// A comparison names two candidates, produces no focus, and still ranks.
+assert.deepEqual(
+  candidateSalienceOrder({
+    ...salienceThread,
+    focusCandidate: null,
+    focusBasis: "none",
+    candidateSalience: { A: 3, B: 9, C: 5 },
+  }),
+  ["B", "C", "A", "D"],
+  "a comparison turn has no focus to consult and ranks by recency alone",
 );
 
 // --- Gate 3e: an option the validator will reject is not offered ------------
