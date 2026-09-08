@@ -301,6 +301,20 @@ export function observerDeltaFromTurn(input: {
   observerConflicts?: readonly string[];
   threadOriginActor?: ConversationActor;
   alexUptakeRootSeq?: number;
+  /**
+   * The seq of Alex's own question, when the message directly before this turn
+   * is Alex's and is question-like.
+   *
+   * [Issue 12] The uptake branch below reads the Observer's classification of
+   * the reply, and at T-C2-043 seq 17 that classification was wrong: it pointed
+   * `replyToSeq` at the human's own earlier message and called the relation
+   * unrelated, so nothing was minted and the turn was lost. The identical
+   * pattern was read correctly thirty messages later, which makes it a
+   * reliability distribution over a fact that pure position already settles.
+   * Supplied deterministically by the caller; the Observer may still mint the
+   * same opportunity on its own reading, and a stronger branch above still wins.
+   */
+  alexQuestionAwaitingReplySeq?: number;
   repairCodes?: readonly string[];
   conflictCodes?: readonly string[];
   degradedMode?: boolean;
@@ -385,12 +399,20 @@ export function observerDeltaFromTurn(input: {
   } else if (
     input.observation.alexRelation === "response_to_alex" ||
     input.observation.relationToPendingAlexQuestion === "direct_answer" ||
-    input.observation.relationToPendingAlexQuestion === "related_addition"
+    input.observation.relationToPendingAlexQuestion === "related_addition" ||
+    // The deterministic half: Alex asked, and this is the turn that followed.
+    // Excluded when the turn names other humans and not Alex — a reply aimed at
+    // someone else is not a reply to Alex, however well it is positioned.
+    (input.alexQuestionAwaitingReplySeq !== undefined &&
+      (input.observation.addressees.length === 0 || directlyAddressesAlex || addressesGroup))
   ) {
     // Cluster replies by the Alex turn they answer. A later Alex broadcast must
     // start a new opportunity even when the long-lived project thread is unchanged.
     const obligationRootSeq =
-      input.alexUptakeRootSeq ?? observedThread?.rootSeq ?? input.currentTriggerSeq;
+      input.alexQuestionAwaitingReplySeq ??
+      input.alexUptakeRootSeq ??
+      observedThread?.rootSeq ??
+      input.currentTriggerSeq;
     opportunity = {
       threadId,
       kind: "uptake",

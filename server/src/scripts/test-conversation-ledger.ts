@@ -91,6 +91,74 @@ function observation(input: Partial<ObservedTurnForLedger> = {}): ObservedTurnFo
   };
 }
 
+// --- Issue 12: a reply to Alex's own question is an opportunity ------------
+//
+// T-C2-043 seq 16-17. Alex asked an either/or question and the next human
+// message answered it. The Observer pointed `replyToSeq` at the human's own
+// earlier message, called the relation "unrelated" and left `addressees` empty,
+// so no branch below minted anything and the turn was lost to
+// `ledger_judge_failure`. Thirty messages later the identical pattern was read
+// correctly — a reliability distribution over a fact that needs no model:
+// Alex's message directly before this one was a question.
+// `questionSeq` has no default on purpose: passing `undefined` to a defaulted
+// parameter takes the default, which made the negative case silently positive.
+const answeredAlexDelta = (over: Partial<ObservedTurnForLedger>, questionSeq: number | undefined) =>
+  observerDeltaFromTurn({
+    sessionKey: "T-C2-043-UPTAKE",
+    observerVersion: "test-observer",
+    roster,
+    sourceRole: "humanY",
+    currentTriggerSeq: 17,
+    contextThroughSeq: 17,
+    alexQuestionAwaitingReplySeq: questionSeq,
+    observation: observation({
+      speechAct: "answer",
+      alexRelation: "unrelated",
+      relationToPendingAlexQuestion: "unrelated",
+      activeThread: {
+        threadId: "thread-1",
+        rootSeq: 1,
+        status: "open",
+        goal: "compare_information",
+        requestedAction: "discuss candidates",
+        candidates: ["A", "D"],
+        participants: [...roster],
+        expectedResponders: ["humanY"],
+        alexParticipation: "not_involved",
+        evidenceSeqs: [17],
+      },
+      ...over,
+    }),
+  });
+const answeredAlex = reduceConversationLedger(null, answeredAlexDelta({}, 16)).state;
+assert.equal(
+  answeredAlex.opportunities.length,
+  1,
+  "Alex asked, the next human message answered, and that is an opportunity without the Observer saying so",
+);
+assert.equal(answeredAlex.opportunities[0]!.kind, "uptake");
+assert.equal(answeredAlex.opportunities[0]!.expectation, "invited");
+assert.equal(
+  answeredAlex.opportunities[0]!.originActor,
+  "alex",
+  "the obligation is rooted in Alex's own turn",
+);
+assert.equal(answeredAlex.opportunities[0]!.opportunitySourceSeq, 16);
+assert.equal(answeredAlex.opportunities[0]!.status, "open");
+// A reply aimed at another human mints nothing, even directly after an Alex
+// question. The pair is "Alex asked" and "this answers it", not "Alex asked at
+// some point".
+assert.deepEqual(
+  reduceConversationLedger(null, answeredAlexDelta({ addressees: ["humanX"] }, 16)).state.opportunities,
+  [],
+  "a reply addressed to another human is not a reply to Alex",
+);
+// And with no Alex question immediately before, nothing changes.
+assert.deepEqual(
+  reduceConversationLedger(null, answeredAlexDelta({}, undefined)).state.opportunities,
+  [],
+);
+
 const uptakeReplay = replayObservedConversation({
   sessionKey: "T-C4-UPTAKE-CLUSTER",
   observerVersion: "test-observer",

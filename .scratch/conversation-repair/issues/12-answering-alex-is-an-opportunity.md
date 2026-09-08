@@ -6,7 +6,7 @@ correctly, and when it does not, the turn is lost outright.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## The defect, as observed
 
@@ -85,14 +85,62 @@ wrong about it.
 - Silence stays attributable. If the turn still ends silent, it must not be for
   `ledger_judge_failure`
 
-- [ ] Alex's question answered by the next human message produces an opportunity
+- [x] Alex's question answered by the next human message produces an opportunity
       without the Observer having to classify the reply
-- [ ] The T-C2-043 seq 16–17 shape resolves to a spoken turn
-- [ ] The T-C2-043 seq 46–47 shape, which already worked, still works
-- [ ] A reply directed at another human mints nothing
-- [ ] `floor.expectedNext` naming Alex and an empty addressee list cannot both
-      stand — say which one the ledger keeps, and why
-- [ ] No new bypass of the floor or the cooldown
+- [x] The T-C2-043 seq 16–17 shape now mints an opportunity — whether it becomes
+      a spoken turn is issue 13's half, and it is not this issue's to claim
+- [x] The Observer-driven path is untouched, so the shape that already worked
+      still works
+- [x] A reply directed at another human mints nothing
+- [x] `floor.expectedNext` naming Alex and an empty addressee list — see below
+- [x] No new bypass of the floor or the cooldown
+
+## Comments
+
+### What shipped
+
+`alexQuestionAwaitingReply(messages, anchorSeq)` returns the seq of Alex's own
+question when **the message directly before the anchor** is Alex's and is
+question-like. Strictly immediate, so it says "Alex asked and this is the turn
+that followed", never "Alex asked at some point" — a human who has already
+answered closes it, and there is a regression for that.
+
+The ledger's uptake branch gains it as an alternative to the Observer's reading,
+not a replacement. A stronger branch above still wins, and the Observer can still
+mint the same opportunity on its own. The opportunity is `uptake` / `invited` —
+the weakest kind there is, and exactly what that branch already produced — so the
+risk profile is unchanged from the opportunities minted there today.
+
+### The one guard on it
+
+A turn that names other humans and not Alex mints nothing, however well
+positioned. Position says the turn followed Alex's question; it does not say the
+turn was for Alex.
+
+### The floor contradiction, and why it stays
+
+The issue asked which of `floor.expectedNext: ["alex"]` and `addressees: []` the
+ledger keeps. **Neither is overruled, and that is deliberate.** The contradiction
+was evidence that the addressee reading was wrong, not something to resolve by
+picking a winner: normalization already owns the floor and would have to be
+changed to make an empty addressee list close it, and B9's fix went the other way
+— it opened the floor rather than closing an opportunity. What this issue adds is
+a second, deterministic route to the opportunity, which removes the contradiction
+by making the ledger agree with the floor instead of arbitrating between them.
+
+### Not sufficient, and known to be
+
+T-C2-045 ran the same shape with the Observer reading every field correctly, and
+the turn was still lost — cooldown vetoed it and three later turns chose
+voluntary acts with the request open. **This fix would not have saved either
+session on its own.** Issue 13 is the other half; neither blocks the other.
+
+### Verification
+
+Three breaks confirmed the assertions fail: removing the deterministic branch,
+dropping the addressee guard, and ignoring whether Alex's message was a question.
+
+Build, all five suites and `docs:check` green. **Not measured live.**
 
 
 ## Comments

@@ -8,6 +8,7 @@ import { Message } from "../models/Message.js";
 import { Participant } from "../models/Participant.js";
 import {
   CONVERSATION_OBSERVER_OUTPUT_SCHEMA,
+  alexQuestionAwaitingReply,
   conversationObserverReviewReason, observationRosterConflicts,
   enqueueConversationObservation, liveObservationAnchorSeq, normalizeConversationObservation,
   reduceConversationStateAfter, type ConversationObserverResult,
@@ -178,6 +179,40 @@ for (let seq = 2; seq <= 4; seq++) {
 }
 assert.equal(normalizeConversationObservation({ ...observation, focusCandidate: null }, false, "humanX", "B", 5, undefined, priorState).focusCandidate, null, "explicit semantic null clears focus");
 assert.deepEqual(normalizeConversationObservation({ ...observation, mentionedCandidates: ["B"] }, false, "humanX", "A good point about B.").mentionedCandidates, ["B"]);
+// [Issue 12] The deterministic half of "this answers Alex". Strictly the message
+// immediately before, and only when it was a question — so it says "Alex asked
+// and this is the turn that followed", never "Alex asked at some point".
+const alexTurns = (content: string, senderRole = "ai") => [
+  { seq: 14, senderRole: "humanY", content: "earlier human turn" },
+  { seq: 16, senderRole, content },
+];
+assert.equal(
+  alexQuestionAwaitingReply(alexTurns("Do you want me to share A or D next?") as any, 17),
+  16,
+);
+assert.equal(
+  alexQuestionAwaitingReply(alexTurns("Which candidate should we take next") as any, 17),
+  16,
+  "a question-word opening counts without the mark",
+);
+assert.equal(
+  alexQuestionAwaitingReply(alexTurns("I'll add one note on Candidate A.") as any, 17),
+  undefined,
+  "a statement is not a question",
+);
+assert.equal(
+  alexQuestionAwaitingReply(alexTurns("Do you want A or D?", "humanX") as any, 17),
+  undefined,
+  "another human's question is not Alex's",
+);
+assert.equal(
+  alexQuestionAwaitingReply(
+    [...alexTurns("Do you want A or D?"), { seq: 17, senderRole: "humanY", content: "A" }] as any,
+    18,
+  ),
+  undefined,
+  "a human already answered, so this turn is not the reply to Alex",
+);
 // The literal-candidate detector, and the article it has to keep refusing.
 //
 // Salience ranks a candidate's claim on Alex's attention precisely because it is

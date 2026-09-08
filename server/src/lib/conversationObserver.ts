@@ -827,6 +827,27 @@ function questionLike(content: string): boolean {
   );
 }
 
+/**
+ * The seq of Alex's own question when the message directly before `anchorSeq` is
+ * Alex's and is question-like.
+ *
+ * [Issue 12] Deterministic, and that is the point: the ledger's uptake branch
+ * otherwise depends on the Observer classifying the reply, which at T-C2-043
+ * seq 17 it did not. Strictly the *immediately* preceding message, so this says
+ * "Alex asked and this is the turn that followed", never "Alex asked at some
+ * point".
+ */
+export function alexQuestionAwaitingReply(
+  messages: readonly ObserverTranscriptMessage[],
+  anchorSeq: number,
+): number | undefined {
+  const previous = [...messages]
+    .filter((message) => message.seq < anchorSeq)
+    .sort((left, right) => right.seq - left.seq)[0];
+  if (!previous || previous.senderRole !== "ai") return undefined;
+  return questionLike(previous.content) ? previous.seq : undefined;
+}
+
 export function strictCandidateMentions(content: string): Candidate[] {
   const found = new Set<Candidate>();
   const patterns = [
@@ -1319,6 +1340,7 @@ export async function observeConversationTurnInMemory(input: {
     alexUptakeRootSeq: [...input.messages]
       .filter((message) => message.seq < input.anchorSeq && message.senderRole === "ai")
       .sort((left, right) => right.seq - left.seq)[0]?.seq,
+    alexQuestionAwaitingReplySeq: alexQuestionAwaitingReply(input.messages, input.anchorSeq),
     repairCodes: result.repairCodes,
     conflictCodes: result.conflictCodes,
     degradedMode: result.conflictCodes.length > 0,
