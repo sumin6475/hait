@@ -998,6 +998,12 @@ async function runReservation(runtime: RuntimeState, reservation: Reservation) {
         ? CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION
         : undefined,
       ledgerJudgeAttempts: reservation.ledgerJudgeAttempts,
+      // [Issue 17] So a generation failure records what the group was still
+      // waiting for. `recordSilence` already does this for the silences it
+      // owns; the generation path is a different function and had nothing.
+      owedRequestIds: reservation.ledgerState
+        ? unansweredRequestsForAlex(reservation.ledgerState.opportunities).map((item) => item.id)
+        : undefined,
       selectedOpportunity: reservation.selectedOpportunity,
       onBroadcastSuccess:
         reservation.selectedOpportunity && reservation.ledgerState

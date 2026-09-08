@@ -60,6 +60,7 @@ import {
   sentenceCount,
   outputAsksAQuestion,
   outputVerdict,
+  evaluateDraft,
 } from "../lib/routeScopedGeneration.js";
 import { extractHumanTraitsFast, validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
 import {
@@ -2106,6 +2107,83 @@ assert.equal(
   ),
   false,
   "and neither is a plain decline, which is what the condition asks for instead",
+);
+
+// [Issue 17] The restated-trait bound was twice suspected of being what cost
+// T-C1-021 eight turns, and twice it was not.
+//
+// It is reached only through `ROUTE_REVEAL_BUDGET`, and `withRouteRevealBudget`
+// applies that **only to a turn carrying no request at all**. A turn nobody
+// asked anything of has nothing to enumerate, so the conflict that makes a
+// repair impossible — the request demanding more traits than the cap allows —
+// cannot arise there. T-C1-021 met it only because the request misclassified as
+// `none`, which is issue 18.
+//
+// So the fix is that the turn now carries no budget, not that the bound is
+// wrong. Two wrong versions of this were written first: tolerating the overage
+// after a failed repair, and retiring the bound as redundant with the length
+// bounds. The second is refuted by `d2Restated` below — a 40-word, six-trait
+// recital that both length bounds pass and gate D2 was built to refuse.
+const afterIssue18 = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 34,
+  messages: [
+    {
+      seq: 34,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "What misses do we have for Candidate C?",
+    },
+  ],
+  revealStats: separatedInformationStats,
+});
+assert.equal(
+  routeGenerationGuard("address", afterIssue18.outputScopeGuard),
+  undefined,
+  "the turn that lost eight generations now reaches the model with no trait cap at all",
+);
+// And the budget still lands on the turn it was written for: one that asks
+// nothing, where a recital is the failure mode.
+const noRequestTurn = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 35,
+  messages: [
+    {
+      seq: 35,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "Right, that makes sense to me.",
+    },
+  ],
+  revealStats: separatedInformationStats,
+});
+assert.equal(
+  routeGenerationGuard("address", noRequestTurn.outputScopeGuard)?.maxRestatedTraitIds,
+  2,
+  "a turn that asked for nothing still may not recite the board",
+);
+
+// [Issue 17] One evaluation, used by the initial draft and the repaired one.
+// The two were written out separately and the repair pass checked metadata and
+// scope but not the question post-condition, so a clarification question could
+// survive a repair it was never re-tested against.
+assert.equal(
+  evaluateDraft({
+    content: "Do you want all four candidates, or just the frontrunners?",
+    forbidQuestion: true,
+  }).primary,
+  "answered_with_a_question",
+  "a repaired draft that still asks is still a violation",
+);
+assert.equal(
+  evaluateDraft({ content: "Candidate A misses on being unfriendly.", forbidQuestion: true })
+    .needsRepair,
+  false,
+  "and a clean one passes with no guard in force",
 );
 
 // A question violation has to reach the repair loop on its own. Two of the

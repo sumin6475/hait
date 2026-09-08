@@ -80,6 +80,12 @@ export interface RouteTurnInput {
   ledgerJudgePromptVersion?: string;
   ledgerJudgeSchemaVersion?: string;
   ledgerJudgeAttempts?: unknown[];
+  /**
+   * [Issue 17] The open requests Alex owed when this turn ran, for the record a
+   * generation failure leaves behind. Supplied by the caller, which is the
+   * layer that holds the ledger.
+   */
+  owedRequestIds?: string[];
   selectedOpportunity?: SelectedOpportunityGenerationContext;
   onBroadcastSuccess?: (input: { messageSeq: number }) => Promise<{
     stateAfter: ConversationLedgerState;
@@ -403,6 +409,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       routeReason: input.routeReason,
       outcome: "generation_failed",
       silenceReason: silenceReasonForGenerationFailure(error),
+      // [Issue 17] This path recorded no `owedRequestIds`, and it is the
+      // largest silence class there is: ten of T-C1-021's silences came
+      // through here and none of them said what the group was still waiting
+      // for. The caller holds the ledger; this function never did.
+      owedRequestIds: input.owedRequestIds,
       promptKey: prompt.promptKey,
       promptVersion: prompt.promptVersion,
       promptHash: prompt.promptHash,

@@ -209,6 +209,16 @@ export function outputScopeViolation(
   // [D4] Restating is not free. The check above counts only new traits, so a
   // wholesale recital of the board passes it — T-C1-025 seq 7 restated sixteen
   // traits and introduced none.
+  //
+  // [Issue 17] This bound was twice suspected of being the reason T-C1-021 lost
+  // eight turns, and twice it was not. It is reached only through
+  // `ROUTE_REVEAL_BUDGET`, which `withRouteRevealBudget` applies **only when
+  // the turn carries no request at all**. Those turns have nothing to
+  // enumerate, so the conflict that makes a repair impossible cannot arise on
+  // them. T-C1-021 met it because the request misclassified as `none`; issue 18
+  // fixed the classification, and the turn now reaches generation with no guard.
+  // Retiring the bound instead would have shipped a 40-word six-trait recital
+  // that gate D2 was built to refuse.
   if (
     guard.maxRestatedTraitIds !== undefined &&
     extractedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
@@ -315,6 +325,69 @@ export function outputVerdict(input: {
   return { needsRepair: violations.length > 0, violations, primary: violations[0] ?? null };
 }
 
+export interface DraftEvaluation {
+  extractedIds?: string[];
+  metadata: string | null;
+  question: string | null;
+  scope: string | null;
+  violations: string[];
+  softViolations: string[];
+  primary: string | null;
+  needsRepair: boolean;
+}
+
+/**
+ * Everything that can be wrong with one generated message.
+ *
+ * [Issue 17] The initial draft and the repaired one were evaluated by two
+ * hand-written copies of this, and they had already drifted: the repair pass
+ * checked metadata and scope and not the question post-condition, so a
+ * clarification question could survive a repair it was never re-tested
+ * against. One function, called twice.
+ */
+export function evaluateDraft(input: {
+  content: string;
+  guard?: RouteOutputScopeGuard;
+  previouslySurfacedTraitIds?: readonly string[];
+  forbidQuestion?: boolean;
+}): DraftEvaluation {
+  const extractedIds = input.guard ? disclosedTraitIds(input.content) : undefined;
+  const metadata = internalMetadataLeak(input.content);
+  const question =
+    input.forbidQuestion && outputAsksAQuestion(input.content)
+      ? "answered_with_a_question"
+      : null;
+  const scope = input.guard
+    ? outputScopeViolation(
+        input.content,
+        extractedIds ?? [],
+        input.guard,
+        input.previouslySurfacedTraitIds,
+      )
+    : null;
+  const verdict = outputVerdict({ metadata, question, scope });
+  return {
+    extractedIds,
+    metadata,
+    question,
+    scope,
+    softViolations: [
+      ...internalMetadataSoftViolations(input.content),
+      ...(input.guard
+        ? outputScopeSoftViolations(
+            input.content,
+            extractedIds ?? [],
+            input.guard,
+            input.previouslySurfacedTraitIds,
+          )
+        : []),
+    ],
+    violations: verdict.violations,
+    primary: verdict.primary,
+    needsRepair: verdict.needsRepair,
+  };
+}
+
 export const MAX_REPAIR_ATTEMPTS = 1;
 
 export async function generateScopedRouteMessage(input: {
@@ -346,36 +419,20 @@ export async function generateScopedRouteMessage(input: {
   });
   if (!result.ok) return { result };
 
-  let extractedIds = input.guard ? disclosedTraitIds(result.parsed.content) : undefined;
-  const metadataViolation = internalMetadataLeak(result.parsed.content);
-  const questionViolation =
-    input.forbidQuestion && outputAsksAQuestion(result.parsed.content)
-      ? "answered_with_a_question"
-      : null;
-  const scopeViolation = input.guard
-    ? outputScopeViolation(
-        result.parsed.content,
-        extractedIds ?? [],
-        input.guard,
-        input.previouslySurfacedTraitIds,
-      )
-    : null;
-  let softViolations = [
-    ...internalMetadataSoftViolations(result.parsed.content),
-    ...(input.guard
-      ? outputScopeSoftViolations(
-          result.parsed.content,
-          extractedIds ?? [],
-          input.guard,
-          input.previouslySurfacedTraitIds,
-        )
-      : []),
-  ];
-  const verdict = outputVerdict({
-    metadata: metadataViolation,
-    question: questionViolation,
-    scope: scopeViolation,
-  });
+  const evaluate = (content: string) =>
+    evaluateDraft({
+      content,
+      guard: input.guard,
+      previouslySurfacedTraitIds: input.previouslySurfacedTraitIds,
+      forbidQuestion: input.forbidQuestion,
+    });
+  const initial = evaluate(result.parsed.content);
+  let extractedIds = initial.extractedIds;
+  const metadataViolation = initial.metadata;
+  const questionViolation = initial.question;
+  const scopeViolation = initial.scope;
+  let softViolations = initial.softViolations;
+  const verdict = initial;
   if (!verdict.needsRepair) {
     if (!softViolations.length) return { result, extractedIds };
     return {
@@ -495,30 +552,10 @@ export async function generateScopedRouteMessage(input: {
     }
     lastFailureError = null;
 
-    extractedIds = input.guard ? disclosedTraitIds(repaired.parsed.content) : undefined;
-    const repairedMetadataViolation = internalMetadataLeak(repaired.parsed.content);
-    const repairedScopeViolation = input.guard
-      ? outputScopeViolation(
-          repaired.parsed.content,
-          extractedIds ?? [],
-          input.guard,
-          input.previouslySurfacedTraitIds,
-        )
-      : null;
-    softViolations = [
-      ...internalMetadataSoftViolations(repaired.parsed.content),
-      ...(input.guard
-        ? outputScopeSoftViolations(
-            repaired.parsed.content,
-            extractedIds ?? [],
-            input.guard,
-            input.previouslySurfacedTraitIds,
-          )
-        : []),
-    ];
-    const repairedViolations = [repairedMetadataViolation, repairedScopeViolation].filter(
-      (value): value is string => Boolean(value),
-    );
+    const repairedDraft = evaluate(repaired.parsed.content);
+    extractedIds = repairedDraft.extractedIds;
+    softViolations = repairedDraft.softViolations;
+    const repairedViolations = repairedDraft.violations;
     repairAudit.attempts.push(
       successfulAttemptAudit({
         stage: "repair",

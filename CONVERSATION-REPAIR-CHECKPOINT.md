@@ -43,11 +43,10 @@ and the request scope behind it are built but have never been seen in a live
 session.
 
 **What is open.** Nineteen issues in `.scratch/conversation-repair/issues/`.
-Three are open: issue 10 (the Observer split, blocked on a latency measurement),
-issue 16 (Alex announces a next step and nothing holds it to it) and issue 17 (a
-repair that cannot succeed still costs a call, then drops the turn). Fifteen are
-done and one records a decision not to act. Start at the lowest-numbered issue
-whose blockers are done.
+Two are open: issue 10 (the Observer split, blocked on a latency measurement)
+and issue 16 (Alex announces a next step and nothing holds it to it). Sixteen
+are done and one records a decision not to act. Start at the lowest-numbered
+issue whose blockers are done.
 
 **The pooling DV changed on 2026-09-08.** Issue 15 corrected the extractor, which
 means `sharedInfoIds` and `revealStats` from sessions after that date are not
@@ -80,9 +79,17 @@ breakages only. §5 lists the four suites the gate requires; `test:seq` and
 
 **The reveal budget silenced more turns than the cooldown did.** T-C1-021 lost
 ten turns to `output_violation_after_repair` against seven to the cooldown, and
-eight of the ten were one unanswerable question repeated. Issue 18 removed that
-request's conflict; issue 17 holds the general shape. Do not reason about Alex's
-speech volume from the cooldown alone.
+eight of the ten were one question repeated. Do not reason about Alex's speech
+volume from the cooldown alone.
+
+**The budget was not the fault, and issue 17 records two wrong fixes for it.**
+`maxRestatedTraitIds` is reachable only through `ROUTE_REVEAL_BUDGET`, which
+applies **only when the turn carries no request** — a turn with nothing to
+enumerate, where a recital is the failure mode. T-C1-021 met the bound only
+because the request misclassified as `none`, which is issue 18. Retiring the
+bound as "redundant with the length bounds" is refuted by gate D2's own
+regression: a 40-word, two-sentence, six-trait recital passes both length bounds.
+**Length does not catch a terse recital.**
 
 **The Judge has never chosen silence.** 21/21 and 9/9 across the two sessions:
 every turn that reached it came back `speak`. Any proposal to remove the
