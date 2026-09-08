@@ -183,9 +183,22 @@ closed: a message over budget costs the turn rather than going out oversized.
 One of the four assignments participants are randomised to, crossing Alex's status
 with how it explains itself. A fifth, control, has no AI participant.
 
-**Peer / Leader**:
-Alex's status within the group. A Leader may structure the discussion, set the
-agenda, and mediate; a Peer contributes as an equal and does none of those.
+**Chair / Member**:
+Alex's status within the group, and one of the two manipulated variables. A Chair
+may structure the discussion, set the agenda, and mediate; a Member contributes as
+an equal and does none of those. These are the names participants
+actually see: Alex is rendered in the chat as "Alex — Chair" or "Alex — Member",
+and the experiment instructions frame the role the same way.
+_Note_: the codebase says leader and peer for the same distinction — in types, in
+function names, and in the condition prompts — and that is deliberate, not drift.
+Chair and Member are the participant-facing layer; leader and peer are the
+internal one. Use whichever layer you are in, and never introduce a third pair.
+
+**Communication strategy**:
+The second manipulated variable. Under one strategy Alex compares candidates and
+explains why one is stronger; under the other it shares its own information and
+asks questions to draw out what the humans hold. The two differ in what Alex
+decides to do, not only in how it words things.
 
 **Condition orthogonality**:
 The property that conditions differ only in what is being manipulated, and in

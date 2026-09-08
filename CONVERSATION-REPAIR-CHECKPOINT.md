@@ -1510,7 +1510,7 @@ described in the pre-registration and the IRB protocol.
 | # | Change |
 | --- | --- |
 | C1 | **Inject a role goal** in the developer message. Leader: actively guide the group toward a well-considered collective decision — structure the conversation, keep it focused and moving, address disagreements, take responsibility for a clear outcome. Peer: contribute cooperatively as an equal team member — share relevant information, respond constructively, help evaluate options, without directing, managing, or mediating. |
-| C2 | **Enforce orthogonality in the action space, not the prompt.** Remove `mediate` and directive acts from the Peer schema so they are unrepresentable rather than merely forbidden. The orthogonality assertions at `test-intervention-v2.ts:1317` must keep passing unchanged. |
+| C2 | **Enforce orthogonality in the action space, not the prompt.** Remove `mediate` and directive acts from the Peer schema so they are unrepresentable rather than merely forbidden. The orthogonality assertions (the peer/leader prompt separation and the peer task-drift refusal) must keep passing unchanged. |
 | C3 | **Give the Judge something real to decide.** Expose cooldown to it as a budget it can see and spend. Today it says `speak` and the router silently discards the decision, which is why 18 of 19 decisions were `speak`. |
 | C4 | Facts (Observer output) stay in the user message; the goal goes in the developer message; deterministic validation is unchanged. |
 
@@ -1611,8 +1611,7 @@ repair.
   generation, with the single exception that Leader-only mediation stays gated to
   C2/C4. **RETIRED 2026-09-07 with the user's approval (Gate C).** A role goal
   inside the Judge replaces it: a leader differs in what they *decide*, not only
-  in how they phrase it. The orthogonality assertions at
-  `test-intervention-v2.ts:1317` remain binding and unchanged — a Peer must never
+  in how they phrase it. The orthogonality assertions (the peer/leader prompt separation and the peer task-drift refusal) remain binding and unchanged — a Peer must never
   gain mediation or task-standard correction. The manipulation now sits upstream
   of generation, so the pre-registration and IRB description of where the
   manipulation is applied must be checked before the next run.

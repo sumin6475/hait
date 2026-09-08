@@ -179,7 +179,33 @@ if (existsSync(glossaryPath)) {
   check(!fileLike, `CONTEXT.md names a file: ${fileLike?.[0] ?? ""}`);
 }
 
-// ── 3. Nothing vanishes unaccounted for ──────────────────────────────────────
+// ── 3. The decision record is addressable ───────────────────────────────────
+// An ADR is only useful if it can be cited, so the numbering is what is checked:
+// unique, contiguous, and matching the filename. What an ADR argues is not.
+const adrDir = join(REPO_ROOT, "docs", "adr");
+if (existsSync(adrDir)) {
+  const files = readdirSync(adrDir).filter((name) => name.endsWith(".md")).sort();
+  const numbers: number[] = [];
+  for (const name of files) {
+    const shape = name.match(/^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/);
+    check(Boolean(shape), `docs/adr/${name}: expected NNNN-kebab-case.md`);
+    if (!shape) continue;
+    numbers.push(Number(shape[1]));
+    const body = readFileSync(join(adrDir, name), "utf8");
+    check(
+      /^(?:---\n[\s\S]*?\n---\n)?\s*# .+/m.test(body),
+      `docs/adr/${name}: has no title heading`,
+    );
+  }
+  const unique = new Set(numbers);
+  check(unique.size === numbers.length, "docs/adr: duplicate ADR numbers");
+  numbers.sort((a, b) => a - b);
+  numbers.forEach((value, index) => {
+    check(value === index + 1, `docs/adr: numbering is not contiguous from 0001 (found ${value})`);
+  });
+}
+
+// ── 4. Nothing vanishes unaccounted for ──────────────────────────────────────
 const map: MigrationMap = JSON.parse(readFileSync(MAP_PATH, "utf8"));
 const sourcePath = join(REPO_ROOT, map.source);
 assert.ok(existsSync(sourcePath), `migration map source ${map.source} is missing`);
