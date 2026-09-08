@@ -61,20 +61,21 @@ const outputGuardSchema = new mongoose.Schema(
   { _id: false },
 );
 
-// The live candidate list as it stood when this turn was taken, and the two
-// counts it is derived from. Shadow only: nothing in routing, cadence or
-// generation reads it, and it is here so that a real session can be read
-// against thresholds that were chosen rather than derived.
+// The candidates that still needed the group's attention when this turn was
+// taken, and the two counts read off the board. Shadow only: nothing in
+// routing, cadence or generation reads it, and it is here so that a real
+// session can be read against the bar before any of it steers speech.
 //
-// `coverage` and `score` are kept alongside `live` because the list alone
-// cannot be re-checked against a different threshold afterwards, and the
-// thresholds are the thing under question.
+// `score` is recorded and is deliberately not an input to `live` — over a
+// shared-dominated board it ranks the candidates backwards (`docs/adr/0009`).
+// Both counts are kept so the record can be re-read against a different bar
+// afterwards, which the list alone does not allow.
 const candidateListSchema = new mongoose.Schema(
   {
     coverage: { A: Number, B: Number, C: Number, D: Number },
     score: { A: Number, B: Number, C: Number, D: Number },
     live: { type: [String], default: [] },
-    setAside: { type: [String], default: [] },
+    covered: { type: [String], default: [] },
   },
   { _id: false },
 );

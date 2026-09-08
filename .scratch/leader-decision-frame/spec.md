@@ -50,27 +50,33 @@ steer it. `poolingTally.ts` already computes on exactly this basis.
 
 - `coverage(X)` — distinct traits on the board for candidate X, matches and
   misses together, human-surfaced ∪ Alex-surfaced.
-- `score(X)` — matches minus misses on the board for X. Every trait weighs the
-  same, per `CONTEXT.md`.
-- **X may leave the live list when all three hold:**
-  1. `coverage(X) >= 4`
-  2. `coverage(X) >= max(coverage of the other live candidates) - 2`
-  3. `max(score of live candidates) - score(X) >= 2`
+- `score(X)` — matches minus misses on the board for X. Recorded, and **not an
+  input to the list**.
+- **X leaves the live list when `coverage(X) >= 5`, and for no other reason.**
 
-Condition 2 is what stops a candidate falling out for having been *ignored*
-rather than for being weak — the failure mode a hidden profile is built to
-produce. `DEPTH_MIN_PER_CAND` (3) keeps its existing and separate job: holding
-the discussion on a candidate that is still thin.
+Five is derived, not chosen. Every candidate carries exactly four traits that all
+three profiles can see, so coverage 4 can be reached on nothing the group did not
+already share; five is the first coverage at which something beyond the common
+pool must have reached the board.
+
+**The list measures attention, not merit.** An earlier version removed a
+candidate for being well covered and clearly trailing on `score`, and `docs/adr/
+0009` withdraws that: over a shared-dominated board `score` ranks the candidates
+backwards — the three wrong candidates at +4 and the pooled answer at −2 — so any
+threshold on it eliminates the right answer at the moment the group has pooled
+its common ground and nothing else. `DEPTH_MIN_PER_CAND` (3) keeps its existing
+and adjacent job: holding the discussion on a candidate that is still thin.
 
 **"Leaving the list" means only this:** Alex stops steering discussion toward
 that candidate and stops volunteering new information about it. Alex still
 answers questions about it. It is not removed from anyone's choice.
 
-**The thresholds are unvalidated.** 4 and 2 were chosen, not derived — the
-pre-repair corpus is a different architecture and cannot be replayed against
-them. Issue 02 therefore computes and logs the list without letting it reach
+**The bar is still unvalidated as a bar.** It is derived rather than guessed, but
+whether one unshared trait is enough attention is a question only a session
+answers. Issue 02 therefore computes and logs the list without letting it reach
 speech, and issue 03 does not start until a real session has been read against
-those numbers.
+it. The failure mode has changed direction: too low a bar costs a nudge not
+given, where the withdrawn rule cost the answer.
 
 ## What splits the conditions
 
@@ -78,10 +84,9 @@ those numbers.
 | --- | --- | --- |
 | Receives the live candidate list | yes | **no** — board only |
 | Names a candidate the group has not covered | yes | no |
-| Announces that a candidate is set aside | yes, without numbers | no |
-| Reopens the list | yes, on new information or on a coverage shortfall — never at discretion | no |
+| Says the group has pooled something about a candidate | yes, without numbers | no |
+| Raises a coverage shortfall when the group moves to narrow or to close | once each, then accepts | no |
 | Re-argues the weakest candidate once | yes, introducing no new trait | no |
-| Raises a coverage shortfall when the group moves to close | once, then accepts | no |
 | Uptake attaches to | content **and** the group's procedural move | content only |
 | Long silence | may fill | **may also fill** |
 

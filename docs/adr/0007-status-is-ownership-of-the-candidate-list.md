@@ -26,6 +26,14 @@ Leaving the list means only that Alex stops steering toward a candidate and stop
 volunteering new information about it. Alex still answers questions about it, and
 the candidate is removed from nobody's choice.
 
+**Amendment, 2026-09-08.** What makes a candidate leave has changed, and with it
+what the second move says. `0009` withdraws the score-based removal rule — over a
+shared-dominated board score ranks the candidates backwards — so a candidate now
+leaves on coverage alone, and "announce that one is being set aside" is now
+"say the group has pooled something about this one, and nothing yet about that
+one". The move is still the leader's and still absent from the peer; it can no
+longer carry a verdict.
+
 ## Three things this decision refuses
 
 **It does not mint turns.** The originating proposal had the leader speak on

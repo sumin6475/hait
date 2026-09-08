@@ -77,15 +77,18 @@ that candidate is doing.
 
 **Score**:
 Matches minus misses on the board for one candidate. Every trait weighs the same,
-so this is a count and not a verdict, and no participant ever hears one.
+so this is a count and not a verdict, and no participant ever hears one. While
+the board holds mostly shared traits it ranks the candidates backwards, which is
+why it never decides what the group works on next.
 
 **Live list**:
-The candidates the group is still working on, recomputed from the board every
-turn. A candidate leaves the list only by being both well covered and clearly
-trailing, and it returns the moment new information puts it back. Leaving means
-Alex stops steering toward that candidate and stops volunteering information
-about it — Alex still answers questions about it, and it is removed from nobody's
-choice.
+The candidates the group has not yet pooled anything about, recomputed from the
+board every turn. A candidate leaves the list when enough of it is on the board
+that at least one trait must have come from someone's own card rather than from
+what everybody could already see. Leaving means Alex stops steering toward that
+candidate and stops volunteering information about it — Alex still answers
+questions about it, and it is removed from nobody's choice. The list says where
+attention is still owed, never which candidate is winning.
 _Avoid_: shortlist, elimination, ranking
 
 ### The conversation

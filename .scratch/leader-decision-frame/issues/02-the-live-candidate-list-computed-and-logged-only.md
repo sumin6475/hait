@@ -124,3 +124,30 @@ So the thresholds do not simply need validating. The removal rule has a gap that
 the sessions in issue 01 will not close by themselves, and issue 03 must not
 inherit it — a leader that steers by this list steers away from the right answer
 in exactly the sessions the study is about. Recorded as a comment on issue 03.
+
+### The rule this issue shipped has been replaced, 2026-09-08
+
+The finding above was acted on rather than filed. `docs/adr/0009` withdraws the
+score-based removal rule and replaces it with coverage alone: a candidate leaves
+the list at `coverage >= 5`, and `score` is recorded without being an input.
+
+Five is derived rather than chosen, which the withdrawn 4 and 2 were not. Every
+candidate carries exactly four traits visible on all three cards, so coverage 4
+can be reached without the group having pooled anything; five is the first
+coverage at which something beyond the common pool must be on the board.
+
+The deeper reason the old rule could not be tuned is in `0009`: the shared four
+score +4 for A, B and D and −2 for C, while the pooled scores are −2 and +4. The
+sign is inverted for every candidate, so a shared-dominated board ranks them
+backwards and any threshold on board score inherits it. T-C1-016 was one
+instance, not the argument.
+
+Read against the new bar, T-C1-016 says something worse than "the answer was
+dropped": **no candidate in that session ever cleared coverage 5.** The group's
+entire board stayed inside what a single card already held, and the old rule
+eliminated the pooled answer out of a discussion that had pooled nothing.
+
+Everything else this issue built stands — the derivation is still board-only,
+still shadow, still on every turn record, and the shadow-only assertion is
+unchanged. The acceptance list above was met by the version that shipped and is
+met by the replacement.

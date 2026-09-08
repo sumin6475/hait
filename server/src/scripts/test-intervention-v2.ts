@@ -84,12 +84,7 @@ import {
 import { ledgerRouteKindForAct } from "../lib/interventionEngine.js";
 import { validateQuestionUptakeDecision } from "../lib/questionUptakeJudge.js";
 import { TRAIT_BY_ID, TRAIT_DB } from "../lib/traitData.js";
-import {
-  computeCandidateList,
-  LIVE_LIST_COVERAGE_LAG,
-  LIVE_LIST_MIN_COVERAGE,
-  LIVE_LIST_SCORE_LAG,
-} from "../lib/candidateList.js";
+import { computeCandidateList, COVERAGE_ENOUGH } from "../lib/candidateList.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { ConversationObservation } from "../models/ConversationObservation.js";
 import { Session } from "../models/Session.js";
@@ -4569,11 +4564,10 @@ assert.equal(
 );
 assert.match(peerCollation.userPrompt, /Requested collation \(server-derived\)/);
 
-// ── The live candidate list ─────────────────────────────────────────────────
-// Shadow only (docs/adr/0008). These assertions are about the derivation and
-// about it reaching nothing: the thresholds are chosen rather than derived, and
-// the point of logging the list is to read a real session against them before
-// any of it is allowed to steer speech.
+// ── The candidate list ─────────────────────────────────────────────────────
+// Shadow only (docs/adr/0008, docs/adr/0009). The list measures attention, not
+// merit: it reads coverage and must never read score, because over a
+// shared-dominated board score ranks the candidates backwards.
 
 const boardOf = (ids: string[]) => {
   const byCandidate: any = {
@@ -4588,14 +4582,36 @@ const boardOf = (ids: string[]) => {
   return { byCandidate, aiSurfacedIds: [] as string[] };
 };
 
+// The bar is derived, not chosen, and this is the fact it is derived from:
+// every candidate carries exactly the same number of traits that all three
+// profiles can see, so one past that number is the first coverage at which
+// something unshared must have reached the board.
+const sharedPerCandidate = (["A", "B", "C", "D"] as const).map(
+  (candidate) =>
+    TRAIT_DB.filter((trait) => trait.candidate === candidate && trait.profiles.length === 3).length,
+);
+assert.deepEqual(sharedPerCandidate, [4, 4, 4, 4]);
+assert.equal(COVERAGE_ENOUGH, 5);
+for (const candidate of ["A", "B", "C", "D"] as const) {
+  const shared = TRAIT_DB.filter(
+    (trait) => trait.candidate === candidate && trait.profiles.length === 3,
+  );
+  assert.equal(
+    computeCandidateList(boardOf(shared.map((trait) => trait.id))).live.includes(candidate),
+    true,
+    "a candidate whose whole board is shared traits has had nothing pooled about it",
+  );
+}
+
 const emptyBoard = computeCandidateList(boardOf([]));
-assert.deepEqual(emptyBoard.live, ["A", "B", "C", "D"], "an empty board sets nothing aside");
+assert.deepEqual(emptyBoard.live, ["A", "B", "C", "D"], "an empty board has pooled nothing");
+assert.deepEqual(emptyBoard.covered, []);
 assert.deepEqual(emptyBoard.coverage, { A: 0, B: 0, C: 0, D: 0 });
 assert.deepEqual(emptyBoard.score, { A: 0, B: 0, C: 0, D: 0 });
 
 // Alex's unspoken profile is in neither source set, so it cannot move the list.
-// This is the property the whole design rests on: Alex pushes a candidate only
-// by paying for it with a disclosure the pooling measure records.
+// Alex pushes a candidate only by paying for it with a disclosure the pooling
+// measure records.
 assert.deepEqual(
   computeCandidateList({ byCandidate: {}, aiSurfacedIds: [] }).coverage,
   { A: 0, B: 0, C: 0, D: 0 },
@@ -4607,72 +4623,44 @@ assert.equal(
   "a trait Alex has said is on the board like any other",
 );
 
-// The positive control. Without a turn where the rule actually fires, every
-// assertion below it would pass on a derivation that sets nothing aside ever.
-const wellCoveredAndTrailing = computeCandidateList(
-  boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "B_n1", "B_n2", "B_n3", "B_n4"]),
-);
+// The bar itself, from either side.
 assert.deepEqual(
-  wellCoveredAndTrailing.setAside,
-  ["B"],
-  "a candidate that has been looked at and trails badly is set aside",
-);
-assert.equal(wellCoveredAndTrailing.coverage.B, LIVE_LIST_MIN_COVERAGE);
-assert.ok(
-  wellCoveredAndTrailing.score.A - wellCoveredAndTrailing.score.B >= LIVE_LIST_SCORE_LAG,
-);
-
-// Clause 1: too little of a candidate is in view to have an opinion about it.
-const barelySeen = computeCandidateList(
-  boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "B_n1", "B_n2", "B_n3"]),
-);
-assert.deepEqual(
-  barelySeen.live,
+  computeCandidateList(boardOf(["A_p1", "A_p2", "A_p3", "A_p4"])).live,
   ["A", "B", "C", "D"],
-  "below the coverage minimum a candidate stays live however badly it scores",
+  "four traits can all be shared, so they settle nothing",
 );
+const oneMore = computeCandidateList(boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "A_n1"]));
+assert.deepEqual(oneMore.covered, ["A"], "one past the shared set is something pooled");
+assert.deepEqual(oneMore.live, ["B", "C", "D"]);
 
-// Clause 2, the load-bearing one: a candidate that has merely been skipped is
-// not the same as a candidate that is weak, and a hidden profile produces the
-// first while looking like the second.
-const skipped = computeCandidateList(
-  boardOf([
-    "A_p1", "A_p2", "A_p3", "A_p4", "A_n1", "A_n2", "A_n3",
-    "B_n1", "B_n2", "B_n3", "B_n4",
-  ]),
+// The property the whole redesign rests on: the list is a function of coverage
+// and of nothing else. Two boards with identical coverage and opposite scores
+// must produce the same list. If score is ever reintroduced as an input, this
+// is what fails.
+const strongestPossible = computeCandidateList(
+  boardOf(["C_p1", "C_p2", "C_p3", "C_p4", "C_p5", "A_p1", "A_p2", "A_p3", "A_p4"]),
 );
-assert.equal(skipped.coverage.A - skipped.coverage.B, 3);
-assert.ok(skipped.coverage.B - skipped.coverage.A < -LIVE_LIST_COVERAGE_LAG);
+const weakestPossible = computeCandidateList(
+  boardOf(["C_n1", "C_n2", "C_n3", "C_p6", "C_p7", "A_n1", "A_n2", "A_n3", "A_n4"]),
+);
+assert.deepEqual(strongestPossible.coverage, weakestPossible.coverage);
+assert.notDeepEqual(strongestPossible.score, weakestPossible.score);
+assert.deepEqual(strongestPossible.live, weakestPossible.live, "the list does not read score");
+assert.deepEqual(strongestPossible.covered, weakestPossible.covered);
+assert.equal(strongestPossible.score.C - weakestPossible.score.C, 6);
+
+// The case the old rule got wrong, stated as a rule rather than as a session.
+// Over a shared-dominated board the pooled answer scores -2 while every other
+// candidate scores +4, so any score-driven removal drops the right answer at
+// the moment the group has pooled its common ground and nothing else.
+const sharedOnly = TRAIT_DB.filter((trait) => trait.profiles.length === 3);
+const sharedBoard = computeCandidateList(boardOf(sharedOnly.map((trait) => trait.id)));
+assert.deepEqual(sharedBoard.score, { A: 4, B: 4, C: -2, D: 4 });
 assert.deepEqual(
-  skipped.live,
+  sharedBoard.live,
   ["A", "B", "C", "D"],
-  "a candidate far behind on coverage is being ignored, not being beaten",
+  "the shared board settles nothing about anyone, least of all the pooled answer",
 );
-
-// The criterion this issue was written against: high score, low coverage, live.
-const highScoreLowCoverage = computeCandidateList(
-  boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "A_n1", "A_n2", "C_p1", "C_p2"]),
-);
-assert.equal(highScoreLowCoverage.coverage.C, 2);
-assert.equal(highScoreLowCoverage.score.C, 2);
-assert.deepEqual(highScoreLowCoverage.live, ["A", "B", "C", "D"]);
-
-// The list is never empty, so there is never a turn with nothing to work on.
-// The best-scoring candidate trails itself by 0 and cannot be set aside, which
-// is also why one pass and a fixed point agree on the score test.
-for (const ids of [
-  ["A_p1", "A_p2", "A_p3", "A_p4"],
-  ["A_n1", "A_n2", "A_n3", "A_n4", "B_n1", "B_n2", "B_n3", "B_n4"],
-  TRAIT_DB.map((trait) => trait.id),
-]) {
-  const state = computeCandidateList(boardOf(ids));
-  assert.ok(state.live.length >= 1, "the live list is never empty");
-  const best = Math.max(...(["A", "B", "C", "D"] as const).map((c) => state.score[c]));
-  assert.ok(
-    state.live.some((candidate) => state.score[candidate] === best),
-    "a best-scoring candidate is always live",
-  );
-}
 
 // The record it is written to. A turn that never computed one leaves the field
 // absent rather than empty, so an old export and a turn with no list are not
@@ -4682,14 +4670,14 @@ const listedTurn = new AIIntervention({
   turnIndex: 4,
   triggerReason: "push",
   decision: "stay_silent",
-  candidateList: wellCoveredAndTrailing,
+  candidateList: oneMore,
 });
 assert.equal(listedTurn.validateSync(), undefined);
 const recordedList = listedTurn.toObject().candidateList!;
-assert.deepEqual(recordedList.live, ["A", "C", "D"]);
-assert.deepEqual(recordedList.setAside, ["B"]);
-assert.equal(recordedList.coverage!.B, LIVE_LIST_MIN_COVERAGE);
-assert.equal(recordedList.score!.A, 4);
+assert.deepEqual(recordedList.live, ["B", "C", "D"]);
+assert.deepEqual(recordedList.covered, ["A"]);
+assert.equal(recordedList.coverage!.A, COVERAGE_ENOUGH);
+assert.equal(recordedList.score!.A, 3);
 assert.equal(ordinaryIntervention.toObject().candidateList, undefined);
 
 // ── Driven from a real transcript ───────────────────────────────────────────
@@ -4703,12 +4691,12 @@ const pilotSessions: any[] = JSON.parse(
   readFileSync(join(SERVER_ROOT, "pilot-export.json"), "utf8"),
 );
 
-function replayLiveList(sessionCode: string) {
+function replayCandidateList(sessionCode: string) {
   const session = pilotSessions.find((entry) => entry.sessionCode === sessionCode);
   assert.ok(session, `${sessionCode} is missing from the pilot export`);
   const human: string[] = [];
   const ai: string[] = [];
-  const states: { seq: number; live: string[] }[] = [];
+  const states: { seq: number; live: string[]; covered: string[] }[] = [];
   for (const message of session.messages) {
     for (const id of extractHumanTraitsFast({ messageText: message.content }).acceptedIds) {
       const into = message.senderRole === "ai" ? ai : human;
@@ -4716,38 +4704,46 @@ function replayLiveList(sessionCode: string) {
     }
     const revealStats = boardOf(human);
     revealStats.aiSurfacedIds = [...ai];
-    states.push({ seq: message.seq, live: computeCandidateList(revealStats).live });
+    const state = computeCandidateList(revealStats);
+    states.push({ seq: message.seq, live: state.live, covered: state.covered });
   }
   return states;
 }
 
-const converging = replayLiveList("T-C3-007");
+// A candidate never returns to the list, because coverage never falls. That is
+// what replaces the old rule's reopening argument: there is nothing to reopen.
+for (const sessionCode of ["T-C3-007", "T-C1-016", "T-C2-001"]) {
+  const states = replayCandidateList(sessionCode);
+  for (const [index, state] of states.entries()) {
+    if (index === 0) continue;
+    for (const candidate of state.live) {
+      assert.ok(
+        states[index - 1]!.live.includes(candidate),
+        `${sessionCode} seq ${state.seq}: a candidate re-entered a list that only shrinks`,
+      );
+    }
+  }
+}
+
+// T-C1-016 is the session the old rule failed on: it set the pooled answer
+// aside at coverage 4 and score 0. Against a bar that means "something unshared
+// has been said", that session never cleared it for anybody — the group's whole
+// board stayed inside what a single card could already hold. The old rule
+// eliminated the right answer out of a discussion that had pooled nothing.
+const previouslyDropped = replayCandidateList("T-C1-016");
+assert.deepEqual(
+  previouslyDropped.at(-1)!.covered,
+  [],
+  "T-C1-016 pooled nothing unshared about any candidate",
+);
+assert.deepEqual(previouslyDropped.at(-1)!.live, ["A", "B", "C", "D"]);
+
+// The list is allowed to empty, and that is the signal the group may close.
+const converging = replayCandidateList("T-C3-007");
 assert.deepEqual(
   converging.at(-1)!.live,
-  ["C"],
-  "T-C3-007 narrows to the pooled answer as its board fills",
-);
-// Nothing is carried between turns, so a candidate returns the moment new
-// information puts it back. This session does that three times.
-const reEntries = converging.filter(
-  (state, index) =>
-    index > 0 && state.live.some((c) => !converging[index - 1]!.live.includes(c)),
-);
-assert.ok(
-  reEntries.length >= 1,
-  "a candidate re-enters the list when new information arrives, with no reopening path",
-);
-
-// The finding this issue exists to produce. In T-C1-016 the pooled answer is
-// the best-covered candidate on the board and is still set aside, because its
-// shared traits are its misses — the coverage clause protects a candidate that
-// is behind, and C is ahead. Recorded here rather than argued: the thresholds
-// do not survive this session, and issue 03 is what has to answer for it.
-const droppedTheAnswer = replayLiveList("T-C1-016");
-assert.deepEqual(
-  droppedTheAnswer.at(-1)!.live,
-  ["A", "B", "D"],
-  "T-C1-016 sets the pooled answer aside — the case issue 03 must not inherit",
+  [],
+  "T-C3-007 pooled something unshared about all four, so nothing is outstanding",
 );
 
 // ── Shadow only ─────────────────────────────────────────────────────────────

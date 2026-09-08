@@ -30,6 +30,18 @@ plus information volume, on the very DV that measures information.
 
 Once per session. After narrowing, before the close.
 
+## Why this move still reads `score` when the list no longer does
+
+`docs/adr/0009` took `score` out of the candidate list because a
+shared-dominated board ranks the candidates backwards — the pooled answer looks
+worst. This move is the one place that inversion is useful: the candidate that
+looks weakest on such a board is the one the group is about to lose, and arguing
+for it is exactly the debiasing step this issue declares itself to be.
+
+The same fact makes the direction load-bearing. Defending the apparent loser is
+safe; eliminating it is what `0009` withdrew. This issue may read `score` to
+choose who to defend, and may never read it to choose who to drop.
+
 ## What must not regress
 
 - `newTraitIds` for this turn is empty; a non-empty one fails the turn

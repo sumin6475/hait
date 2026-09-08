@@ -812,7 +812,14 @@ generated turn. Every guard, because none is recorded. The narrowing trajectory
 the leader frame is designed for: the group swept A, B, C, D in order and
 tallied, so no candidate was ever set aside mid-discussion.
 
-**What it says about the removal rule.** Applying
+**What it says about the removal rule.** *(The rule applied below was withdrawn
+the same day by `docs/adr/0009`; the reading is kept because it is what the
+session was read against at the time. Against the replacement — a candidate
+leaves the list at coverage 5, where something beyond the shared four must be on
+the board — this session says: at seq 4 no candidate had anything at all, so the
+group's move to eliminate would have met a coverage shortfall; and at the close
+all four stand at 7 or more, so nothing was outstanding and the leader would have
+had nothing to raise.)* Applying
 `docs/adr/0008`'s clauses retrospectively: at seq 4 no candidate reaches
 coverage 4, so none could be set aside — the group's own move would have been
 resisted. At the close, D stands at coverage 7 against a best of 10, so D remains

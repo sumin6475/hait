@@ -25,6 +25,18 @@ This property was already present in the code and is now depended on:
 `surfacedByCandidate` reads human `revealedIds` ∪ `aiSurfacedIds`, and
 `poolingTally.ts:125` notes that unspoken Z is in neither.
 
+## The removal rule below is superseded
+
+**Amendment, 2026-09-08.** The rule stated in this section reads `score`, and
+`0009` withdraws it: the dataset makes board score a sign-inverted estimate of
+the pooled score while the board is shared-dominated, so no threshold on it can
+be safe. A candidate now leaves the list on coverage alone. The section is kept
+because the reasoning that follows it — what the middle clause was for, and why
+the answer's shape produces it — is what `0009` argues from.
+
+The decision this ADR exists for is unaffected: the list is computed from the
+board and never from Alex's unspoken profile.
+
 ## The removal rule, and the clause that matters
 
 A candidate leaves the list only when its coverage is at least 4, its coverage is

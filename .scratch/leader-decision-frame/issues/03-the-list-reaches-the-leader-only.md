@@ -20,8 +20,10 @@ than guarded. The peer is made **passive**.
 
 ## Where each piece goes
 
-- The deterministic block — board, coverage, score, and for the leader the live
-  list — is injected identically into the Judge and into generation.
+- The deterministic block — board, coverage, and for the leader the live list —
+  is injected identically into the Judge and into generation. `score` is
+  recorded but is not in the block: `docs/adr/0009` keeps it out of anything
+  that decides what the group works on next.
 - *What may be done with it* goes in the Judge's role goal.
 - *How it is said* goes in the route prompts.
 
@@ -58,3 +60,18 @@ session shape the study exists to produce. Whatever else 03 does, it does not
 start by handing the leader the rule as written. The replay is a weak instrument
 — pre-repair architecture, deterministic keyword extractor — so issue 01's
 sessions are still the evidence; this says what to look for in them.
+
+### Resolved: the rule was redesigned before this issue starts, 2026-09-08
+
+`docs/adr/0009` replaces the score-based removal rule with coverage alone. What
+reaches the leader here is therefore a list of candidates the group has not
+pooled anything about — where attention is still owed — and not a ranking.
+
+Two consequences for this issue. The list can no longer express a verdict, so
+the risk this comment was opened about is gone at the source rather than guarded
+against downstream. And the leader's move on it changes wording: not "let's set
+C aside" but "nobody has said anything unshared about D yet", which is the
+discussion management `0007` licensed in the first place.
+
+`score` still reaches one place, and only one: the weakest-candidate defence in
+issue 05, where the inversion runs in the protective direction.
