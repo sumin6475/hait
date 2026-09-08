@@ -33,6 +33,12 @@ const messageSchema = new mongoose.Schema(
 
     //이 메시지가 공유한 InfoItem.itemId
     sharedInfoIds: [{ type: String }],
+    // [Issue 15] Trait ids the deterministic matcher found and the bounded
+    // verifier then declined. Without this a declined candidate is silent and
+    // terminal: T-C2-045 lost two traits that way, and the only way to learn it
+    // had happened was to re-run the matcher over an export by hand. Pool
+    // identifiers only — no message content, as everywhere else.
+    declinedTraitIds: { type: [String], default: undefined },
   },
   { timestamps: true },
 );

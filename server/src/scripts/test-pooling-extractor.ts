@@ -52,6 +52,56 @@ assert.deepEqual(quotedNote.acceptedIds, []);
 assert.deepEqual(quotedNote.verificationCandidates.map((candidate) => candidate.traitId), ["A_p4"]);
 assert.deepEqual(ids('"Candidate A is very well organized."', "Y"), ["A_p4"]);
 assert.deepEqual(ids("I heard Candidate B is good at multitasking.", "X"), []);
+
+// --- Issue 15: a quotation is not automatically reported speech --------------
+//
+// T-C2-045 seq 33. A participant wrote the trait in quotation marks with no
+// attribution — quoting a phrase off their own card — and the quote alone
+// deferred it. The bounded verifier then declined, so a trait that was said
+// aloud reached no record at all: not `sharedInfoIds`, not the pooling DV, not
+// the count Alex read back to the group.
+assert.deepEqual(
+  ids(
+    'I am leaning towards Candidate B. Their other negative quality "has a below-average memory for numbers" is the one thing against them.',
+    "Y",
+  ),
+  ["B_n3"],
+  "a participant quoting their own card is disclosing it",
+);
+// Attribution is what makes a quote reported speech, and it still suppresses.
+assert.deepEqual(ids('They said Candidate B is "considered arrogant".', "Z"), []);
+assert.deepEqual(
+  ids('Candidate B, according to my notes, "gossips about coworkers".', "X"),
+  [],
+  "an explicit attribution still defers",
+);
+const quotedWithVerb = extractHumanTraitsFast({
+  messageText: 'My note says: "Candidate A is very well organized."',
+  assignedProfile: "Y",
+});
+assert.deepEqual(quotedWithVerb.acceptedIds, [], "a reporting verb still defers, quote or not");
+
+// --- Issue 15: an ordinary inflection is the same trait ----------------------
+//
+// T-C2-045 seq 36. Alex asserted the trait flatly and wrote "not toleratING
+// criticism" where the registry holds "not tolerate criticism". A near-match, so
+// verification, so nothing — on Alex's own output, whose contract requires it to
+// preserve a trait's key wording and which inflected it anyway.
+assert.deepEqual(
+  ids("Candidate A not tolerating criticism is the real risk here.", "X"),
+  ["A_n1"],
+);
+assert.deepEqual(
+  ids("Candidate A does not tolerate criticism.", "X"),
+  ["A_n1"],
+  "the form that already worked still works",
+);
+// The hypothetical that raised it first is still not a disclosure.
+assert.deepEqual(
+  ids("Also, if A does a technical mistake and he does not tolerate criticism?! what happens?", "X"),
+  [],
+  "a hypothetical question surfaces nothing, quote rule or no quote rule",
+);
 const typoCandidate = extractHumanTraitsFast({ messageText: "Candidate D is arogant.", assignedProfile: "X" });
 assert.deepEqual(typoCandidate.acceptedIds, []);
 assert.deepEqual(typoCandidate.verificationCandidates, [
@@ -184,21 +234,23 @@ const c2037Seq18 = extractHumanTraitsFast({
   messageText: "I agree that he does have positive points. I eliminated Candidate C easily, but then it was kind of a toss-up for the other 3. I chose B because a cool head is very important for a pilot and I like his reliability. I feel that Candidate A's \"recognizing dangerous situations\" is almost like Candidate B's cool head, so they're equal on that point.",
   assignedProfile: "Y",
 });
-assert.deepEqual(c2037Seq18.acceptedIds, ["B_p1", "B_p2"]);
-assert.deepEqual(
-  c2037Seq18.verificationCandidates.map((candidate) => candidate.traitId),
-  ["A_p1"],
-);
+// CHANGED 2026-09-08 (issue 15). `A_p1` moved from deferred to accepted. The
+// participant quotes the trait phrase and asserts a comparison about Candidate
+// A with no attribution anywhere — that is a disclosure, and the quote marks
+// alone were deferring it.
+assert.deepEqual(c2037Seq18.acceptedIds, ["A_p1", "B_p1", "B_p2"]);
+assert.deepEqual(c2037Seq18.verificationCandidates, []);
 
 const c2037Seq26 = extractHumanTraitsFast({
   messageText: "I feel that not being open to new ideas (Candidate A) is a very negative quality, while gossiping is not that bad (and everyone does it), so I'm still leaning towards Candidate B. His/her other negative quality \"has a below-average memory for numbers\" is the only thing that I think would make him/her a bad candidate at this point.",
   assignedProfile: "Y",
 });
-assert.deepEqual(c2037Seq26.acceptedIds, ["A_n4"]);
-assert.deepEqual(
-  c2037Seq26.verificationCandidates.map((candidate) => candidate.traitId),
-  ["B_n3"],
-);
+// CHANGED 2026-09-08 (issue 15). This is T-C2-045 seq 33, and the assertion was
+// recording the defect: `B_n3` deferred on quote marks alone, the bounded
+// verifier then declined, and a trait said aloud reached no record at all. The
+// suite had the failing message and asserted the failure.
+assert.deepEqual(c2037Seq26.acceptedIds, ["A_n4", "B_n3"]);
+assert.deepEqual(c2037Seq26.verificationCandidates, []);
 
 const c2037Seq19 = extractHumanTraitsFast({
   messageText: "I feel that Candidate D's positive qualities are kind of generic and not specific to a pilot, while his negative traits would not be good for a pilot (quick-tempered).",

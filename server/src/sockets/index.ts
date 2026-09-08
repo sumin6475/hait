@@ -323,20 +323,36 @@ export function registerSocketHandlers(io: IO) {
 
           try {
             const verification = await verificationPromise;
+            // What the matcher found and the verifier did not confirm. Recorded
+            // rather than dropped: a declined candidate used to leave no trace
+            // at all, and two traits were lost that way in T-C2-045.
+            const declined = [
+              ...new Set(
+                fastTraits.verificationCandidates
+                  .map((candidate) => candidate.traitId)
+                  .filter(
+                    (id) => !verification.ids.includes(id) && !fastTraits.acceptedIds.includes(id),
+                  ),
+              ),
+            ];
             const [verifiedNewCount] = await Promise.all([
               updateRevealStats(sessionId, verification.ids, nextSeq),
-              verification.ids.length
+              verification.ids.length || declined.length
                 ? Message.updateOne({
                     _id: savedMessage._id,
                   }, {
-                    $addToSet: { sharedInfoIds: { $each: verification.ids } },
+                    ...(verification.ids.length
+                      ? { $addToSet: { sharedInfoIds: { $each: verification.ids } } }
+                      : {}),
+                    ...(declined.length ? { $set: { declinedTraitIds: declined } } : {}),
                   })
                 : Promise.resolve(),
             ]);
             const ids = [...new Set([...fastTraits.acceptedIds, ...verification.ids])];
             const coverageDetail =
               `coverage: surfaced ${ids.length}, newly recorded ${fastNewCount + verifiedNewCount}, ` +
-              `verification=${verification.status}`;
+              `verification=${verification.status}` +
+              (declined.length ? `, declined=${declined.join(",")}` : "");
             traceTurnEvent({ sessionId, seq: nextSeq, detail: coverageDetail });
             log.info(`[pooling] ${coverageDetail} role=${role} seq=${nextSeq} session=${sessionCode}`);
             if (verification.status === "failed") {

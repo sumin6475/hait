@@ -118,13 +118,27 @@ function hasAmbiguousAssertionContext(
   const { clause, prefix } = evidenceContext(text, evidenceStart, evidenceLength);
   const uncertainty = /\b(?:if|maybe|might|could|would|whether|suppose|supposing|assuming)\b/i;
   const reported = /\b(?:heard|reported|was told|were told|according to|said|says|claims?|claimed)\b/i;
+  // [Issue 15] Quote marks alone no longer defer; an attributed quote still does.
+  //
+  // The rule was written to stop reported speech — "They said Candidate B is
+  // 'considered arrogant'" — from surfacing a trait, and what makes that
+  // reported is the attribution, not the marks. `reported` below cannot carry
+  // the load on its own because it reads the *clause*, and an attribution often
+  // sits in an earlier one ("My note says: ..."), so quoted evidence is checked
+  // against everything before it instead.
+  //
+  // T-C2-045 seq 33 was deferred on the marks alone, the bounded verifier
+  // declined, and a trait said aloud reached no record at all — not
+  // `sharedInfoIds`, not the pooling DV, not the count read back to the group.
   const quotePrefix = text.slice(0, evidenceStart).replace(/[^"“”]/g, "");
   const evidenceInsideQuote = quotePrefix.length % 2 === 1;
   const trimmed = text.trim();
   const wholeMessageQuote = /^(?:"|“)[\s\S]*(?:"|”)$/.test(trimmed);
+  const attributedQuote =
+    evidenceInsideQuote && !wholeMessageQuote && reported.test(text.slice(0, evidenceStart));
   return (
     clause.includes("?") ||
-    (evidenceInsideQuote && !wholeMessageQuote) ||
+    attributedQuote ||
     uncertainty.test(prefix) ||
     reported.test(prefix) ||
     /\b(?:i\s+(?:do\s+not|don't)\s+(?:think|believe)|no evidence|not true|disagree|dispute|deny|denies|denied)\b/i.test(prefix)

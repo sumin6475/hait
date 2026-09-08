@@ -48,6 +48,12 @@ issues 12, 13 and 14, all filed from live sessions on 2026-09-08. Nine are done
 and one records a decision not to act. Start at the lowest-numbered issue whose
 blockers are done.
 
+**The pooling DV changed on 2026-09-08.** Issue 15 corrected the extractor, which
+means `sharedInfoIds` and `revealStats` from sessions after that date are not
+directly comparable with earlier ones — the earlier ones under-record. T-C2-045
+recorded 3 matches and 3 misses for each finalist where the board held 3 and 4.
+Say so before comparing any pooling figure across that line.
+
 **Issues 12 and 13 are one failure at two depths** — a reply to Alex that goes
 unanswered. 12 is the Observer not seeing it; 13 is everything below the Observer
 losing it anyway. Neither blocks the other, and T-C2-045 showed that fixing 12

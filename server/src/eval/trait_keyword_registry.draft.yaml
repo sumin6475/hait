@@ -11,6 +11,12 @@
 # entries approved, zero differences in candidate, valence, profiles, trait
 # text, core phrases, accepted variants, or fuzzy policy.
 #
+# Corrected 2026-09-08 (issue 15) after T-C2-045: eight entries gained the
+# gerund of their head verb. A trait gets referred to that way in running prose
+# — "A not tolerating criticism" — and the registry held only the finite forms,
+# so the matcher fell to a near-match, deferred, and the bounded verifier
+# declined. These are keyword corrections; the pool is still 40 traits.
+#
 # This file is still not imported by runtime code. `server/src/lib/traitData.ts` remains
 # the canonical source for candidate, valence, profile ownership, and trait text.
 # The copied metadata below is the review context each entry was approved in.
@@ -100,7 +106,7 @@ traits:
     profiles: [X]
     canonical_text: "does not tolerate criticism"
     core_phrases: ["does not tolerate criticism", "not tolerate criticism"]
-    accepted_variants: ["doesn't tolerate criticism", "doesnt tolerate criticism", "cannot tolerate criticism", "can't tolerate criticism", "cannot take criticism", "not tolerant on criticism"]
+    accepted_variants: ["doesn't tolerate criticism", "doesnt tolerate criticism", "cannot tolerate criticism", "can't tolerate criticism", "cannot take criticism", "not tolerant on criticism", "not tolerating criticism"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Do not treat a speaker's criticism of A as this trait."
     review_status: approved
@@ -166,7 +172,7 @@ traits:
     profiles: [X, Y, Z]
     canonical_text: "keeps a cool head in crisis situations"
     core_phrases: ["keeps a cool head in crisis situations", "cool head in crisis situations"]
-    accepted_variants: ["keep a cool head in a crisis", "keeps a cool head in crises", "cool head"]
+    accepted_variants: ["keep a cool head in a crisis", "keeps a cool head in crises", "cool head", "keeping a cool head in crisis situations", "keeping a cool head"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "'Cool head' is accepted only with explicit Candidate B attribution and a crisis/operational context; do not match the idiom generically."
     review_status: approved
@@ -177,7 +183,7 @@ traits:
     profiles: [X, Y, Z]
     canonical_text: "you can rely on 100%"
     core_phrases: ["rely on 100%", "100% reliable"]
-    accepted_variants: ["can be relied on 100%", "100 percent reliable", "rely on completely", "reliability", "rely on him/her 100%", "rely on him 100%", "rely on them 100%", "rely on b 100%"]
+    accepted_variants: ["can be relied on 100%", "100 percent reliable", "rely on completely", "reliability", "rely on him/her 100%", "rely on him 100%", "rely on them 100%", "rely on b 100%", "relying on him/her 100%"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "'Reliability' is accepted only with explicit Candidate B attribution; generic agreement such as 'I rely on that' is not a candidate trait."
     review_status: approved
@@ -276,7 +282,7 @@ traits:
     profiles: [X, Y, Z]
     canonical_text: "can make the right decisions very quickly"
     core_phrases: ["make the right decisions very quickly", "right decisions very quickly"]
-    accepted_variants: ["makes the right decisions very quickly", "can make correct decisions very quickly", "make the right decision very quickly", "make right decisions quickly", "right decisions quickly"]
+    accepted_variants: ["makes the right decisions very quickly", "can make correct decisions very quickly", "make the right decision very quickly", "make right decisions quickly", "right decisions quickly", "making the right decisions very quickly"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Generic quick decision-making without correctness may be broader than the source trait."
     review_status: approved
@@ -298,7 +304,7 @@ traits:
     profiles: [X]
     canonical_text: "promotes a good atmosphere within the crew"
     core_phrases: ["good atmosphere within the crew", "promotes a good atmosphere"]
-    accepted_variants: ["creates a good atmosphere within the crew", "promotes a good crew atmosphere", "keeps the crew atmosphere good", "promotes good atmosphere with the crew"]
+    accepted_variants: ["creates a good atmosphere within the crew", "promotes a good crew atmosphere", "keeps the crew atmosphere good", "promotes good atmosphere with the crew", "promoting a good atmosphere within the crew"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A good atmosphere in the current chat is not the candidate trait."
     review_status: approved
@@ -331,7 +337,7 @@ traits:
     profiles: [Z]
     canonical_text: "puts the safety of people above everything"
     core_phrases: ["safety of people above everything", "puts people's safety above everything"]
-    accepted_variants: ["puts the safety of people in their care above everything else", "puts people's safety first"]
+    accepted_variants: ["puts the safety of people in their care above everything else", "puts people's safety first", "putting people's safety above everything", "putting people's safety first"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Generic statements that safety is important are job criteria, not candidate disclosures."
     review_status: approved
@@ -386,7 +392,7 @@ traits:
     profiles: [X, Y, Z]
     canonical_text: "can react adequately to unforeseen events"
     core_phrases: ["react adequately to unforeseen events", "unforeseen events"]
-    accepted_variants: ["reacts adequately to unforeseen events", "handles unforeseen events adequately"]
+    accepted_variants: ["reacts adequately to unforeseen events", "handles unforeseen events adequately", "reacting adequately to unforeseen events"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "The short phrase needs reaction/handling ability in the assertion."
     review_status: approved
@@ -397,7 +403,7 @@ traits:
     profiles: [X, Y, Z]
     canonical_text: "can concentrate very well"
     core_phrases: ["concentrate very well"]
-    accepted_variants: ["concentrates very well", "very good concentration"]
+    accepted_variants: ["concentrates very well", "very good concentration", "concentrating very well"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Keep distinct from C_p7 sustained attention."
     review_status: approved
