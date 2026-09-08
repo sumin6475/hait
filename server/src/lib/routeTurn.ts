@@ -24,7 +24,11 @@ import {
 } from "./routeContext.js";
 import type { ConversationLedgerState, ReducerTransitionAudit } from "./conversationLedger.js";
 import { transcriptLabel } from "./labels.js";
-import { extractHumanTraitsFast, verifyHumanTraitCandidates } from "./poolingExtractor.js";
+import {
+  extractHumanTraitsFast,
+  verifyHumanTraitCandidates,
+  type FastTraitCandidate,
+} from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
@@ -177,6 +181,61 @@ export function routeGenerationGuard(
     maxWords: guard.maxWords,
     revealBudget: true,
     reason: "route_reveal_budget",
+  };
+}
+
+export interface OutputGuardAudit {
+  /**
+   * Whether any output scope guard was in force at generation. False is a
+   * recorded fact, not an absence — the T-C2-041 seq 4 question was
+   * unanswerable precisely because a turn with no guard and a turn whose guard
+   * passed left the same empty record.
+   */
+  inForce: boolean;
+  reason?: string;
+  candidate?: Candidate;
+  revealBudget?: boolean;
+  maxTraitIds?: number;
+  maxRestatedTraitIds?: number;
+  maxSentences?: number;
+  maxWords?: number;
+  /**
+   * What the deterministic matcher found in the broadcast message. Pool
+   * identifiers only: no participant text, and no message content, enters this
+   * record. The matcher is network-free, which is why it can run here at all.
+   */
+  traitIds: string[];
+  /** The bound that was violated, when one was. */
+  violation?: string;
+}
+
+/**
+ * What Alex was allowed to reveal on this turn, and what it actually revealed.
+ *
+ * An enforcement mechanism that cannot be audited from its own output fails
+ * silently, and this one already did: in T-C1-027 three messages shipped six to
+ * eight traits each against a guard correctly set to one, recorded no violation,
+ * and were found only by rebuilding the turn's context by hand.
+ */
+export function outputGuardAudit(input: {
+  guard: RouteOutputScopeGuard | undefined;
+  broadcastTraitIds: string[];
+  violation?: string;
+}): OutputGuardAudit {
+  const { guard } = input;
+  return {
+    inForce: Boolean(guard),
+    ...(guard?.reason !== undefined ? { reason: guard.reason } : {}),
+    ...(guard?.candidate ? { candidate: guard.candidate } : {}),
+    ...(guard?.revealBudget ? { revealBudget: true } : {}),
+    ...(guard?.maxTraitIds !== undefined ? { maxTraitIds: guard.maxTraitIds } : {}),
+    ...(guard?.maxRestatedTraitIds !== undefined
+      ? { maxRestatedTraitIds: guard.maxRestatedTraitIds }
+      : {}),
+    ...(guard?.maxSentences !== undefined ? { maxSentences: guard.maxSentences } : {}),
+    ...(guard?.maxWords !== undefined ? { maxWords: guard.maxWords } : {}),
+    traitIds: input.broadcastTraitIds,
+    ...(input.violation ? { violation: input.violation } : {}),
   };
 }
 
@@ -527,6 +586,15 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     return { ok: false, error: "superseded_during_generation" };
   }
 
+  // What the matcher found in the message that is about to go out. Computed once
+  // here, then reused by the ledger update below, so recording the guard's
+  // evidence costs no extra pass and — because the matcher is deterministic and
+  // network-free — puts no model call back on the broadcast path.
+  const broadcastExtraction = extractedAiIds
+    ? { acceptedIds: extractedAiIds, verificationCandidates: [] as FastTraitCandidate[] }
+    : extractHumanTraitsFast({ messageText: result.parsed.content });
+  const broadcastTraitIds = [...new Set(broadcastExtraction.acceptedIds)];
+
   const nextSeq = await allocSeq(input.sessionId);
   const savedMessage = await Message.create({
     sessionId: input.sessionId,
@@ -589,6 +657,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       requestIntentSource: context.requestIntent.source,
       outputScopeRepaired: Boolean(generated.scopeRepair),
       outputScopeViolation: generated.scopeRepair?.violation,
+      outputGuard: outputGuardAudit({
+        guard: generationGuard,
+        broadcastTraitIds,
+        violation: generated.scopeRepair?.violation,
+      }),
       internalMetadataRepaired: Boolean(generated.internalMetadataRepair),
       internalMetadataViolation: generated.internalMetadataRepair?.violation,
       repairAudit: generated.repairAudit,
@@ -623,9 +696,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         input.judgeEvidence === "relevant_unsurfaced_information" &&
         input.selectedTraitId
           ? { acceptedIds: [input.selectedTraitId], verificationCandidates: [] }
-          : extractedAiIds
-            ? { acceptedIds: extractedAiIds, verificationCandidates: [] }
-            : extractHumanTraitsFast({ messageText: result.parsed.content });
+          : broadcastExtraction;
       const ids = deterministic.acceptedIds;
       await Promise.all([
         updateAiSurfaced(input.sessionId, ids, savedMessage.seq),

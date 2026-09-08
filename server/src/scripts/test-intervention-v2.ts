@@ -63,6 +63,7 @@ import {
   deterministicGreetingContent,
   routeGenerationGuard,
   routeGenerationLimits,
+  outputGuardAudit,
   silenceReasonForGenerationFailure,
 } from "../lib/routeTurn.js";
 import {
@@ -244,6 +245,91 @@ const repairedIntervention = new AIIntervention({
     ],
   },
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// The reveal budget, recorded so it can be audited from the export.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// T-C2-041 seq 4 named all four candidates on Alex's second turn — the exact
+// shape the budget exists to prevent — and the record could not say whether the
+// guard was set and passed, was set and violated, or was never set for that
+// route. Three possibilities, one absence. The third turned out to be the true
+// one, and it took rebuilding the turn by hand to find out.
+const unguardedAudit = outputGuardAudit({ guard: undefined, broadcastTraitIds: ["A_p1"] });
+assert.deepEqual(
+  unguardedAudit,
+  { inForce: false, traitIds: ["A_p1"] },
+  "a turn with no guard records that it had none, which is the case that hid the defect",
+);
+const guardedAudit = outputGuardAudit({
+  guard: {
+    candidate: null,
+    maxTraitIds: 1,
+    maxRestatedTraitIds: 2,
+    maxSentences: 3,
+    maxWords: 80,
+    revealBudget: true,
+    reason: "route_reveal_budget",
+  },
+  broadcastTraitIds: ["A_p1", "B_p2", "C_p1", "D_p1"],
+});
+assert.deepEqual(guardedAudit, {
+  inForce: true,
+  reason: "route_reveal_budget",
+  revealBudget: true,
+  maxTraitIds: 1,
+  maxRestatedTraitIds: 2,
+  maxSentences: 3,
+  maxWords: 80,
+  traitIds: ["A_p1", "B_p2", "C_p1", "D_p1"],
+});
+assert.notDeepEqual(
+  guardedAudit,
+  unguardedAudit,
+  "a guard that passed is distinguishable from a guard that was never set",
+);
+assert.equal(
+  outputGuardAudit({
+    guard: { candidate: "A", maxTraitIds: 1, reason: "focus_depth" },
+    broadcastTraitIds: [],
+    violation: "too_many_traits",
+  }).violation,
+  "too_many_traits",
+  "and the bound that was violated is named",
+);
+// Trait ids are pool identifiers. Nothing the participant wrote may reach a
+// record that leaves the database.
+for (const value of Object.values(guardedAudit).flat()) {
+  assert.ok(
+    typeof value !== "string" || /^(?:[ABCD]_[pn]\d+|route_reveal_budget|focus_depth)$/.test(value),
+    `the audit carries identifiers only, never message text: ${String(value)}`,
+  );
+}
+const auditedIntervention = new AIIntervention({
+  sessionId: "64b000000000000000000001",
+  turnIndex: 4,
+  triggerReason: "push",
+  decision: "speak",
+  outputGuard: guardedAudit,
+});
+assert.equal(auditedIntervention.validateSync(), undefined);
+assert.deepEqual(auditedIntervention.toObject().outputGuard!.traitIds, [
+  "A_p1",
+  "B_p2",
+  "C_p1",
+  "D_p1",
+]);
+assert.equal(auditedIntervention.toObject().outputGuard!.maxRestatedTraitIds, 2);
+assert.equal(
+  new AIIntervention({
+    sessionId: "64b000000000000000000001",
+    turnIndex: 5,
+    triggerReason: "push",
+    decision: "speak",
+    outputGuard: unguardedAudit,
+  }).toObject().outputGuard!.inForce,
+  false,
+);
+
 assert.equal(repairedIntervention.validateSync(), undefined);
 const storedRepairAudit = repairedIntervention.toObject().repairAudit!;
 assert.equal(storedRepairAudit.attempts.length, 2);

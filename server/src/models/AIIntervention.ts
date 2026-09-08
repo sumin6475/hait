@@ -29,8 +29,34 @@ const outputRepairGuardSchema = new mongoose.Schema(
     candidate: { type: String, enum: ["A", "B", "C", "D"] },
     reason: { type: String, required: true },
     maxTraitIds: { type: Number },
+    maxRestatedTraitIds: { type: Number },
+    maxSentences: { type: Number },
+    maxWords: { type: Number },
     allowedTraitIds: { type: [String], default: undefined },
     requiredTraitId: { type: String },
+  },
+  { _id: false },
+);
+
+// What Alex was allowed to reveal on this turn, and what it revealed.
+//
+// `inForce: false` is a recorded fact. T-C2-041 seq 4 named all four candidates
+// on Alex's second turn and the export could not distinguish a guard that passed
+// from a guard that was never set, because both left nothing behind. Trait ids
+// are pool identifiers; no participant text and no message content is written
+// here.
+const outputGuardSchema = new mongoose.Schema(
+  {
+    inForce: { type: Boolean, required: true },
+    reason: { type: String },
+    candidate: { type: String, enum: ["A", "B", "C", "D"] },
+    revealBudget: { type: Boolean },
+    maxTraitIds: { type: Number },
+    maxRestatedTraitIds: { type: Number },
+    maxSentences: { type: Number },
+    maxWords: { type: Number },
+    traitIds: { type: [String], default: [] },
+    violation: { type: String },
   },
   { _id: false },
 );
@@ -193,6 +219,7 @@ const aiInterventionSchema = new mongoose.Schema(
     outputScopeCandidate: { type: String },
     outputScopeRepaired: { type: Boolean },
     outputScopeViolation: { type: String },
+    outputGuard: { type: outputGuardSchema, default: undefined },
     // Internal subject-control audit. These fields are never included in the visible message.
     focusCandidate: { type: String, enum: ["A", "B", "C", "D"] },
     focusBasis: { type: String },

@@ -40,6 +40,11 @@ export interface OutputRepairAudit {
     candidate: RouteOutputScopeGuard["candidate"];
     reason: RouteOutputScopeGuard["reason"];
     maxTraitIds?: number;
+    // The restated and length bounds were enforced and not recorded, so an
+    // attempt rejected for either read as unexplained in the audit.
+    maxRestatedTraitIds?: number;
+    maxSentences?: number;
+    maxWords?: number;
     allowedTraitIds?: string[];
     requiredTraitId?: string;
   };
@@ -310,6 +315,9 @@ export async function generateScopedRouteMessage(input: {
               candidate: input.guard.candidate,
               reason: input.guard.reason,
               maxTraitIds: input.guard.maxTraitIds,
+              maxRestatedTraitIds: input.guard.maxRestatedTraitIds,
+              maxSentences: input.guard.maxSentences,
+              maxWords: input.guard.maxWords,
               allowedTraitIds: input.guard.allowedTraitIds,
               requiredTraitId: input.guard.requiredTraitId,
             }
@@ -337,6 +345,9 @@ export async function generateScopedRouteMessage(input: {
           candidate: input.guard.candidate,
           reason: input.guard.reason,
           maxTraitIds: input.guard.maxTraitIds,
+          maxRestatedTraitIds: input.guard.maxRestatedTraitIds,
+          maxSentences: input.guard.maxSentences,
+          maxWords: input.guard.maxWords,
           allowedTraitIds: input.guard.allowedTraitIds,
           requiredTraitId: input.guard.requiredTraitId,
         }
