@@ -96,3 +96,27 @@ frequency first, then that distinction.
 
 The general rule this produced is now the sixth entry in the checkpoint's method
 note: **enforcement is not free, and the bar is a demonstrated recurrence.**
+
+### The wider count, 2026-09-08 — still one session, still one instance
+
+The frequency question was re-asked against every source available rather than
+against the two sessions this issue already counted: the 15 entries in
+`docs/measurements.md`, all 21 repair issues, and the 39 non-empty sessions in
+`server/pilot-export.json`. Nothing new was found. The behaviour stands at **one
+occurrence, in one session** (T-C2-045 seq 22), against 0 in T-C1-021 and 0 in
+T-C2-046 over 25 Alex messages.
+
+The pre-repair export cannot raise or lower that: its intervention rows carry no
+`outputGuard`, no `routeKind` and no trait ids, so a promise-then-drop is not
+detectable in it without hand-reading transcripts, and its architecture is not
+the one this issue is about.
+
+For comparison, the behaviours that *did* clear a two-session bar in the same
+count are Alex's length (39 of 39 sessions), a set request answered in the wrong
+shape (5), turns lost to the cooldown (7) and to supersession (5), a message
+naming Alex going unanswered (3), a wrong claim about the board (3), and a peer
+setting the agenda (3).
+
+**On this evidence the issue closes as `wontfix`**, on its own stated bar and on
+the checkpoint's sixth method rule. It is left at `needs-info` because that call
+is the owner's, and two guard events would reopen it.
