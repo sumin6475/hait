@@ -1148,7 +1148,16 @@ export function describeConversationSituation(snapshot: ConversationObserverSnap
   if (thread) {
     lines.push(
       `The active thread is ${thread.threadId}, rooted at message ${thread.rootSeq}, and is ${thread.status}.`,
-      `Its current goal is ${thread.goal.replaceAll("_", " ")}: ${thread.requestedAction || "no additional action description"}.`,
+      // The thread's `requestedAction` is deliberately absent.
+      //
+      // It is a free-text description of what the group was doing, and the
+      // generator receives this paragraph as its picture of the turn. At
+      // T-C1-022 a thread rooted at Alex's own greeting carried "greet
+      // participants", and at seq 10 that line made Alex greet the room again
+      // mid-discussion. The ledger still records it and the audit still reports
+      // it; it just no longer instructs. The goal stays: it is a small enum
+      // naming the kind of project, not an action to perform.
+      `Its current goal is ${thread.goal.replaceAll("_", " ")}.`,
       `Its content scope is ${thread.requestedScope.replaceAll("_", " ")}; candidates: ${thread.candidates.join(", ") || "none specified"}; Alex is ${thread.alexParticipation.replaceAll("_", " ")} in this thread.`,
       `Thread evidence messages: ${thread.evidenceSeqs.join(", ") || thread.rootSeq}.`,
     );

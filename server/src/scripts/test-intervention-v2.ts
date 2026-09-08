@@ -827,6 +827,18 @@ const observerSituation = describeConversationSituation(observerSnapshotForTest)
 assert.match(observerSituation, /thread-10/);
 assert.match(observerSituation, /Candidates A and B|candidates: A, B/i);
 assert.doesNotMatch(observerSituation, /alexRelation|activeThread|fieldConfidence/);
+// The thread's requested action no longer reaches generation.
+//
+// T-C1-022: a thread rooted at Alex's own greeting carried "greet participants"
+// for the whole session, and at seq 10 that line made Alex greet the room again
+// in the middle of the discussion. The goal stays — it is a small enum and it
+// names the kind of project, not an action to perform.
+assert.doesNotMatch(
+  observerSituation,
+  /compare Candidates A and B/,
+  "a free-text description of the thread's opening purpose is not an instruction",
+);
+assert.match(observerSituation, /current goal is answer question/i, "the goal stays");
 assert.equal(
   alignUnifiedJudgeActWithObserver(
     {
@@ -3877,6 +3889,20 @@ assert.equal(
 assert.ok(
   widenedContext.deterministicResponse?.includes("Candidate A"),
   "once both readings agree the D6 template answers the request exactly",
+);
+// The selected opportunity's "Requested action" was the thread's description,
+// not the opportunity's — `selectedOpportunityGenerationContext` reads
+// `thread.requestedAction` — and the block presents it as the sole primary
+// task. That is the line that greeted the room again at T-C1-022 seq 10.
+assert.doesNotMatch(
+  widenedContext.developerPrompt,
+  /Requested action:/,
+  "the thread's description is not the turn's instruction",
+);
+assert.match(
+  widenedContext.developerPrompt,
+  /Source utterance: /,
+  "what to respond to is the message itself, which is current by construction",
 );
 
 // An undirected procedural proposal still widens nothing — the D6 direction

@@ -1802,7 +1802,14 @@ export function buildRouteUserContext(input: {
           `Current trigger message: ${input.selectedOpportunity.currentTriggerSeq}`,
           `Thread: ${input.selectedOpportunity.threadId}`,
           `Targets: ${input.selectedOpportunity.targets.join(", ")}`,
-          `Requested action: ${input.selectedOpportunity.requestedAction || "respond to the selected source utterance"}`,
+          // "Requested action" was the *thread's* description, not the
+          // opportunity's — `selectedOpportunityGenerationContext` reads
+          // `thread.requestedAction` — and this block presents its contents as
+          // the sole primary task. A description of the thread's opening
+          // purpose is the wrong thing to hand a turn as an order. The source
+          // utterance below says what to respond to, and it is current by
+          // construction. The field stays on the context, because the audit
+          // records it.
           `Source utterance: ${input.selectedOpportunity.sourceContent}`,
           "Handle this selected opportunity and the current trigger together. Other open opportunities are context only; do not answer or consume them.",
         ].join("\n")

@@ -1280,6 +1280,50 @@ assert.deepEqual(
   candidateSalienceOrder({ ...salienceThread, focusCandidate: "D", focusBasis: "none" }).slice(0, 1),
   ["C"],
 );
+// --- T-C1-022 seq 10: a thread's requested action is revisable ---------------
+//
+// The ledger already takes a new `requestedAction` from every turn's proposal;
+// what T-C1-022 showed is that the Observer kept describing the thread's opening
+// purpose, and generation received that description as an instruction. The field
+// stays in the ledger and in the audit — it just stops instructing. What must
+// hold either way is that revising it changes nothing else: the thread's id is
+// what opportunity keying depends on.
+const revisedActionState = reduceConversationLedger(
+  salienceState,
+  observerDeltaFromTurn({
+    sessionKey: "T-C2-037-SALIENCE",
+    observerVersion: "test-observer",
+    roster,
+    sourceRole: "humanY",
+    currentTriggerSeq: 9,
+    contextThroughSeq: 9,
+    observation: observation({
+      speechAct: "answer",
+      mentionedCandidates: [],
+      scopeCandidates: ["A", "B", "C", "D"],
+      focusCandidate: null,
+      focusBasis: "none",
+      activeThread: {
+        threadId: "thread-1",
+        rootSeq: 1,
+        status: "open",
+        goal: "compare_information",
+        requestedAction: "settle between the last two candidates",
+        candidates: ["A", "B", "C", "D"],
+        participants: [...roster],
+        expectedResponders: ["humanX", "humanY"],
+        alexParticipation: "invited",
+        evidenceSeqs: [9],
+      },
+    }),
+  }),
+).state;
+const revisedThread = revisedActionState.threads.find((thread) => thread.id === "thread-1")!;
+assert.equal(revisedThread.requestedAction, "settle between the last two candidates");
+assert.equal(revisedThread.id, "thread-1", "thread identity is stable across a revision");
+assert.equal(revisedThread.threadRootSeq, salienceThread.threadRootSeq);
+assert.equal(revisedActionState.threads.length, salienceState!.threads.length);
+
 // A comparison names two candidates, produces no focus, and still ranks.
 assert.deepEqual(
   candidateSalienceOrder({
