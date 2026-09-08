@@ -111,6 +111,15 @@ carries no length fields at all. There is a regression on each.
 Prompt source bumped 1.8.0 → 1.9.0 and recompiled; all 30 registry hashes move,
 which is what a prompt edit is supposed to do.
 
+**Corrected in review.** The first pass deleted the clause outright, which left
+`outputDiscipline` ("Except for greeting, summary, and closing, use at most two
+short sentences") contradicting `unifiedInteractionPolicy` ("use the space needed
+for an explicitly requested complete list") — and asked for two sentences on
+exactly the turns that must enumerate a profile. The exemption is back, sourced
+from the server: "a turn whose server-derived Request scope permits a complete
+list or comparison". The generator no longer judges its own turn; it reads a
+block that only appears when the request machinery put it there.
+
 ### Verbosity
 
 `text.verbosity` sat unused beside `reasoning.effort`, which was already set. It

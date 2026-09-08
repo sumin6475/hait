@@ -10,6 +10,9 @@ import {
   lastHumanDiscussionCandidate,
 } from "./informationPools.js";
 import { deriveSignalFromLLM, type JudgeExchangeClass } from "./signalJudge.js";
+// The one detector that guards against the English article. `candidateMentions`
+// below is the request classifier's looser reading and predates it.
+import { literalCandidateMentions } from "./conversationObserver.js";
 
 export type { JudgeExchangeClass } from "./signalJudge.js";
 
@@ -63,6 +66,11 @@ export function taskGroundingSignal(content: string): TaskGroundingSignal {
  * Matched against Alex's own earlier messages, never a participant's. The forms
  * below are fixed strings, so a signature over their invariant wording is exact
  * enough for the one thing it decides: which of two forms this turn takes.
+ *
+ * The intervention record already stores `taskGroundingSignal` per turn and would
+ * answer this more directly, but this seam receives the transcript and not the
+ * audit rows. Reading them here would put a database round trip on the context
+ * build for a choice between two sentences.
  */
 const TASK_GROUNDING_SIGNATURE =
   /extra weight|counting equally|counts the same|does not outweigh|distributed across the board|나뉘어 있어서|같은 비중|별도 가중치|추가 가중치/i;
@@ -1995,7 +2003,7 @@ export function buildRouteUserContext(input: {
   // point about the board, and taking the template there is what left an
   // elimination unanswered at T-C2-034 seq 5 and T-C2-039 seq 5-6.
   const groundingTurnNamesCandidate =
-    (input.observedMentionedCandidates ?? [...candidateMentions(requestBundle.content)]).length > 0;
+    (input.observedMentionedCandidates ?? literalCandidateMentions(requestBundle.content)).length > 0;
   const groundingInstruction =
     groundingSignal !== "none" && groundingTurnNamesCandidate
       ? taskGroundingInstructionBlock({

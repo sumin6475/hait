@@ -5,6 +5,7 @@ import {
   CONVERSATION_LEDGER_VERSION,
   candidateSalienceOrder,
   createConversationLedgerState,
+  describeConversationLedger,
   humanFloorHeld,
   observerDeltaFromTurn,
   opportunityMayBypassCooldown,
@@ -1318,6 +1319,22 @@ const revisedActionState = reduceConversationLedger(
     }),
   }),
 ).state;
+// And the description does not reach generation. `describeConversationLedger` is
+// what the `ledger_active` path passes as `conversationSituation`, so leaving the
+// requested action in this prose would have left the T-C1-022 seq 10 shape in
+// place on the path that actually runs. The Judge loses nothing: its prompt
+// serializes the whole decision ledger beside this paragraph.
+const ledgerSituation = describeConversationLedger({
+  ...revisedActionState,
+  foregroundThreadId: "thread-1",
+});
+assert.doesNotMatch(
+  ledgerSituation,
+  /settle between the last two candidates/,
+  "a thread's requested action is not an instruction to the generator",
+);
+assert.match(ledgerSituation, /Its goal is compare_information\./);
+
 const revisedThread = revisedActionState.threads.find((thread) => thread.id === "thread-1")!;
 assert.equal(revisedThread.requestedAction, "settle between the last two candidates");
 assert.equal(revisedThread.id, "thread-1", "thread identity is stable across a revision");

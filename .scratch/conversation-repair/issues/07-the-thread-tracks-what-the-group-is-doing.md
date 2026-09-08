@@ -80,7 +80,10 @@ scope, and — on a selected opportunity — the source utterance itself, which 
 current by construction. The thread description was a stale free-text order on
 top of all of that.
 
-### The two places it reached generation
+### The three places it reached generation
+
+*(Two were found while implementing; the third by review, and it was the one that
+mattered most.)*
 
 **`describeConversationSituation`.** "Its current goal is X: <requestedAction>",
 the paragraph that is the generator's picture of the turn. The goal stays: it is
@@ -99,11 +102,24 @@ produced it.
 generation context, and in `selectedOpportunityRequestedAction` on the
 intervention row. It stops instructing; it does not stop being recorded.
 
-**The Judge.** `describeConversationLedger` still names it, and the legacy Judge
-path serializes `stateAfter` whole, so removing it from the prose would not have
-hidden it anyway. The Judge is deciding whether and how to act with the full
-transcript beside it; generation was receiving it as an order. Those are
-different uses and only one of them was the defect.
+**The Judge.** It still has the field — `interventionJudge` serializes the whole
+decision ledger beside the prose, and the legacy path serializes `stateAfter`
+whole. The Judge is deciding whether and how to act with the full transcript
+beside it; generation was receiving it as an order. Those are different uses and
+only one of them was the defect.
+
+### Corrected in review
+
+The first pass changed only `describeConversationSituation` and left
+`describeConversationLedger`, on the reasoning above that it is "the Judge's".
+**It is not only the Judge's.** On the `ledger_active` path —
+`interventionEngine.ts:2028`, the live controller — that same string is passed as
+the generator's `conversationSituation`, and `routeTurn` prefers a supplied one
+over building its own. So the fix had landed everywhere except the path that
+actually runs.
+
+Removed there too, with the goal kept. The regression is in the ledger suite,
+where the description is built rather than asserted about from memory.
 
 ### Verification
 

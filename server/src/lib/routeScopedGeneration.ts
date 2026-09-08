@@ -51,6 +51,21 @@ export interface OutputRepairAudit {
   attempts: OutputRepairAttemptAudit[];
 }
 
+/** The guard as the audit records it. Two call sites had a byte-identical copy. */
+function auditedGuard(guard: RouteOutputScopeGuard | undefined): OutputRepairAudit["guard"] {
+  if (!guard) return undefined;
+  return {
+    candidate: guard.candidate,
+    reason: guard.reason,
+    maxTraitIds: guard.maxTraitIds,
+    maxRestatedTraitIds: guard.maxRestatedTraitIds,
+    maxSentences: guard.maxSentences,
+    maxWords: guard.maxWords,
+    allowedTraitIds: guard.allowedTraitIds,
+    requiredTraitId: guard.requiredTraitId,
+  };
+}
+
 function successfulAttemptAudit(input: {
   stage: "initial" | "repair";
   outcome: "accepted" | "rejected";
@@ -158,6 +173,11 @@ export function sentenceCount(content: string): number {
 }
 
 export function wordCount(content: string): number {
+  // Whitespace-delimited, which in Korean counts eojeol rather than words. That
+  // runs lower than the English count for the same content, so the bound is
+  // looser in Korean than in English, never tighter — it cannot cost a Korean
+  // turn that an English one would have kept. The bound was sized on English
+  // sessions and there is no Korean measurement to size it against yet.
   return content.trim().split(/\s+/).filter(Boolean).length;
 }
 
@@ -310,18 +330,7 @@ export async function generateScopedRouteMessage(input: {
       extractedIds,
       repairAudit: {
         version: 1,
-        guard: input.guard
-          ? {
-              candidate: input.guard.candidate,
-              reason: input.guard.reason,
-              maxTraitIds: input.guard.maxTraitIds,
-              maxRestatedTraitIds: input.guard.maxRestatedTraitIds,
-              maxSentences: input.guard.maxSentences,
-              maxWords: input.guard.maxWords,
-              allowedTraitIds: input.guard.allowedTraitIds,
-              requiredTraitId: input.guard.requiredTraitId,
-            }
-          : undefined,
+        guard: auditedGuard(input.guard),
         attempts: [
           successfulAttemptAudit({
             stage: "initial",
@@ -340,18 +349,7 @@ export async function generateScopedRouteMessage(input: {
   );
   const repairAudit: OutputRepairAudit = {
     version: 1,
-    guard: input.guard
-      ? {
-          candidate: input.guard.candidate,
-          reason: input.guard.reason,
-          maxTraitIds: input.guard.maxTraitIds,
-          maxRestatedTraitIds: input.guard.maxRestatedTraitIds,
-          maxSentences: input.guard.maxSentences,
-          maxWords: input.guard.maxWords,
-          allowedTraitIds: input.guard.allowedTraitIds,
-          requiredTraitId: input.guard.requiredTraitId,
-        }
-      : undefined,
+    guard: auditedGuard(input.guard),
     attempts: [
       successfulAttemptAudit({
         stage: "initial",

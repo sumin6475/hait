@@ -327,13 +327,21 @@ export function observationRosterConflicts(
  * stays ambiguous — plus a following verb or possessive, which an article cannot
  * take ("A is the one", "A's notes", never "A good point").
  */
+export function literalCandidateMentions(text: string): Candidate[] {
+  return (["A", "B", "C", "D"] as Candidate[]).filter(
+    (candidate) =>
+      new RegExp(`\\bcandidate\\s+${candidate}\\b`, "i").test(text) ||
+      (candidate === "A" ? namesCandidateA(text) : new RegExp(`\\b${candidate}\\b`).test(text)),
+  );
+}
+
 function namesCandidateA(text: string): boolean {
-  const SUBJECT_AFTER_A =
+  const CANDIDATE_A_EVIDENCE =
     /^\s*(?:and\b|or\b|vs\.?\b|versus\b|,|\/|$|['’]s\b|is\b|are\b|was\b|were\b|has\b|have\b|had\b|does\b|do\b|did\b|seems?\b|looks?\b|matches\b|misses\b|scores?\b|stays?\b|remains?\b|wins?\b|would\b|will\b|can\b|could\b|might\b)/;
   for (const match of text.matchAll(/(?<![\p{L}\p{N}_])A(?![\p{L}\p{N}_])/gu)) {
     const sentenceInitial = /(?:^|[.!?\n])[\s"'“‘([]*$/.test(text.slice(0, match.index));
     if (!sentenceInitial) return true;
-    if (SUBJECT_AFTER_A.test(text.slice(match.index + 1))) return true;
+    if (CANDIDATE_A_EVIDENCE.test(text.slice(match.index + 1))) return true;
   }
   return false;
 }
@@ -353,12 +361,7 @@ export function normalizeConversationObservation(
   const allowedActors = new Set<string>([...participantRoster, "alex", "group"]);
   const activeCandidates = [...new Set(observation.activeCandidates)];
   const literalCandidates = anchorContent
-    ? (["A", "B", "C", "D"] as Candidate[]).filter((candidate) =>
-        new RegExp(`\\bcandidate\\s+${candidate}\\b`, "i").test(anchorContent) ||
-        (candidate === "A"
-          ? namesCandidateA(anchorContent)
-          : new RegExp(`\\b${candidate}\\b`).test(anchorContent)),
-      )
+    ? literalCandidateMentions(anchorContent)
     : observation.mentionedCandidates;
   const anchorNamesAlex = anchorContent ? /\balex\b/i.test(anchorContent) : false;
   // A second-person plural address is a structural fact about the room, not a

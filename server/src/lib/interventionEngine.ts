@@ -279,8 +279,10 @@ export function eligibleTraitIdsForLedgerState(
   // gate but left the list in trait-id order whenever focus was null, which is
   // most of a comparison phase: the Judge is told to pick what fits the
   // exchange, and with no ordering signal at all it read down the list from
-  // Candidate A. Salience keeps the observer's explicit focus first when there
-  // is one and otherwise falls back to the most recently named candidate.
+  // Candidate A. Salience keeps the observer's focus first when the current turn
+  // explicitly named it, and otherwise ranks by the most recently named
+  // candidate — a focus carried from an earlier thread does not outrank a name.
+  // See docs/adr/0004, amended 2026-09-08.
   const order = candidateSalienceOrder(thread);
   const rank = new Map(order.map((candidate, index) => [candidate, index]));
   return [...inScope].sort((left, right) => {

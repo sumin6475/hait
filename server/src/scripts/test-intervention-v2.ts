@@ -438,16 +438,19 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
     assert.equal(resolvedPrompt.promptVersion, "1.9.0");
     const conditionPrompt = resolvedPrompt.systemPrompt;
-    // The exception clause fired on ordinary turns and excused the very messages
-    // the length bound exists to stop: "an explicitly requested full list or
-    // comparison" is a judgement the generator was making about its own turn.
-    // The request-scope machinery already decides when no limit applies, and now
-    // the guard enforces the limit when one does.
+    // The exemption is no longer the generator's own judgement about its own
+    // turn: "an explicitly requested full list or comparison" fired on ordinary
+    // turns and excused the very messages the length bound exists to stop. The
+    // request-scope machinery already decides when no limit applies, from the
+    // participant's words, and it says so in a server-derived block — so the
+    // exemption now points at that block. Deleting the exemption outright is not
+    // the answer either: `unifiedInteractionPolicy` grants a complete list "the
+    // space needed", and the two would contradict each other.
     assert.doesNotMatch(conditionPrompt, /explicitly requested full list or comparison/i);
     assert.match(
       conditionPrompt,
-      /Except for greeting, summary, and closing, use at most two short sentences/i,
-      "the route exemptions stay; only the self-assessed one goes",
+      /Except for greeting, summary, closing, and a turn whose server-derived Request scope permits a complete list or comparison, use at most two short sentences/i,
+      "the exemption survives, sourced from the server rather than self-assessed",
     );
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);

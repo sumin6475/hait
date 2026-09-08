@@ -1048,7 +1048,14 @@ export function describeConversationLedger(state: ConversationLedgerState): stri
   if (foreground) {
     lines.push(
       `The foreground thread is ${foreground.id}, rooted at message ${foreground.threadRootSeq}; it is ${foreground.status}.`,
-      `Its goal is ${foreground.goal}: ${foreground.requestedAction || "no additional action description"}.`,
+      // The thread's `requestedAction` is deliberately absent, for the same
+      // reason it left `describeConversationSituation`: on the ledger_active
+      // path this paragraph *is* the generator's `conversationSituation`, so a
+      // description of what the group was doing when the thread opened arrives
+      // as an instruction. T-C1-022 seq 10 greeted the room again from it. The
+      // Judge loses nothing — its prompt serializes the whole decision ledger
+      // beside this prose, so the field is still there to read as a fact.
+      `Its goal is ${foreground.goal}.`,
       `Its scope candidates are ${(foreground.scopeCandidates ?? foreground.candidates).join(", ") || "not specified"}; current focus is ${foreground.focusCandidate ?? "none"} (${foreground.focusBasis ?? "none"}); evidence messages are ${foreground.evidenceSeqs.join(", ")}.`,
       `Its candidates ordered by what the group is currently on are ${candidateSalienceOrder(foreground).join(", ") || "not specified"}.`,
     );
