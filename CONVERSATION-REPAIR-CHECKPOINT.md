@@ -43,11 +43,15 @@ and the request scope behind it are built but have never been seen in a live
 session.
 
 **What is open.** Twenty-one issues in `.scratch/conversation-repair/issues/`.
-Two are actionable — issues 20 and 21, both from the guard audit below, and both
-of which *remove* enforcement rather than add it. Two more are blocked on a
+One is actionable — issue 21, from the guard audit below. Two are blocked on a
 measurement rather than on code: issue 10 needs a live Observer latency figure,
 and issue 16 needs a frequency count before a guard for it is worth its cost.
-Sixteen are done and one records a decision not to act.
+Seventeen are done and one records a decision not to act.
+
+**Issue 20 removed eight of T-C1-021's ten guard deaths**, verified by replaying
+all ten through the built context with the real opportunities and the intent the
+Observer actually stored. The two that remain are turns the budget should apply
+to, and one of them is issue 21.
 
 **The guard audit, 2026-09-08.** Across both sessions, thirteen guard events:
 

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { ConditionCode, RouteKind } from "../types.js";
+import type { RequestIntent } from "../lib/routeContext.js";
 import {
   detectDirectAddress,
   detectExplicitAlexDefer,
@@ -2107,6 +2108,131 @@ assert.equal(
   ),
   false,
   "and neither is a plain decline, which is what the condition asks for instead",
+);
+
+// [Issue 20] The request that governs scope is the one being answered.
+//
+// T-C1-021, eight turns. seq 34 asked "What misses do others have for Candidate
+// C?" — a required direct_question, so it stayed open. Alex answered it on seqs
+// 35, 36, 39, 40, 41 and 45, and every one was dropped by the reveal budget.
+//
+// The budget applies only to a turn carrying no request, and `requestIntent` was
+// read from the *anchor* — "Sure! Let's exit and make a decision" on seq 45,
+// which asks nothing. The opportunity's own stored intent overrides the anchor's
+// and `widenRequestIntent` can widen an Observer under-read, but the Observer had
+// also read seq 34 as `none` (confirmed in the ledger export), and the widening
+// only ever consulted the anchor's text. The one message stating what Alex was
+// asked for was the only one no reader opened.
+const carriedRequest = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 45,
+  messages: [
+    {
+      seq: 34,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "What misses do others have for Candidate C?",
+    },
+    {
+      seq: 45,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Sure! Let's exit and make a decision",
+    },
+  ],
+  revealStats: separatedInformationStats,
+  selectedOpportunity: {
+    id: "opp:34:direct_question:alex",
+    kind: "direct_question",
+    expectation: "required",
+    sourceSeq: 34,
+    currentTriggerSeq: 45,
+    threadId: "thread-1",
+    targets: ["alex"],
+    requestedAction: "discuss candidates",
+    sourceContent: "What misses do others have for Candidate C?",
+    evidenceSeqs: [34],
+    // Exactly what the Observer stored, and the reason the budget applied.
+    requestIntent: { kind: "none", candidate: null, source: "visible_board", countKind: "all" },
+  },
+});
+assert.equal(
+  carriedRequest.requestIntent.kind,
+  "complete_single_candidate",
+  "the request being answered is read from the message that made it",
+);
+assert.equal(carriedRequest.requestIntent.candidate, "C");
+assert.equal(carriedRequest.requestIntent.countKind, "misses");
+assert.equal(
+  routeGenerationGuard("address", carriedRequest.outputScopeGuard),
+  undefined,
+  "so the turn is no longer budgeted as though nobody had asked anything",
+);
+
+// The widening stays as narrow through this path as through the anchor's.
+const carriedFrom = (sourceContent: string, requestIntent: RequestIntent) =>
+  buildRouteUserContext({
+    routeKind: "address",
+    conditionCode: "C1",
+    language: "en",
+    anchorSeq: 45,
+    messages: [
+      { seq: 34, senderRole: "humanY", speaker: "Participant Y", content: sourceContent },
+      {
+        seq: 45,
+        senderRole: "humanX",
+        speaker: "Participant X",
+        content: "Sure! Let's exit and make a decision",
+      },
+    ],
+    revealStats: separatedInformationStats,
+    selectedOpportunity: {
+      id: "opp:34:direct_question:alex",
+      kind: "direct_question",
+      expectation: "required",
+      sourceSeq: 34,
+      currentTriggerSeq: 45,
+      threadId: "thread-1",
+      targets: ["alex"],
+      requestedAction: "discuss candidates",
+      sourceContent,
+      evidenceSeqs: [34],
+      requestIntent,
+    },
+  }).requestIntent;
+const observerReadNothing: RequestIntent = {
+  kind: "none",
+  candidate: null,
+  source: "visible_board",
+};
+// [D6] A proposal about how to proceed still widens nothing, from either message.
+assert.equal(
+  carriedFrom(
+    "I think it would be best to just go through what information we have on each candidate",
+    observerReadNothing,
+  ).kind,
+  "none",
+  "a procedural proposal is not a request, whichever message it arrives in",
+);
+// A reading the Observer made on another axis is left alone: widening may
+// correct an under-read, never overwrite a different judgement.
+assert.equal(
+  carriedFrom("What misses do others have for Candidate C?", {
+    kind: "preference_request",
+    candidate: null,
+    source: "visible_board",
+  }).kind,
+  "preference_request",
+  "widening corrects an under-read; it does not overrule another axis",
+);
+// An opportunity whose source message is no longer in the transcript carries no
+// text, and that is a fact rather than a reason to guess.
+assert.equal(
+  carriedFrom("", observerReadNothing).kind,
+  "none",
+  "an absent source message widens nothing",
 );
 
 // [Issue 17] The restated-trait bound was twice suspected of being what cost

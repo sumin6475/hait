@@ -2035,13 +2035,31 @@ export function buildRouteUserContext(input: {
     requestReadable && directLexicalIntent.kind === "none"
       ? carriedRequestIntent(window, requestBundle.startIndex)
       : directLexicalIntent;
-  const requestIntent = requestReadable
+  // [Issue 20] A selected opportunity's stored intent is the Observer's reading
+  // of the message that made the request, so it is corrected against the lexical
+  // reading of that same message — not only against the anchor's, which is a
+  // different message and on a carried-over request usually asks nothing at all.
+  //
+  // T-C1-021 lost eight turns to the gap. Alex was answering seq 34's "What
+  // misses do others have for Candidate C?" while the anchor was "Sure! Let's
+  // exit and make a decision"; the Observer had also read seq 34 as `none`, so
+  // both readers said no request and the reveal budget applied to an answer that
+  // had been explicitly asked for.
+  //
+  // The widening rules are unchanged and already narrow: only an under-read may
+  // be widened, only a complete-list reading widens it, and that reading is
+  // itself gated on the request being directed at Alex. Applied first, so the
+  // existing anchor widening still runs on top exactly as before.
+  const observedIntent = input.selectedOpportunity
     ? widenRequestIntent(
-        input.selectedOpportunity
-          ? (input.selectedOpportunity.requestIntent ?? NO_REQUEST_INTENT)
-          : (input.requestIntentOverride ?? lexicalIntent),
-        lexicalIntent,
+        input.selectedOpportunity.requestIntent ?? NO_REQUEST_INTENT,
+        requestReadable
+          ? classifyRequestIntent(input.selectedOpportunity.sourceContent)
+          : NO_REQUEST_INTENT,
       )
+    : (input.requestIntentOverride ?? lexicalIntent);
+  const requestIntent = requestReadable
+    ? widenRequestIntent(observedIntent, lexicalIntent)
     : NO_REQUEST_INTENT;
   const focusControlOverridden = Boolean(input.selectedOpportunity) || requestOverridesFocusControl(
     input.routeKind,

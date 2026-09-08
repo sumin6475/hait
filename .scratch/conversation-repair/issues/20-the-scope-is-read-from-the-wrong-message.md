@@ -6,7 +6,7 @@ happened to type.
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## The defect, as observed
 
@@ -65,7 +65,44 @@ both gated on the request being directed at Alex.
 - No new model call; both readings are lexical
 - An opportunity whose source message has left the window is not guessed at
 
+- [x] A turn answering a carried-over request is scoped by that request
+- [x] [D6] still widens nothing, through this path as through the anchor's
+- [x] A reading the Observer made on another axis is not overwritten
+- [x] An opportunity whose source message is gone widens nothing
+
 ## Comments
+
+### Verified against the session that found it
+
+All ten dropped turns replayed through the built context, using the real
+messages, the real selected opportunity and the intent the Observer actually
+stored:
+
+| turns | outcome |
+| --- | --- |
+| 34, 35, 36, 37, 39, 40, 41, 45 | budget lifted — **eight of the ten deaths removed** |
+| 21 | still budgeted, correctly: the turn answers its own anchor and that anchor asks for no inventory |
+| 25 | still budgeted, correctly: the guard was right there — a fourteen-trait draft — and that turn is issue 21 |
+
+### The change is one widening, applied to the message that was answered
+
+`SelectedOpportunityGenerationContext` already carried `sourceContent`, so
+nothing new had to be plumbed. The opportunity's stored intent — the Observer's
+reading — is corrected against the lexical reading of the same message, and the
+existing anchor widening then runs on top exactly as before.
+
+The order matters and is deliberate: correct the opportunity's own reading with
+its own text first, then let the anchor widen what remains. Replacing the stored
+reading instead of widening it is one of the two breaks below, and it overwrites
+an Observer judgement made on a different axis.
+
+### Two breaks
+
+Not reading the source message returns the original defect. Replacing rather
+than widening trips the assertion that a `preference_request` the Observer made
+is not overruled by a complete-list reading of the same text.
+
+Build, all six `test:*` suites and `docs:check` green. **Not measured live.**
 
 ### A verification gap this exposed, in issue 18
 
