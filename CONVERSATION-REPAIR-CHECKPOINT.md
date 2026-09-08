@@ -42,14 +42,21 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
-**What is open.** Eleven issues in `.scratch/conversation-repair/issues/`. One is
-open — issue 10, the Observer split, which is blocked on a live measurement that
-has not been taken. Nine are done and one records a decision not to act. Start at
-the lowest-numbered issue whose blockers are done.
+**What is open.** Twelve issues in `.scratch/conversation-repair/issues/`. Two are
+open — issue 10, the Observer split, blocked on a live measurement; and issue 12,
+filed from T-C2-043, where Alex asked a question, was answered, and lost the turn
+to `ledger_judge_failure`. Nine are done and one records a decision not to act.
+Start at the lowest-numbered issue whose blockers are done.
 
 **Nothing since 2026-09-07 has been measured live.** Nine issues' worth of
 changes are verified by build, four suites and deliberate breakages only. The
 prompt source moved 1.8.0 → 1.9.0, so the golden set needs re-running as well.
+
+**T-C2-043 does not change that.** It is a full Chair session run on the
+pre-repair build — `promptVersion 1.8.0`, no `outputGuard` on any row — so it is
+a baseline, not a result. It reproduced issue 06's defect exactly, gave issues 03
+and 04 their strongest evidence yet (mean 56.0 words, one seven-trait set
+broadcast three times verbatim), and produced issue 12.
 
 **Before the next measurement, two things.**
 

@@ -1,9 +1,9 @@
 # Session measurements
 
 Every live session run against the conversation repair, in one place and in one
-shape. Eleven entries: three diagnostic sessions that the early gates were built
-from, the seven measured rounds of the repair, and one partial session run after
-them.
+shape. Twelve entries: three diagnostic sessions that the early gates were built from,
+the seven measured rounds of the repair, one partial session run after them, and
+one full baseline session run before the 2026-09-08 issues landed.
 
 Each entry says what the session **confirmed**, what it **disconfirmed**, and
 what it **did not exercise**. The three are kept apart on purpose. A record that
@@ -18,23 +18,27 @@ them.
 
 ## Summary
 
-| | T-C2-034 | T-C2-035 | T-C2-037 | T-C1-020 | T-C2-039 | T-C1-022 | T-C1-023 | T-C1-024 | T-C1-025 | T-C1-027 | T-C2-041 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Condition | Chair | Chair | Chair | Member | Chair | Member | Member | Member | Member | Member | Chair |
-| Messages | 28 | — | — | 51 human | 19 human | — | — | 14 | 8 | 81 | 10 |
-| Decisions | 18 | — | 23 | 51 | 19 | — | — | 9 | 5 | 49 | 6 |
-| Spoken | 10 (56%) | — | 6 (26%) | 18 | 11 | 5 | — | 5 (56%) | 2 | 28 (57%) | 4 |
-| Median turn | — | — | — | 10.2 s | 12.7 s | — | — | **9.6 s** | — | — | — |
-| Turns superseded | — | — | — | **39%** | 2/19 | — | — | **11%** | — | — | — |
-| Observer per call, mean | — | — | — | 6.9 s | 6.8 s | — | — | 6.5 s | — | 5.3 s *(med)* | 5.8 s |
-| Observer max | — | — | — | 14.3 s | 11.9 s | 13.9 s | 10.5 s | 11.2 s | — | 9.4 s | 7.6 s |
-| Pre-broadcast tail | — | — | — | — | — | — | 2.5–3.5 s | **0.2–1.5 s** | — | — | — |
-| Alex words, mean | — | — | — | 43.8 | 55.6 | 30.8 | — | 34 | **138** | **34.7** | 34.5 |
-| Max traits, one message | — | — | — | **15** | 6 | — | — | 4 | **16** | — | — |
-| Judge cache hits | — | — | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| Judge first-attempt accepts | 12/18 | — | — | — | 17/17 | — | — | 8/8 | — | — | 4/5 |
+| | T-C2-034 | T-C2-035 | T-C2-037 | T-C1-020 | T-C2-039 | T-C1-022 | T-C1-023 | T-C1-024 | T-C1-025 | T-C1-027 | T-C2-041 | T-C2-043 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Condition | Chair | Chair | Chair | Member | Chair | Member | Member | Member | Member | Member | Chair | Chair |
+| Messages | 28 | — | — | 51 human | 19 human | — | — | 14 | 8 | 81 | 10 | 50 |
+| Decisions | 18 | — | 23 | 51 | 19 | — | — | 9 | 5 | 49 | 6 | 30 |
+| Spoken | 10 (56%) | — | 6 (26%) | 18 | 11 | 5 | — | 5 (56%) | 2 | 28 (57%) | 4 | 20 (67%) |
+| Median turn | — | — | — | 10.2 s | 12.7 s | — | — | **9.6 s** | — | — | — | 10.0 s |
+| Turns superseded | — | — | — | **39%** | 2/19 | — | — | **11%** | — | — | — | 1/30 |
+| Observer per call, mean | — | — | — | 6.9 s | 6.8 s | — | — | 6.5 s | — | 5.3 s *(med)* | 5.8 s | — |
+| Observer max | — | — | — | 14.3 s | 11.9 s | 13.9 s | 10.5 s | 11.2 s | — | 9.4 s | 7.6 s | — |
+| Pre-broadcast tail | — | — | — | — | — | — | 2.5–3.5 s | **0.2–1.5 s** | — | — | — | — |
+| Alex words, mean | — | — | — | 43.8 | 55.6 | 30.8 | — | 34 | **138** | **34.7** | 34.5 | **56.0** |
+| Max traits, one message | — | — | — | **15** | 6 | — | — | 4 | **16** | — | — | 8 † |
+| Judge cache hits | — | — | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** | — |
+| Judge first-attempt accepts | 12/18 | — | — | — | 17/17 | — | — | 8/8 | — | — | 4/5 | — |
 
 A dash means the figure was not recorded for that run, not that it was zero.
+
+† T-C2-043's single largest message carried 26 traits, but it answered an
+explicit complete-summary request, which is entitled to the whole board. 8 is the
+maximum over every other message.
 
 ### Targets
 
@@ -499,6 +503,85 @@ Chair, 10 messages, 5 observations, 6 decisions, 4 spoken. Session status
   that way until the record carries the guard.** → issue 09.
 - The session did not run to completion, so nothing about mediation, summary or
   closing — the three Chair-only routes — was exercised.
+
+---
+
+## T-C2-043 — full Chair session, on the pre-repair build
+
+Chair, 50 messages, 30 decisions, 20 spoken (67%). Ran to completion. Median
+turn **10.0 s** over 28 logged turns — **10.9 s spoken** against **7.4 s
+silent**, the split issue 01 exists to collapse and issue 10 is waiting on. One
+turn superseded (seq 37).
+
+**This session did not run any of the nine issues closed on 2026-09-08.** Every
+intervention row carries `promptVersion: 1.8.0`, none carries `outputGuard`, and
+the cooldown silences each report a Judge answer — so issues 01–11 are all
+absent. It is a **baseline**, and every improvement in it belongs to the build
+that preceded them.
+
+**Confirmed.**
+
+- **Salience holds a candidate across turns where focus is null.** At seq 8 the
+  observation reported `focusCandidate: null` and the group had named nobody for
+  two turns; Alex nevertheless opened seq 9 on Candidate C, the candidate last
+  named at seq 5. This is the T-C2-037 failure shape — Alex speaking about A
+  while the group eliminates C — not recurring. Salience was already live before
+  this branch; the branch changed only its precedence against focus and the
+  bare-letter detector, neither of which ran here.
+- **Issue 06's defect, reproduced exactly.** seq 5 both drifts from the task
+  standard *and* eliminates Candidate C. Alex answered seq 6 with the fixed
+  grounding sentence alone, `model: server-deterministic-task-grounding`, and the
+  elimination went unanswered — the third occurrence of this shape after
+  T-C2-034 seq 5 and T-C2-039 seq 5–6.
+- **Length and recital are unenforced, and it shows.** Alex's mean is **56.0
+  words** against T-C1-027's 34.7, with a 145-word maximum and 6 of 20 messages
+  running over three sentences. **13 of 20 messages exceed the per-turn reveal
+  budget** (>1 new or >2 restated traits). One seven-trait set is broadcast
+  **three times verbatim** (seq 28, 31, 44) and a second, eight-trait set twice.
+  seq 41 restates eight traits and introduces none. → the direct case for issues
+  03 and 04, neither of which ran.
+
+**Disconfirmed — a new defect, and the one the operator noticed.**
+
+- **Alex asked a question, was answered, and said nothing.** At seq 16 Alex asked
+  an either/or question. seq 17 answered it by naming both options. The turn was
+  lost to `ledger_judge_failure`, and the root cause is a chain of three:
+
+  1. **The Observer misread the reply target.** It set `replyToSeq: 15` — the
+     human's own earlier message — instead of 16, and
+     `relationToPendingAlexQuestion: "unrelated"`, with `addressees: []`.
+     Confidence 0.85.
+  2. **So no opportunity was minted**, because opportunities require a human
+     message that targets Alex. Open opportunities: none.
+  3. **The Judge chose an interaction act anyway.** Twice it answered
+     `speak / participate / evidence: selected_open_opportunity` with
+     `selectedOpportunityId: null`, on a turn whose available-moves block said
+     there were none. The validator rejected both
+     (`interaction_act_missing_opportunity`, `voluntary_act_evidence_invalid`)
+     and the turn was spent.
+
+  **The same observation contradicted itself.** `floor.expectedNext` was
+  `["alex"]` — the Observer knew Alex was next — while `addressees` was empty. A
+  ledger that says "Alex speaks next" and "nothing here is for Alex" at once is
+  the B9 shape again, on a different pair of fields.
+
+  **The deterministic evidence was available and unused.** Alex's immediately
+  preceding message was question-like, which `pendingAlexQuestion` already
+  computes without a model, and seq 17 is the very next human message. → issue 12.
+
+- **The identical shape succeeded 30 messages later**, which is what makes this a
+  model reliability problem rather than a missing feature. At seq 46 Alex asked
+  the same kind of either/or clarification; seq 47 answered it; the Observer set
+  `replyToSeq: 46`, `direct_answer`, `addressees: ["alex"]`, an opportunity was
+  minted, and Alex answered. One field, read two ways, on two instances of one
+  pattern.
+
+**Not exercised.**
+
+- Every guard, budget and audit field this branch added. The export cannot show
+  whether the 13 budget-exceeding messages would have been caught, because the
+  build that produced them had no enforcement and no record — which is issue 09's
+  argument, stated by a session rather than by an issue.
 
 ---
 
