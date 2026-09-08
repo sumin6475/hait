@@ -7,7 +7,8 @@ them, and one full baseline session run before the 2026-09-08 issues landed. One
 further entry records a golden baseline, which is not a session.
 
 One further entry, T-C3-003, is a message export rather than a measured session
-and is the only aci material in this record.
+and is the only aci material in this record. T-C2-047 is the first Chair session
+run on a repaired build, and it did not reach its closing.
 
 Each entry says what the session **confirmed**, what it **disconfirmed**, and
 what it **did not exercise**. The three are kept apart on purpose. A record that
@@ -826,6 +827,86 @@ resisted. At the close, D stands at coverage 7 against a best of 10, so D remain
 within the coverage clause's reach and a leader would have raised it once before
 the group finished. Both are the intended behaviour, on a session where neither
 happened.
+
+---
+
+## T-C2-047 — the first Chair session on a repaired build
+
+**Chair + explanatory, 36 messages (Alex 13, humans 23), 2026-09-08.** Build is
+verified in the record: `promptVersion` 1.9.0, one `promptHash` across all 24
+intervention rows, model `gpt-5-mini`. **It did not reach closing** — the session
+is still `in_progress` after 7 minutes of a 30-minute discussion, so
+`mediation`, `summary` and `closing` remain unexercised end to end and issue 01's
+first criterion is only half met.
+
+| | |
+| --- | ---: |
+| Alex words per message, mean | **34.2** |
+| Human words per message, mean | 25.6 |
+| Ratio | **1.3×** |
+| Alex messages containing a question mark | **0 / 13** |
+| Turns lost to a guard | **1 / 24** |
+| Turns lost to cooldown | 9 |
+| Distinct traits on the board at the end | **16 / 40** |
+| Traits only Alex held, disclosed | **1 / 8** |
+
+**Confirmed — length and the question ban hold.** 1.3× the humans, against 3.1×
+in T-C3-003, and not one of thirteen leader messages asked a question. The two
+output properties that cost the most turns earlier are now cheap.
+
+**Confirmed — the output guards have stopped eating turns.** One guard death in
+24 records (`selected_trait_missing` at turn 9), against eight in T-C1-021.
+`answered_with_a_question` was raised three times and repaired successfully every
+time. `maxRestatedTraitIds` was in force on four turns and was never violated:
+it still fires as a bound and did not bite, which answers the question issue 01
+asked about it.
+
+**Confirmed — the group eliminates the pooled answer immediately, and this is the
+second session to show it.** At seq 2, the first human message of the session,
+humanY eliminated Candidate C. At seq 5 humanX eliminated it again. The board
+held one trait at the time. C is the pooled answer, and it was never reconsidered.
+T-C3-003 seq 4 is the same move on a board of zero traits. Two sessions, so the
+coverage shortfall on a narrowing move clears the bar the checkpoint's sixth
+method rule sets.
+
+**Confirmed — Alex withholds almost everything only Alex has.** Alex holds 24
+traits, of which 8 are held by no human. It disclosed **one** of the 8, and seven
+of the nine traits it did surface were traits every participant could already
+see. It never disclosed either of Candidate B's unique misses while the group
+converged on B, and never disclosed Candidate C's unique match while the group
+sat on its seq-2 elimination. At seq 15 it said it had no new facts, and at seq
+36 — answering a direct request for information the others might not have — it
+named two traits and said those were the only new facts it had. Both statements
+were false at the time. Recorded as `.scratch/conversation-repair/issues/22`.
+
+**Confirmed — the reveal budget is checked against a source that misses traits.**
+Turn 35 carried a budget of one trait and a recorded `traitIds` of none, while
+the broadcast message's `sharedInfoIds` are `A_p4` and `B_p3`: the fast extractor
+found nothing at check time and the async extractor found two afterwards. The
+same asymmetry runs the other way at seq 31, where a human stated `A_n1` in plain
+words and the verifier declined it. The board under-counts and the guard
+over-passes, from one cause. Recorded as
+`.scratch/conversation-repair/issues/23`.
+
+**What it says about the candidate list.** This is the first session read against
+`docs/adr/0009`, and on real extractor output rather than a keyword replay. For
+29 of 36 turns every candidate was live: nothing beyond the shared four had
+reached the board for anybody. A cleared the bar at seq 30 and B at seq 36. C and
+D never cleared it — C ended at coverage 4 and D at 2 — so at the close the list
+still said the group owed attention to the candidate it had eliminated first.
+Both of the group's eliminations, C at seq 2 and D at seq 25, happened while
+those candidates were far below the bar, so the shortfall move would have fired
+twice and both times correctly.
+
+The withdrawn rule was replayed against the same board for comparison. It sets C
+aside at seq 27 and B at seq 29, leaving A and D live — the two candidates with
+the least on the board, neither of them the answer, at a point where the humans
+were choosing between A and B. That is the failure `0009` was written from,
+reproduced on a live session rather than argued from the dataset.
+
+**Not exercised.** Closing, summary and mediation as completed routes. The
+long-silence path. Every Chair-only behaviour that depends on the discussion
+reaching its end.
 
 ---
 

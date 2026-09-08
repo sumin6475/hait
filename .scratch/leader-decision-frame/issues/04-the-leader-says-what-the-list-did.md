@@ -19,7 +19,10 @@
    it, then accept the group's answer either way. The narrowing case is the one
    T-C3-003 seq 4 shows the need for: the group moved to eliminate a candidate
    before any trait for any candidate was on the board, and that candidate was
-   the one they eventually chose.
+   the one they eventually chose. T-C2-047 seq 2 is the same move on the first
+   human message of the session, against a board of one trait, and the candidate
+   eliminated there was the pooled answer. Two sessions, so this clears the
+   two-session bar rather than resting on one.
 
 A leader that keeps the list private is not observably a leader, and the
 manipulation check has nothing to read.

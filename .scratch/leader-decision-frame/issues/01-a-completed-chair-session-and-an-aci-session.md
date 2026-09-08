@@ -52,7 +52,45 @@ anything.
 - The shadow candidate list from issue 02 against what the group actually did.
 - The repeated-question-form rate, for the deferred item in `spec.md`.
 
-- [ ] A Chair session runs to `closing` and is entered in `docs/measurements.md`
+- [~] A Chair session runs to `closing` and is entered in `docs/measurements.md` — T-C2-047 is entered and **did not close**: still `in_progress` after 7 minutes of 30
 - [ ] An aci session runs on the current build and is entered there
-- [ ] The server was restarted before each, and the record says so
-- [ ] Guard events are tabulated by bound and by condition
+- [x] The server was restarted before each, and the record says so — T-C2-047 carries one `promptHash` across all 24 rows and `promptVersion` 1.9.0
+- [x] Guard events are tabulated by bound and by condition — for T-C2-047, in its measurement entry
+
+## Comments
+
+### Half of this issue is done: T-C2-047, 2026-09-08
+
+A Chair session ran on a verified build and is entered in `docs/measurements.md`.
+It stopped at seq 36 without closing, so `mediation`, `summary` and `closing`
+are still unexercised end to end and the first criterion stays open. Everything
+else this issue asked to be read out has an answer.
+
+**The eight guard deaths of T-C1-021 did not recur.** One guard death in 24
+records. `answered_with_a_question` was raised three times and repaired every
+time.
+
+**`maxRestatedTraitIds` still fires as a bound and did not bite.** In force on
+four turns, violated on none.
+
+**The shadow candidate list against what the group did.** Read against
+`docs/adr/0009`: every candidate stayed live for 29 of 36 turns, A cleared at seq
+30, B at seq 36, and C and D never cleared. Both of the group's eliminations
+happened while the candidate was far below the bar, so the shortfall move would
+have fired twice and both times correctly. The withdrawn rule, replayed on the
+same board, sets C aside at seq 27 and B at seq 29 and leaves A and D — the two
+candidates with the least on the board.
+
+**The repeated question form does not arise here.** Zero of thirteen leader
+messages contain a question mark; the deferred item in `spec.md` is about the aci
+conditions and still needs the aci session.
+
+**Two defects came out of it**, both new and both filed against the repair rather
+than this effort: `.scratch/conversation-repair/issues/22` (Alex disclosed one of
+the eight traits only it holds) and `.scratch/conversation-repair/issues/23` (the
+reveal budget and the board are read from different extractors).
+
+**And one behaviour cleared the two-session bar.** The group eliminated the
+pooled answer on the first human message of the session, on a board of one trait.
+T-C3-003 seq 4 is the same move. Issue 04's shortfall-on-narrowing is now
+evidenced rather than anticipated.
