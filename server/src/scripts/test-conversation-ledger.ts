@@ -159,6 +159,104 @@ assert.deepEqual(
   [],
 );
 
+// --- Issue 13 (half): the answer to Alex's own question is reachable ---------
+//
+// T-C2-045 seq 16-17. Alex offered a choice; a participant answered it with an
+// explicit request. Because the turn both answered Alex *and* asked for
+// something, the request branch above minted an `invitation` — and an invitation
+// gets no cooldown bypass, so on the one turn it was current it was filtered out
+// of the Judge's view, and on every later turn the invited-not-current filter
+// removed it. **It was never selectable on any turn.** Minted, unreachable,
+// expired.
+//
+// The `uptake` bypass exists precisely so Alex can receive the answer to its own
+// question. This turn missed it only because a stronger branch fired first.
+const answersAlexRequest = reduceConversationLedger(
+  null,
+  observerDeltaFromTurn({
+    sessionKey: "T-C2-045-ANSWERS-ALEX",
+    observerVersion: "test-observer",
+    roster,
+    sourceRole: "humanY",
+    currentTriggerSeq: 17,
+    contextThroughSeq: 17,
+    alexQuestionAwaitingReplySeq: 16,
+    observation: observation({
+      speechAct: "proposal",
+      addressees: ["alex"],
+      requestExplicitness: "explicit",
+      alexRelation: "explicit_addressee",
+      activeThread: {
+        threadId: "thread-1",
+        rootSeq: 1,
+        status: "open",
+        goal: "compare_information",
+        requestedAction: "discuss candidates",
+        candidates: ["A", "B"],
+        participants: [...roster],
+        expectedResponders: ["alex"],
+        alexParticipation: "invited",
+        evidenceSeqs: [17],
+      },
+    }),
+  }),
+).state;
+const answersAlexOpportunity = answersAlexRequest.opportunities[0]!;
+assert.equal(answersAlexOpportunity.kind, "invitation", "the request branch still wins on kind");
+assert.equal(
+  answersAlexOpportunity.answersAlexSeq,
+  16,
+  "and the turn is also recorded as the answer to Alex's own question",
+);
+assert.equal(
+  opportunityMayBypassCooldown(
+    { ...answersAlexRequest, foregroundThreadId: "thread-1" },
+    answersAlexOpportunity,
+  ),
+  true,
+  "answering Alex's own question speaks through the cooldown, as an uptake would",
+);
+assert.deepEqual(
+  conversationLedgerDecisionProjection(
+    { ...answersAlexRequest, foregroundThreadId: "thread-1" },
+    { cooldownAvailable: false },
+  ).opportunities.map((item) => item.id),
+  [answersAlexOpportunity.id],
+  "so the Judge is actually offered it",
+);
+assert.equal(
+  deterministicVetoBeforeJudge(
+    { ...answersAlexRequest, foregroundThreadId: "thread-1" },
+    { cooldownAvailable: false },
+  ),
+  null,
+  "and the turn is no longer vetoed before the Judge runs",
+);
+// An ordinary invitation that answers nothing of Alex's still waits its turn.
+const ordinaryInvitation = reduceConversationLedger(
+  null,
+  observerDeltaFromTurn({
+    sessionKey: "T-C2-045-ORDINARY",
+    observerVersion: "test-observer",
+    roster,
+    sourceRole: "humanY",
+    currentTriggerSeq: 17,
+    contextThroughSeq: 17,
+    observation: observation({
+      speechAct: "proposal",
+      addressees: ["alex"],
+      requestExplicitness: "explicit",
+      alexRelation: "explicit_addressee",
+    }),
+  }),
+).state;
+assert.equal(ordinaryInvitation.opportunities[0]!.answersAlexSeq, undefined);
+assert.equal(
+  opportunityMayBypassCooldown(ordinaryInvitation, ordinaryInvitation.opportunities[0]!),
+  false,
+  "the cooldown still governs every invitation that is not an answer to Alex",
+);
+
 const uptakeReplay = replayObservedConversation({
   sessionKey: "T-C4-UPTAKE-CLUSTER",
   observerVersion: "test-observer",

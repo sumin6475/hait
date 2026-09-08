@@ -69,6 +69,19 @@ export interface ResponseOpportunity {
   resolutionEvidenceSeqs?: number[];
   invalidatedAfterConsumption?: boolean;
   invalidationEvidenceSeqs?: number[];
+  /**
+   * The seq of the Alex turn this opportunity's source message answered.
+   *
+   * [Issue 13] Set when the deterministic pair holds — Alex's question directly
+   * precedes the source message. A turn can both answer Alex and ask for
+   * something, and when it does the request branch wins on `kind`, which is
+   * right; but an `invitation` gets no cooldown bypass, and the whole point of
+   * the uptake bypass is that Alex may receive the answer to its own question.
+   * At T-C2-045 seq 17 that cost the turn and then every later one: filtered
+   * from the projection by the cooldown on the seq it was current, and by the
+   * invited-not-current rule on every seq after. Never selectable at all.
+   */
+  answersAlexSeq?: number;
 }
 
 export interface ConversationFloorState {
@@ -108,7 +121,15 @@ export function opportunityMayBypassCooldown(
   opportunity: ResponseOpportunity,
 ): boolean {
   if (opportunity.expectation === "required") return true;
-  if (opportunity.expectation !== "invited" || opportunity.kind !== "uptake") return false;
+  // An answer to Alex's own question speaks through the cooldown on the same
+  // terms as an uptake, because it is one: the request branch takes precedence
+  // on `kind` when the turn also asks for something, and that used to cost the
+  // bypass. The conditions below are unchanged, so this widens what may bypass,
+  // never how far.
+  const answersAlex = opportunity.answersAlexSeq !== undefined;
+  if (!answersAlex && (opportunity.expectation !== "invited" || opportunity.kind !== "uptake")) {
+    return false;
+  }
   return (
     state.foregroundThreadId === opportunity.threadId &&
     opportunity.evidenceSeqs.includes(state.currentTriggerSeq) &&
@@ -145,6 +166,7 @@ export interface OpportunityProposal {
   targets: ConversationActor[];
   targetBasis: TargetBasis;
   evidenceSeqs: number[];
+  answersAlexSeq?: number;
 }
 
 export interface OpportunityTransitionProposal {
@@ -380,6 +402,9 @@ export function observerDeltaFromTurn(input: {
       targets: ["alex"],
       targetBasis: "explicit",
       evidenceSeqs: [input.currentTriggerSeq],
+      ...(input.alexQuestionAwaitingReplySeq !== undefined
+        ? { answersAlexSeq: input.alexQuestionAwaitingReplySeq }
+        : {}),
     };
   } else if (addressesGroup && requestsAction) {
     opportunity = {
@@ -395,6 +420,9 @@ export function observerDeltaFromTurn(input: {
       targets: exactRoster,
       targetBasis: "group_expanded",
       evidenceSeqs: [input.currentTriggerSeq],
+      ...(input.alexQuestionAwaitingReplySeq !== undefined
+        ? { answersAlexSeq: input.alexQuestionAwaitingReplySeq }
+        : {}),
     };
   } else if (
     input.observation.alexRelation === "response_to_alex" ||
