@@ -4,6 +4,7 @@ import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { currentTopicCandidate } from "./poolingTally.js";
 import {
   CANDIDATES,
+  aiSurfacedIds,
   allSurfacedIds,
   humanConfirmedIds,
   lastHumanDiscussionCandidate,
@@ -144,6 +145,53 @@ function deterministicTaskGroundingResponse(input: {
       : "No single quality receives extra weight. The team should compare each candidate's complete profile with every MATCH and MISS counting equally.";
   }
   return null;
+}
+
+/**
+ * How many of Alex's own disclosures the generator is told about.
+ *
+ * The set this is drawn from grows for the whole session, and an unbounded
+ * prompt addition is a cost line — the Observer has already been caught growing
+ * that way. Twelve points is roughly 120 tokens and does not move with session
+ * length. Most recent first, because the recital shape restates what is freshest.
+ */
+const ALREADY_STATED_LIMIT = 12;
+
+/**
+ * What Alex has already put in view, told to the generator.
+ *
+ * The hard half of this shipped as `too_many_restated_traits`, which stops a
+ * recital after the fact — T-C1-025 seq 7 restated fifteen traits and introduced
+ * none, and the guard now catches that. This is the positive half: the generator
+ * is told what it has already said, so it has a reason not to say it again
+ * rather than only being stopped when it does.
+ *
+ * The set is **Alex's own surfaced traits** and nothing else. Surfaced covers
+ * what was said aloud, by anyone, and its only legitimate use is avoiding
+ * repetition; it must never stand in for `humanConfirmedIds`, which is what Alex
+ * may treat as grounded. Conflating the two is a defect this repair has already
+ * had to fix once, so this reads `aiSurfacedIds` directly and nothing downstream
+ * reads this block.
+ */
+function formatAlreadyStatedByYou(revealStats: any): string | null {
+  const surfaced = [...aiSurfacedIds(revealStats)].reverse();
+  if (!surfaced.length) return null;
+  const shown = surfaced.slice(0, ALREADY_STATED_LIMIT);
+  const points = shown
+    .map((id) => {
+      const trait = TRAIT_BY_ID.get(id)!;
+      return `Candidate ${trait.candidate}: ${trait.text}`;
+    })
+    .join("; ");
+  return [
+    `Already stated by you (server-derived): you have already put these points in view — ${points}.`,
+    surfaced.length > shown.length
+      ? `Those are your ${ALREADY_STATED_LIMIT} most recent; you have said more earlier.`
+      : null,
+    "Do not restate them as if they were new and do not recite them back. Refer to one only if this turn genuinely needs it, and prefer a point you have not made yet.",
+  ]
+    .filter(Boolean)
+    .join(" ");
 }
 
 /**
@@ -1987,6 +2035,14 @@ export function buildRouteUserContext(input: {
   // "don't restate what you've already said" and long_silence "vary the opening";
   // this closes the gap for the two direct-response routes, condition-neutrally.
   // Runtime context only — the frozen route prompts are untouched.
+  // The routes on which Alex contributes content of its own. Greeting, summary
+  // and closing are fixed-format; backchannel says nothing to repeat; mediation
+  // is already forbidden from naming traits, and handing it a trait list would
+  // work against that contract rather than with it.
+  if (["address", "followup", "build_on", "long_silence"].includes(input.routeKind)) {
+    const alreadyStated = formatAlreadyStatedByYou(input.revealStats);
+    if (alreadyStated) blocks.push(alreadyStated);
+  }
   if (input.routeKind === "address" || input.routeKind === "followup") {
     blocks.push(
       "Anti-repeat (server-derived): if your recent messages already asked this same question or offered the same options, do not repeat them — acknowledge what was just said and move the discussion forward instead.",

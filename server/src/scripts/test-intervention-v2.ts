@@ -73,7 +73,7 @@ import {
 } from "../lib/interventionJudge.js";
 import { ledgerRouteKindForAct } from "../lib/interventionEngine.js";
 import { validateQuestionUptakeDecision } from "../lib/questionUptakeJudge.js";
-import { TRAIT_DB } from "../lib/traitData.js";
+import { TRAIT_BY_ID, TRAIT_DB } from "../lib/traitData.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { ConversationObservation } from "../models/ConversationObservation.js";
 import { Session } from "../models/Session.js";
@@ -3510,6 +3510,104 @@ assert.notEqual(
 );
 assert.match(repeatedGroundingContext.deterministicResponse!, /equally|same/i);
 assert.match(repeatedGroundingContext.deterministicResponse!, /\?/, "the Chair repeat is a question");
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The generator is told what it has already said.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// T-C1-025 seq 7 restated fifteen traits and introduced none. The hard half of
+// that fix — `too_many_restated_traits` — stops the recital after the fact; it
+// does not give the generator a reason not to start one.
+const alreadyStatedMessages = [
+  { seq: 9, senderRole: "humanX", speaker: "Participant X", content: "What else do we know?" },
+];
+const alreadyStatedContext = buildRouteUserContext({
+  routeKind: "build_on",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: alreadyStatedMessages,
+  revealStats: {
+    byCandidate: { A: { revealedIds: [] }, B: { revealedIds: [] }, C: { revealedIds: [] }, D: { revealedIds: [] } },
+    humanConfirmedIds: ["B_p1"],
+    aiSurfacedIds: ["A_p3", "D_p2"],
+  },
+} as any);
+assert.match(alreadyStatedContext.developerPrompt, /Already stated by you \(server-derived\)/);
+assert.match(alreadyStatedContext.developerPrompt, /excellent spatial awareness/i);
+assert.match(alreadyStatedContext.developerPrompt, /concentrate very well/i);
+// The set is Alex's own surfaced traits. `humanConfirmedIds` is what Alex may
+// treat as grounded and is a different question; conflating the two is a defect
+// this repair has already had to fix once.
+assert.doesNotMatch(
+  alreadyStatedContext.developerPrompt,
+  /Already stated by you[^\n]*cool head/i,
+  "a trait Alex never said is not something Alex already said",
+);
+// Most recent first, and bounded — the set grows for the whole session.
+const manyStated = TRAIT_DB.slice(0, 20).map((trait) => trait.id);
+const boundedContext = buildRouteUserContext({
+  routeKind: "build_on",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 9,
+  messages: alreadyStatedMessages,
+  revealStats: {
+    byCandidate: { A: { revealedIds: [] }, B: { revealedIds: [] }, C: { revealedIds: [] }, D: { revealedIds: [] } },
+    humanConfirmedIds: [],
+    aiSurfacedIds: manyStated,
+  },
+} as any);
+const alreadyStatedBlock = boundedContext.developerPrompt
+  .split("\n\n")
+  .find((block) => block.startsWith("Already stated by you"))!;
+assert.equal(
+  alreadyStatedBlock.match(/Candidate [ABCD]:/g)?.length,
+  12,
+  "the prompt addition does not grow with the session",
+);
+assert.match(alreadyStatedBlock, /your 12 most recent; you have said more earlier/i);
+assert.ok(
+  alreadyStatedBlock.indexOf(TRAIT_BY_ID.get(manyStated[19]!)!.text) <
+    alreadyStatedBlock.indexOf(TRAIT_BY_ID.get(manyStated[9]!)!.text),
+  "most recent first — the recital shape restates what is freshest",
+);
+assert.ok(
+  !alreadyStatedBlock.includes(TRAIT_BY_ID.get(manyStated[0]!)!.text),
+  "and the oldest fall off rather than the newest",
+);
+// Nothing to repeat, nothing said.
+assert.doesNotMatch(
+  buildRouteUserContext({
+    routeKind: "build_on",
+    conditionCode: "C1",
+    language: "en",
+    anchorSeq: 9,
+    messages: alreadyStatedMessages,
+    revealStats: focusDepthStats,
+  } as any).developerPrompt,
+  /Already stated by you/,
+);
+// Fixed-format and no-content routes do not receive it. Mediation is forbidden
+// from naming traits at all, so a trait list there works against its contract.
+for (const routeKind of ["mediation", "backchannel", "summary"] as const) {
+  assert.doesNotMatch(
+    buildRouteUserContext({
+      routeKind,
+      conditionCode: "C2",
+      language: "en",
+      anchorSeq: 9,
+      messages: alreadyStatedMessages,
+      revealStats: {
+        byCandidate: { A: { revealedIds: [] }, B: { revealedIds: [] }, C: { revealedIds: [] }, D: { revealedIds: [] } },
+        humanConfirmedIds: [],
+        aiSurfacedIds: ["A_p3"],
+      },
+    } as any).developerPrompt,
+    /Already stated by you/,
+    `${routeKind} does not receive the already-stated list`,
+  );
+}
 
 const comparisonFocusState = deriveFocusDepthState({
   routeKind: "build_on",
