@@ -56,15 +56,48 @@ export function taskGroundingSignal(content: string): TaskGroundingSignal {
   return "none";
 }
 
+/**
+ * Whether Alex has already grounded the group during this window.
+ *
+ * Matched against Alex's own earlier messages, never a participant's. The forms
+ * below are fixed strings, so a signature over their invariant wording is exact
+ * enough for the one thing it decides: which of two forms this turn takes.
+ */
+const TASK_GROUNDING_SIGNATURE =
+  /extra weight|counting equally|counts the same|does not outweigh|distributed across the board|나뉘어 있어서|같은 비중|별도 가중치|추가 가중치/i;
+
+function taskGroundingAlreadyDelivered(
+  window: readonly TranscriptMessage[],
+  anchorSeq: number,
+): boolean {
+  return window.some(
+    (message) =>
+      message.senderRole === "ai" &&
+      message.seq < anchorSeq &&
+      TASK_GROUNDING_SIGNATURE.test(message.content),
+  );
+}
+
 function deterministicTaskGroundingResponse(input: {
   signal: TaskGroundingSignal;
   conditionCode: ConditionCode;
   language: "en" | "ko";
   content: string;
+  /**
+   * True when Alex has grounded the group before in this window. The facts are
+   * the same either way; only the form changes, so the correction does not
+   * arrive twice as the identical sentence.
+   */
+  repeat: boolean;
 }): string | null {
   if (input.signal === "distributed_information_question") {
-    return input.language === "ko"
-      ? "후보자 자료가 위원들에게 나뉘어 있어서 같은 후보에 대해서도 서로 다른 특성을 가지고 있을 수 있어요. 두 목록이 다르다고 해서 어느 한쪽이 잘못된 것은 아닙니다."
+    if (input.language === "ko") {
+      return input.repeat
+        ? "앞서 말씀드린 대로 자료가 위원별로 나뉘어 있어서 목록 차이는 정상입니다. 서로 다른 부분을 맞춰보는 것이 오히려 도움이 되겠지요?"
+        : "후보자 자료가 위원들에게 나뉘어 있어서 같은 후보에 대해서도 서로 다른 특성을 가지고 있을 수 있어요. 두 목록이 다르다고 해서 어느 한쪽이 잘못된 것은 아닙니다.";
+    }
+    return input.repeat
+      ? "As before, the files are distributed across the board, so a difference between our lists is expected rather than an error. Shall we put the parts that differ side by side?"
       : "The candidate files are distributed across the board, so different members can legitimately have different traits for the same candidate. Our lists can differ without either one being wrong.";
   }
   if (input.signal === "task_standard_drift") {
@@ -78,24 +111,70 @@ function deterministicTaskGroundingResponse(input: {
     );
     if (input.language === "ko") {
       if (input.conditionCode === "C4") {
+        if (input.repeat) {
+          return "앞서와 같은 기준입니다 — 어느 항목도 더 무겁지 않습니다. 모든 MATCH와 MISS를 같은 비중으로 두면 지금 어느 후보의 전체 프로필부터 보시겠어요?";
+        }
         return humanQualityFrame
           ? "인간적인 자질도 다른 항목과 마찬가지로 하나의 MATCH 또는 MISS이며 별도 가중치는 없습니다. 어느 후보의 전체 프로필을 같은 기준으로 먼저 비교할까요?"
           : communicationFrame
             ? `의사소통도 전체 프로필을 구성하는 한 항목이지만 다른 MATCH나 MISS보다 우선하지는 않습니다. ${candidate ? `Candidate ${candidate}의` : "해당 후보의"} 다른 항목 중 무엇을 함께 놓고 비교할까요?`
             : "어느 한 항목에도 더 높은 비중은 없습니다. 모든 MATCH와 MISS를 같은 비중으로 놓고 어느 후보의 전체 프로필부터 비교할까요?";
       }
-      return "특정 자질에 별도 가중치는 없습니다. 모든 MATCH와 MISS를 같은 비중으로 두고 후보자의 전체 프로필을 비교해야 합니다.";
+      return input.repeat
+        ? "기준은 앞서와 같습니다. 어느 항목도 더 무겁지 않으니 모든 MATCH와 MISS를 같은 비중으로 두고 전체 프로필을 봅시다."
+        : "특정 자질에 별도 가중치는 없습니다. 모든 MATCH와 MISS를 같은 비중으로 두고 후보자의 전체 프로필을 비교해야 합니다.";
     }
     if (input.conditionCode === "C4") {
+      // The Chair repeat is a question in C4 and a statement in C2, because that
+      // is the difference the two conditions already carry: C4's strategy ends
+      // its turns by drawing the team out, C2's does not. Giving C2 a question
+      // it never had would move a manipulated variable to fix a repetition
+      // problem, so C2 varies within its own declarative register instead.
+      if (input.repeat) {
+        return "The standard has not moved: no item weighs more than another. With every MATCH and MISS counting equally, whose complete profile should the team take next?";
+      }
       return humanQualityFrame
         ? "Human qualities are still individual MATCH or MISS items and do not receive extra weight. Which candidate's complete profile should the team compare under the same standard first?"
         : communicationFrame
           ? `Communication is one item in the complete profile, but it does not outweigh the other MATCH or MISS items. Which other parts of ${candidate ? `Candidate ${candidate}'s` : "that candidate's"} profile should the team place beside it?`
           : "No single item receives extra weight. Which candidate's complete MATCH-and-MISS profile should the team compare first?";
     }
-    return "No single quality receives extra weight. The team should compare each candidate's complete profile with every MATCH and MISS counting equally.";
+    return input.repeat
+      ? "The standard is the same as before: no quality weighs more than another, so each candidate's complete profile stands or falls on every MATCH and MISS counting equally."
+      : "No single quality receives extra weight. The team should compare each candidate's complete profile with every MATCH and MISS counting equally.";
   }
   return null;
+}
+
+/**
+ * The task correction as an instruction to generation, for the turns the fixed
+ * sentence has to stand aside on.
+ *
+ * The template is a whole reply, so taking it forfeits everything else the turn
+ * contained — which is the defect: at T-C2-034 seq 5 and T-C2-039 seq 5-6 a
+ * message both drifted from the task standard and eliminated a candidate, and
+ * only the drift was answered. As a block the same fact reaches the same route
+ * without consuming the turn.
+ *
+ * The role gate mirrors the template's exactly. This is a second *form* of the
+ * correction, never a second route to it: a Member gains nothing here, and
+ * nothing in this function reaches the decision to speak at all — it runs only
+ * once a turn has already been routed.
+ */
+function taskGroundingInstructionBlock(input: {
+  signal: TaskGroundingSignal;
+  conditionCode: ConditionCode;
+  language: "en" | "ko";
+}): string | null {
+  if (input.signal === "distributed_information_question") {
+    return input.language === "ko"
+      ? "Task standard (server-derived): 참가자가 목록 차이를 오류처럼 다루고 있습니다. 후보자 자료가 위원별로 나뉘어 있어 같은 후보에 대해 서로 다른 특성을 가질 수 있고 every match and miss counts the same 라는 점을 짧게 말하되, 같은 메시지에 담긴 나머지 내용에도 함께 답하세요(also respond to what else they raised). 정정하려고 상대의 논점을 버리지 마세요."
+      : "Task standard (server-derived): a participant is treating a difference between the lists as an error. Say briefly that the candidate files are distributed across the board, so members can legitimately hold different traits for the same candidate, and that every match and miss counts the same. Then also respond to what else their message put on the table — do not drop their point in order to make the correction.";
+  }
+  if (input.signal !== "task_standard_drift" || !isLeaderCondition(input.conditionCode)) return null;
+  return input.language === "ko"
+    ? "Task standard (server-derived): 참가자가 특정 자질에 더 큰 비중을 두고 있습니다. 어느 항목에도 추가 가중치는 없고 every match and miss counts the same 라는 점을 한 번 분명히 말하되, 같은 메시지에 담긴 나머지 내용에도 함께 답하세요(also respond to what else they raised). 정정하려고 상대의 논점을 버리지 마세요."
+    : "Task standard (server-derived): a participant has just weighted one quality above another. Say plainly, once, that no item receives extra weight and that every match and miss counts the same. Then also respond to what else their message put on the table — do not drop their point in order to make the correction.";
 }
 
 /**
@@ -1577,6 +1656,18 @@ export function buildRouteUserContext(input: {
   buildOnsSinceMediation?: number;
   requestIntentOverride?: RequestIntent;
   conversationSituation?: string;
+  /**
+   * The candidates the turn's observation recorded as literally named, which is
+   * what the task-grounding route reads to decide whether its fixed sentence can
+   * be the whole reply. `conversationSituation` is the same observation as
+   * prose; this is the one field of it a route has to branch on, so it is passed
+   * as data rather than re-read out of a paragraph.
+   *
+   * Undefined means no observation was available — the observer's `off` mode, or
+   * a route that runs without one. The deterministic detector then stands in, as
+   * it does everywhere else that needs mentions without a model.
+   */
+  observedMentionedCandidates?: Cand[];
   communicativeAct?: CommunicativeAct;
   judgeEvidenceSeqs?: number[];
   selectedOpportunity?: SelectedOpportunityGenerationContext;
@@ -1806,13 +1897,32 @@ export function buildRouteUserContext(input: {
   const declineTakesPrecedence =
     layoutRequestSignal(requestBundle.content) ||
     (!isLeaderCondition(input.conditionCode) && collationRequestSignal(requestBundle.content));
+  // [Issue 06] The route reads the observation instead of short-circuiting ahead
+  // of it. The fixed sentence is a whole reply, so it can only answer a message
+  // that asked for nothing else; a turn that also names a candidate is making a
+  // point about the board, and taking the template there is what left an
+  // elimination unanswered at T-C2-034 seq 5 and T-C2-039 seq 5-6.
+  const groundingTurnNamesCandidate =
+    (input.observedMentionedCandidates ?? [...candidateMentions(requestBundle.content)]).length > 0;
+  const groundingInstruction =
+    groundingSignal !== "none" && groundingTurnNamesCandidate
+      ? taskGroundingInstructionBlock({
+          signal: groundingSignal,
+          conditionCode: input.conditionCode,
+          language: input.language,
+        })
+      : null;
+  if (groundingInstruction) blocks.push(groundingInstruction);
   const deterministicResponse =
-    deterministicTaskGroundingResponse({
-      signal: groundingSignal,
-      conditionCode: input.conditionCode,
-      language: input.language,
-      content: requestBundle.content,
-    }) ??
+    (groundingTurnNamesCandidate
+      ? null
+      : deterministicTaskGroundingResponse({
+          signal: groundingSignal,
+          conditionCode: input.conditionCode,
+          language: input.language,
+          content: requestBundle.content,
+          repeat: taskGroundingAlreadyDelivered(window, input.anchorSeq),
+        })) ??
     // [D6 / T-C1-023 seq 14] When an opportunity is selected the intent comes
     // from the Observer and the lexical classifier is never consulted, so an
     // "any other positives or negatives?" turn — which the classifier reads as

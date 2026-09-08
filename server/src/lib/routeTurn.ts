@@ -66,6 +66,8 @@ export interface RouteTurnInput {
   requestIntentOverride?: RequestIntent;
   communicativeAct?: CommunicativeAct;
   conversationSituation?: string;
+  /** The observation's literal candidate mentions, when the caller already holds them. */
+  observedMentionedCandidates?: Candidate[];
   judgeEvidenceSeqs?: number[];
   controllerMode?: "legacy" | "ledger_shadow" | "ledger_active";
   ledgerVersion?: string;
@@ -233,6 +235,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     requestIntentOverride: input.requestIntentOverride,
     communicativeAct: input.communicativeAct ?? defaultCommunicativeAct(input.routeKind),
     conversationSituation,
+    // The task-grounding route branches on this; every other route ignores it.
+    // A caller that already awaited the observation passes it, so the route is
+    // not made to re-read the raw text for a fact the observation states.
+    observedMentionedCandidates:
+      input.observedMentionedCandidates ?? observerSnapshot?.observation.mentionedCandidates,
     judgeEvidenceSeqs: input.judgeEvidenceSeqs,
     selectedOpportunity: input.selectedOpportunity,
   });

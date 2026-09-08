@@ -113,6 +113,7 @@ interface Reservation {
   requestIntentOverride?: RequestIntent;
   communicativeAct?: CommunicativeAct;
   conversationSituation?: string;
+  observedMentionedCandidates?: Cand[];
   judgeEvidenceSeqs?: number[];
   controllerMode?: "legacy" | "ledger_shadow" | "ledger_active";
   ledgerState?: ConversationLedgerState;
@@ -974,6 +975,7 @@ async function runReservation(runtime: RuntimeState, reservation: Reservation) {
       requestIntentOverride: reservation.requestIntentOverride,
       communicativeAct: reservation.communicativeAct,
       conversationSituation: reservation.conversationSituation,
+      observedMentionedCandidates: reservation.observedMentionedCandidates,
       judgeEvidenceSeqs: reservation.judgeEvidenceSeqs,
       controllerMode: reservation.controllerMode,
       ledgerVersion: reservation.ledgerState?.ledgerVersion,
@@ -1848,6 +1850,10 @@ export async function onHumanMessage(input: {
       postGenerationReevaluation: input.postGenerationReevaluation,
       communicativeAct: "mediate",
       conversationSituation: snapshot ? describeConversationSituation(snapshot) : undefined,
+      // The correction reads the observation like every other route. Without it
+      // the fixed sentence was the whole reply, and anything else the message
+      // carried went unanswered.
+      observedMentionedCandidates: snapshot?.observation.mentionedCandidates,
       judgeEvidenceSeqs: [input.messageSeq],
       controllerMode,
     });

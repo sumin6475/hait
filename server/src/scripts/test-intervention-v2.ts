@@ -3187,6 +3187,117 @@ const peerTaskDriftContext = buildRouteUserContext({
 assert.equal(peerTaskDriftContext.taskGroundingSignal, "task_standard_drift");
 assert.equal(peerTaskDriftContext.deterministicResponse, undefined, "peer conditions do not mediate task framing");
 
+// --- The task-grounding route reads the observation ---------------------------
+//
+// T-C2-034 seq 5 and T-C2-039 seq 5-6. The fixed sentence fired on a message
+// that both drifted from the task standard and eliminated a candidate, and the
+// elimination went unanswered: the message did two things and the router saw
+// one. The template is a whole reply, so taking it forfeits everything else the
+// turn contained.
+const driftAndElimination = {
+  seq: 6,
+  senderRole: "humanX",
+  speaker: "Participant X",
+  content: "For this captain role, communication should be more important. I think we can rule out C.",
+};
+const driftAndEliminationContext = buildRouteUserContext({
+  routeKind: "mediation",
+  conditionCode: "C4",
+  messages: [driftAndElimination],
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 6,
+  observedMentionedCandidates: ["C"],
+});
+assert.equal(driftAndEliminationContext.taskGroundingSignal, "task_standard_drift");
+assert.equal(
+  driftAndEliminationContext.deterministicResponse,
+  undefined,
+  "a message that also makes a point about the board is not answered by the fixed sentence",
+);
+assert.match(
+  driftAndEliminationContext.developerPrompt,
+  /Task standard \(server-derived\)/,
+  "the correction survives as a mandatory instruction when the template steps aside",
+);
+assert.match(
+  driftAndEliminationContext.developerPrompt,
+  /every match and miss counts the same/i,
+  "the block states the same fact the template would have stated",
+);
+assert.match(
+  driftAndEliminationContext.developerPrompt,
+  /also respond to what else/i,
+  "and the rest of the message is answered rather than dropped",
+);
+// The observation is what decides, not a second reading of the raw text. Told
+// the turn named nobody, the route takes the template even though the words
+// carry a letter.
+assert.match(
+  buildRouteUserContext({
+    routeKind: "mediation",
+    conditionCode: "C4",
+    messages: [driftAndElimination],
+    revealStats: focusDepthStats,
+    language: "en",
+    anchorSeq: 6,
+    observedMentionedCandidates: [],
+  }).deterministicResponse ?? "",
+  /Communication is one item/i,
+  "the observation outranks the raw text, in both directions",
+);
+// Orthogonality: a Member neither answers with the template nor receives the
+// instruction. Task-standard correction is a Chair responsibility and the route
+// gaining a second form must not become a second way for a Member to acquire it.
+const memberDriftAndElimination = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C3",
+  messages: [driftAndElimination],
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 6,
+  observedMentionedCandidates: ["C"],
+});
+assert.equal(memberDriftAndElimination.deterministicResponse, undefined);
+assert.doesNotMatch(
+  memberDriftAndElimination.developerPrompt,
+  /Task standard \(server-derived\)/,
+  "a Member does not correct the task standard, by the template or by any other route",
+);
+// The grounding does not always arrive as the same sentence. Alex having
+// already grounded the group is what selects the second form; both forms state
+// the same facts.
+const repeatedGroundingContext = buildRouteUserContext({
+  routeKind: "mediation",
+  conditionCode: "C4",
+  messages: [
+    {
+      seq: 4,
+      senderRole: "ai",
+      speaker: "Alex",
+      content: "No single item receives extra weight. Which candidate's complete profile should the team compare first?",
+    },
+    {
+      seq: 5,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "For this captain role, communication should be more important.",
+    },
+  ],
+  revealStats: focusDepthStats,
+  language: "en",
+  anchorSeq: 5,
+  observedMentionedCandidates: [],
+});
+assert.equal(repeatedGroundingContext.taskGroundingSignal, "task_standard_drift");
+assert.notEqual(
+  repeatedGroundingContext.deterministicResponse,
+  equalWeightCorrectionContext.deterministicResponse,
+  "grounding the group a second time does not arrive as the sentence it arrived as the first time",
+);
+assert.match(repeatedGroundingContext.deterministicResponse!, /equally|same/i);
+assert.match(repeatedGroundingContext.deterministicResponse!, /\?/, "the Chair repeat is a question");
+
 const comparisonFocusState = deriveFocusDepthState({
   routeKind: "build_on",
   messages: [
