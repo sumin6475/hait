@@ -182,6 +182,15 @@ abandoned (issue 13); and a count request ignores its own source (issue 14).
 - **`alexRelevance` is stuck** and no one knows why. The explanation given at the
   time was disconfirmed. See T-C2-041 in the measurement log.
 
+**The next effort has its own directory.** `.scratch/leader-decision-frame/`
+holds the spec and eight issues for manipulating status as ownership of a
+decision procedure. It is not part of this repair and does not belong in this
+file; the two decisions it settled are `docs/adr/0007` and `docs/adr/0008`. Its
+first issue is a pair of measured sessions, because a frequency count over every
+source available found **zero** observations of any leader-side behaviour
+failing — no Chair session has ever run to completion on an analysed build, and
+no aci session had ever been analysed at all.
+
 **What is not covered by tests, and why.** This repository has no runtime harness
 for `reserveTurn` / `executeRouteTurn` — the intervention suite tests
 `humanArrivalAction` as a pure function and never drives the engine. So A6's
