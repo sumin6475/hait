@@ -9,6 +9,7 @@ import {
   verifyHumanTraitCandidates,
 } from "../lib/poolingExtractor.js";
 import { TRAIT_KEYWORD_REGISTRY } from "../lib/traitKeywordRegistry.js";
+import { TRAIT_BY_ID } from "../lib/traitData.js";
 
 const ids = (messageText: string, assignedProfile?: "X" | "Y" | "Z") =>
   extractHumanTraitsFast({ messageText, assignedProfile }).acceptedIds;
@@ -104,6 +105,29 @@ const positiveMemory = extractHumanTraitsFast({
 assert.deepEqual(positiveMemory.acceptedIds, []);
 assert.deepEqual(positiveMemory.verificationCandidates.map((candidate) => candidate.traitId), ["B_n3"]);
 
+/**
+ * The registry phrases that reach only bounded verification, never acceptance.
+ *
+ * Reachability alone is too weak a property now that the matcher also carries
+ * Alex's own output. The reveal guard reads `acceptedIds` and nothing else, so
+ * a phrase that falls to `verificationCandidates` is a trait the guard cannot
+ * count — and the guard's failure mode is precisely an empty extraction reading
+ * as "this message revealed nothing". Pinning the set means a change that pushes
+ * more phrases into it has to say so.
+ *
+ * All four here are correct: each is a bare noun phrase carrying no assertion of
+ * the negative the trait states. "memory for numbers" is not "below-average
+ * memory for numbers"; "verbally skillful" is not "not verbally skillful".
+ * `hasRequiredTraitSemantics` withholds them on that ground, and the fuller
+ * phrasings of both traits are accepted.
+ */
+const VERIFICATION_ONLY_PHRASES = new Set([
+  "B_n3|memory for numbers",
+  "C_n1|verbally skillful",
+  "C_n1|verbally skilful",
+  "C_n1|verbally skillfull",
+]);
+
 for (const entry of TRAIT_KEYWORD_REGISTRY) {
   const profile = entry.profiles[0];
   const phrase = entry.corePhrases[0]!;
@@ -116,6 +140,12 @@ for (const entry of TRAIT_KEYWORD_REGISTRY) {
       direct.acceptedIds.includes(entry.traitId) ||
         direct.verificationCandidates.some((candidate) => candidate.traitId === entry.traitId),
       `${entry.traitId} must remain reachable from registered phrase: ${registeredPhrase}`,
+    );
+    assert.equal(
+      direct.acceptedIds.includes(entry.traitId),
+      !VERIFICATION_ONLY_PHRASES.has(`${entry.traitId}|${registeredPhrase}`),
+      `${entry.traitId} changed whether the matcher accepts "${registeredPhrase}" outright; ` +
+        "a phrase the matcher only defers is invisible to the reveal guard",
     );
   }
   assert.ok(
@@ -266,11 +296,23 @@ assert.deepEqual(
   [],
 );
 
+// The approved registry, compared entry by entry against the runtime copy.
+//
+// The draft is the only statement of what the registry was supposed to contain,
+// which is why it is kept rather than deleted once superseded. The comparison
+// covers ownership and trait text as well as the keyword lists: `traitData.ts`
+// is the source of truth for those, and a draft that disagrees with it is a
+// draft that was approved against a different pool.
 type DraftRegistry = {
   traits: Array<{
     trait_id: string;
+    candidate: string;
+    valence: string;
+    profiles: string[];
+    canonical_text: string;
     core_phrases: string[];
     accepted_variants: string[];
+    fuzzy_policy: string;
     review_status: string;
   }>;
 };
@@ -282,6 +324,15 @@ for (const runtimeEntry of TRAIT_KEYWORD_REGISTRY) {
   assert.ok(approved, `missing approved registry entry ${runtimeEntry.traitId}`);
   assert.deepEqual(runtimeEntry.corePhrases, approved.core_phrases, `${runtimeEntry.traitId} core phrases drifted`);
   assert.deepEqual(runtimeEntry.acceptedVariants, approved.accepted_variants, `${runtimeEntry.traitId} variants drifted`);
+  assert.equal(runtimeEntry.candidate, approved.candidate, `${runtimeEntry.traitId} candidate drifted`);
+  assert.equal(runtimeEntry.valence, approved.valence, `${runtimeEntry.traitId} valence drifted`);
+  assert.deepEqual([...runtimeEntry.profiles].sort(), [...approved.profiles].sort(), `${runtimeEntry.traitId} profiles drifted`);
+  assert.equal(runtimeEntry.fuzzyPolicy, approved.fuzzy_policy, `${runtimeEntry.traitId} fuzzy policy drifted`);
+  assert.equal(
+    TRAIT_BY_ID.get(runtimeEntry.traitId)?.text,
+    approved.canonical_text,
+    `${runtimeEntry.traitId} was approved against different trait text than the pool now holds`,
+  );
 }
 
 const ambiguous = extractHumanTraitsFast({ messageText: "Should we trust Candidate B's reliability?", assignedProfile: "X" });

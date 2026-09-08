@@ -1,11 +1,23 @@
-# Human surfaced-trait keyword registry — REVIEW DRAFT ONLY.
+# Human surfaced-trait keyword registry — SUPERSEDED BY THE RUNTIME REGISTRY.
 #
-# This file is not imported by runtime code. `server/src/lib/traitData.ts` remains
+# The registry this file proposed shipped as `server/src/lib/traitKeywordRegistry.ts`,
+# and that file is now the one the matcher reads. This one is kept, not deleted,
+# because it is the only statement of what the registry was *approved* to
+# contain: `test-pooling-extractor.ts` compares the runtime copy against every
+# approved entry below, so a keyword list that drifts from what was reviewed
+# fails the suite.
+#
+# Audited entry by entry against the runtime registry (2026-09-08): 40 of 40
+# entries approved, zero differences in candidate, valence, profiles, trait
+# text, core phrases, accepted variants, or fuzzy policy.
+#
+# This file is still not imported by runtime code. `server/src/lib/traitData.ts` remains
 # the canonical source for candidate, valence, profile ownership, and trait text.
-# The copied metadata below is review context so every proposed matcher entry can
-# be approved, edited, or deleted in one place before implementation.
+# The copied metadata below is the review context each entry was approved in.
+# The `.draft` in the filename is now historical; it is kept so the references to
+# this path do not break.
 #
-# Proposed matching contract:
+# The matching contract, as approved:
 # - Only traits eligible for the speaker's assigned profile may be considered.
 # - Candidate resolution priority is explicit candidate name, then a profile-unique
 #   core phrase, then trusted current focus. Abstain if the candidate stays ambiguous.
@@ -14,10 +26,12 @@
 #   tuple(s) to LLM verification. An LLM cannot add a tuple without lexical evidence.
 # - Questions, quotations, hypotheticals, denials, and meta-negations are not direct
 #   disclosures unless bounded verification determines that a direct assertion remains.
-# - Numeric fuzzy thresholds are intentionally deferred until implementation tests.
+# - Numeric fuzzy thresholds were deferred to implementation; they live in
+#   `poolingExtractor.ts` and are exercised by the extractor suite.
 
 schema_version: 1
-status: draft
+status: superseded
+superseded_by: server/src/lib/traitKeywordRegistry.ts
 runtime_enabled: false
 defaults:
   normalization:
@@ -33,7 +47,7 @@ defaults:
     - hypothetical_or_uncertainty
     - denial_or_dispute
     - meta_negation
-  review_status: pending
+  review_status: approved
 
 traits:
   - trait_id: A_p1
