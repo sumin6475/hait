@@ -1,8 +1,9 @@
 # Session measurements
 
 Every live session run against the conversation repair, in one place and in one
-shape. Nine entries: one diagnostic baseline, the seven measured rounds of the
-repair, and one partial session run after them.
+shape. Eleven entries: three diagnostic sessions that the early gates were built
+from, the seven measured rounds of the repair, and one partial session run after
+them.
 
 Each entry says what the session **confirmed**, what it **disconfirmed**, and
 what it **did not exercise**. The three are kept apart on purpose. A record that
@@ -17,27 +18,40 @@ them.
 
 ## Summary
 
-| | T-C2-034 | T-C1-020 | T-C2-039 | T-C1-022 | T-C1-023 | T-C1-024 | T-C1-025 | T-C1-027 | T-C2-041 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Condition | Chair | Member | Chair | Member | Member | Member | Member | Member | Chair |
-| Messages | 28 | 51 human | 19 human | — | — | 14 | 8 | 81 | 10 |
-| Decisions | 18 | 51 | 19 | — | — | 9 | 5 | 49 | 6 |
-| Spoken | 10 (56%) | 18 | 11 | 5 | — | 5 (56%) | 2 | 28 (57%) | 4 |
-| Median turn | — | 10.2 s | 12.7 s | — | — | **9.6 s** | — | — | — |
-| Turns superseded | — | **39%** | 2/19 | — | — | **11%** | — | — | — |
-| Observer per call, mean | — | 6.9 s | 6.8 s | — | — | 6.5 s | — | 5.3 s *(med)* | 5.8 s |
-| Observer max | — | 14.3 s | 11.9 s | 13.9 s | 10.5 s | 11.2 s | — | 9.4 s | 7.6 s |
-| Pre-broadcast tail | — | — | — | — | 2.5–3.5 s | **0.2–1.5 s** | — | — | — |
-| Alex words, mean | — | 43.8 | 55.6 | 30.8 | — | 34 | **138** | **34.7** | 34.5 |
-| Max traits, one message | — | **15** | 6 | — | — | 4 | **16** | — | — |
-| Judge cache hits | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| Judge first-attempt accepts | 12/18 | — | 17/17 | — | — | 8/8 | — | — | 4/5 |
+| | T-C2-034 | T-C2-035 | T-C2-037 | T-C1-020 | T-C2-039 | T-C1-022 | T-C1-023 | T-C1-024 | T-C1-025 | T-C1-027 | T-C2-041 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Condition | Chair | Chair | Chair | Member | Chair | Member | Member | Member | Member | Member | Chair |
+| Messages | 28 | — | — | 51 human | 19 human | — | — | 14 | 8 | 81 | 10 |
+| Decisions | 18 | — | 23 | 51 | 19 | — | — | 9 | 5 | 49 | 6 |
+| Spoken | 10 (56%) | — | 6 (26%) | 18 | 11 | 5 | — | 5 (56%) | 2 | 28 (57%) | 4 |
+| Median turn | — | — | — | 10.2 s | 12.7 s | — | — | **9.6 s** | — | — | — |
+| Turns superseded | — | — | — | **39%** | 2/19 | — | — | **11%** | — | — | — |
+| Observer per call, mean | — | — | — | 6.9 s | 6.8 s | — | — | 6.5 s | — | 5.3 s *(med)* | 5.8 s |
+| Observer max | — | — | — | 14.3 s | 11.9 s | 13.9 s | 10.5 s | 11.2 s | — | 9.4 s | 7.6 s |
+| Pre-broadcast tail | — | — | — | — | — | — | 2.5–3.5 s | **0.2–1.5 s** | — | — | — |
+| Alex words, mean | — | — | — | 43.8 | 55.6 | 30.8 | — | 34 | **138** | **34.7** | 34.5 |
+| Max traits, one message | — | — | — | **15** | 6 | — | — | 4 | **16** | — | — |
+| Judge cache hits | — | — | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
+| Judge first-attempt accepts | 12/18 | — | — | — | 17/17 | — | — | 8/8 | — | — | 4/5 |
 
 A dash means the figure was not recorded for that run, not that it was zero.
 
-Targets, unchanged: median turn ≤ 5 s, turns superseded ≤ 10%, Alex words ≤ 30,
-traits per message ≤ 2, wrong-candidate turns 0, Alex messages with zero new
-information 0.
+### Targets
+
+| Metric | Target | Best so far |
+| --- | --- | --- |
+| Median turn latency | ≤ 5 s | 9.6 s (T-C1-024) |
+| Turns discarded as superseded | ≤ 10% | 11% (T-C1-024) |
+| Observer share of turn time | — | 66% (T-C1-024) |
+| Judge cache hit rate | — | structurally impossible; see T-C1-022 |
+| Alex words per message, mean | ≤ 30 | 34.7 (T-C1-027) |
+| Max traits in one message | ≤ 2 | 4 (T-C1-024) |
+| Wrong-candidate turns | 0 | 0 (T-C1-024) |
+| Alex messages with zero new information | 0 | 1 of 4 (T-C1-024) |
+| Directive phrasing, Chair : Member | unchanged | 8/11 : 1/18 (first runs) |
+
+The last row is not a target to improve. It is the orthogonality reading, and it
+must stay where it is.
 
 ---
 
@@ -57,6 +71,67 @@ naming Alex's own notes as the source.
 
 Recovering the five structural silences would have moved speech rate to 15/18
 (83%). That arithmetic is what set the repair's first goal.
+
+**The six root causes diagnosed from it**, each fixed by the gate named:
+
+| | Root cause | Fixed by |
+| --- | --- | --- |
+| A | An opportunity's id was keyed to its thread's root, so a session could hold only one of a kind, and consuming it killed the whole derivation branch | Gate 1 |
+| B | The Judge's retry loop converged on silence: a contract rejection was retried until the model capitulated to `stay_silent` | Gate 2 |
+| C | With no focus candidate there was nothing to say, and focus was null on 15 of 18 turns | Gate 3 |
+| D | A regex pre-empt ran ahead of the observation and swallowed the context that would have answered the message | Gate B6 (**still open**, issue 06) |
+| E | Natural uptake was forbidden by the prompt contract, so Alex could not pick up what a human had just said | Gate 3 |
+| F | Extractor miscounting was unobservable, and the agreed design was never wired up | Gate A7 and D2 |
+
+**Measured effect of Gate 2**, which root cause B produced: redundant and
+material reducer rejections were split, so an idempotent no-op stopped degrading
+the controller — this also repaired a regression Gate 1 had introduced — and a
+capitulated silence was given its own reason so it stops reading as a judgement
+about content. Forbidding silence on retry was deliberately deferred pending
+measurement, and that measurement never happened.
+
+**Attribution correction, made during Gate 1 and kept here:** the first reading of
+root cause A claimed nine turns of speech loss. The run shows it cost none. The
+keying was left unchanged and instrumented instead, and the defect was later
+retired by B4's consumption rule rather than by re-keying. **Check attribution
+against the record before ranking a repair.**
+
+## T-C2-035 — the session Gate 3 was built from
+
+Chair, 10 silences examined. Diagnosis only.
+
+**Confirmed.** **8 of 10 silences were contract rejections, not an absence of
+anything to say.** That is the finding that turned Gate 3 from "give Alex more to
+talk about" into "stop rejecting what it already had".
+
+**Measured effect of the gate built from it (Gate 3):** focus normalisation
+stopped laundering a contradicted focus; trait eligibility began reading the
+thread's scope with focus as a ranking hint rather than a filter; and a voluntary
+follow became legal on grounded-synthesis evidence. Its first draft over-fired
+and was caught by an existing test.
+
+**Not exercised.** No latency figures were taken from this session.
+
+## T-C2-037 — the session Gate 3R was built from
+
+Chair, 23 decisions, 6 spoken. Diagnosis only.
+
+**Confirmed.** Speech rate 6/23 after Gates 1–3, which is what made a second
+series necessary rather than more of the first.
+
+**Measured effect of the gate built from it (Gate 3R):** candidate salience
+replaced focus as the ranking signal; the decision projection began dropping
+opportunities the cooldown forbids, so the Judge stopped being offered options it
+could never take; an inert selected trait is repaired rather than rejected; and a
+second-person plural address resolves to every participant instead of yielding an
+exclusive human floor. **A cooldown bypass was deliberately not added**, because
+its motivating turn was downstream of the ranking defect.
+
+Gate 3R's effect was measured a session later, in T-C1-020 and T-C2-039 below:
+17/17 first-attempt Judge accepts, no capitulation.
+
+**Not exercised.** Nothing about latency, and nothing about the Chair-only
+routes.
 
 ## T-C1-020 and T-C2-039 — the first two measured runs
 
@@ -103,6 +178,12 @@ Member and Chair on the Gate 1–3R build. 51 and 19 human messages.
 - **39% of T-C1-020's turns were discarded as superseded.** No later measurement
   could be trusted through that much loss, which is why latency was repaired
   first.
+
+**What these two runs changed about the plan.** The original Gates 4 and 5 were
+retired here and their still-live items folded into a new series: latency and
+flow, the Observer, the Judge, the generator. Human-side trait extraction was
+retired as a workstream. Vector retrieval was considered and rejected for a fixed
+40-item closed set — there is nothing to retrieve from.
 
 ## T-C1-022 — diagnosis only
 

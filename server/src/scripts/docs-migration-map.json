@@ -1,388 +1,383 @@
 {
-  "note": "A census of the repair checkpoint taken before any content was moved. Each entry is a section that existed at capture time. `unmoved` must still be present in the source. `moved` must name where it went and should no longer be present. `partial` is for a section that gave up part of itself and kept the rest: it must still be present, must name where the moved part went, and must say in `remains` what is left — because a section that is half-moved is the common case here, and calling it either of the other two would be false. This file is read by check-docs, and it is the only thing standing between 'moved' and 'lost' — update it as part of the move that changes a section, never afterwards from memory.",
+  "note": "A census of the repair checkpoint taken before any content was moved, now complete. Each entry is a section that existed at capture time. `unmoved` and `partial` are transitional and must be zero. `moved` names the file its content went to and its heading must be gone from the source. `kept` stays in the source and must say what it keeps and why. Several sections moved into more than one file; `movedTo` names the primary home and the checkpoint's own pointer table carries the full mapping. This file is read by check-docs, and it is the only thing standing between 'moved' and 'lost' — update it as part of the move that changes a section, never afterwards from memory.",
   "source": "CONVERSATION-REPAIR-CHECKPOINT.md",
   "capturedAt": "2026-09-07",
   "capturedAtSourceLines": 1807,
-  "enforceAllAccounted": false,
-  "enforceAllAccountedNote": "Flipped to true by the ticket that rewrites the checkpoint. Until then a remaining unmoved or partial entry is reported, not failed, so the checker passes while the migration is in progress.",
+  "enforceAllAccounted": true,
+  "enforceAllAccountedNote": "Switched on 2026-09-08 by the ticket that rewrote the checkpoint. An entry left unmoved or partial now fails the build. `moved` and `kept` are the two terminal states: moved means the content lives in the named file and the heading is gone from the source; kept means the section was always meant to stay here and says why.",
   "sections": [
     {
       "heading": "# Conversation System Repair — Checkpoint",
       "capturedAtLine": 1,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "kept",
+      "movedTo": null,
+      "remains": "The document's own title."
     },
     {
       "heading": "## Current state — read this first",
       "capturedAtLine": 18,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "kept",
+      "movedTo": null,
+      "remains": "Reduced to what cannot be derived elsewhere: where the code is, one line on what is done, the two things to do before the next measurement, what waits on the user, and what has no test coverage. The per-item status table is gone; the tracker owns status."
     },
     {
       "heading": "## 0. Branch and safety rules",
       "capturedAtLine": 105,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "kept",
+      "movedTo": null,
+      "remains": "The working rules. They are about this repository and this repair, and there is nowhere else for them."
     },
     {
       "heading": "## 1. Goal state (what \"fixed\" means)",
       "capturedAtLine": 126,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "kept",
+      "movedTo": null,
+      "remains": "The six things being optimised, in the user's words. This is the definition of done and must stay next to the rules."
     },
     {
       "heading": "## 2. Evidence base",
       "capturedAtLine": 151,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "The goal-state arithmetic that the baseline motivated, and the instruction to treat the session as a symptom sample."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "## 3. Confirmed root causes",
       "capturedAtLine": 172,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### A. Opportunity id is keyed to the thread root, so the session can only ever hold one",
       "capturedAtLine": 176,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### B. The Judge retry loop converges on silence",
       "capturedAtLine": 212,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### C. No focus candidate means nothing to say",
       "capturedAtLine": 228,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### D. A regex pre-empt swallows the context",
       "capturedAtLine": 237,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### E. Natural uptake is forbidden by the prompt contract",
       "capturedAtLine": 248,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### F. Extractor miscounting is unobservable, and the agreed design is unwired",
       "capturedAtLine": 268,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "## 4. Repair gates",
       "capturedAtLine": 288,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Gate 1 — Opportunity identity — DONE (`ebd697d`)",
       "capturedAtLine": 295,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Gate 2 — Separate the real reason for silence — DONE (uncommitted)",
       "capturedAtLine": 333,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Gate 3 — Supply something to say — DONE (uncommitted)",
       "capturedAtLine": 388,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Gate 3R — What T-C2-037 showed after Gates 1–3 — DONE (uncommitted)",
       "capturedAtLine": 443,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Gates 4 and 5 (original) — RETIRED 2026-09-07",
       "capturedAtLine": 555,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "## 4b. Second evidence base — T-C1-020 and T-C2-039 (2026-09-07)",
       "capturedAtLine": 583,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "The latency decomposition that ordered the gates, and the pointer into Gate A."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### What the two runs settled",
       "capturedAtLine": 607,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "## 4c. Repair gates, second series",
       "capturedAtLine": 657,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Gate A — Latency and flow — A1–A4, A6, A7 DONE (uncommitted); A5 not needed",
       "capturedAtLine": 662,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### A5 — `floorMs` — NOT NEEDED, superseded by A6",
       "capturedAtLine": 752,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### A6 — Overlap the floor pause with generation — DONE (uncommitted)",
       "capturedAtLine": 758,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "## 4d. Third measurement — T-C1-022 (2026-09-07)",
       "capturedAtLine": 799,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "The A6 supersession note, kept because §4e resolves it in place and the pair reads as one correction."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### A6 does not appear to have been in effect in this run — SUPERSEDED by §4e",
       "capturedAtLine": 809,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### A3 worked for the Observer and cannot work for the Judge as built",
       "capturedAtLine": 823,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### The Observer review path can double a turn",
       "capturedAtLine": 836,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Two speech-quality regressions, both traceable",
       "capturedAtLine": 844,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "## 4e. Fourth measurement — T-C1-023, restarted server (2026-09-07)",
       "capturedAtLine": 888,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "The A7 write-up, which is a gate outcome rather than a measurement."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### New defect: the ledger and the floor disagree inside one observation",
       "capturedAtLine": 913,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### The leader-like behaviour is coming from a deterministic template",
       "capturedAtLine": 932,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### A7 — Take the model call off the broadcast path — DONE (uncommitted)",
       "capturedAtLine": 955,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "## 4f. Fifth measurement — T-C1-024, first run with A7 and B9 (2026-09-07)",
       "capturedAtLine": 990,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "The per-turn latency tables, which are working arithmetic rather than findings."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### A7 is confirmed, and Gate A is done",
       "capturedAtLine": 994,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### B9 was not exercised — it remains unverified",
       "capturedAtLine": 1014,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Cooldown is now the only silence mechanism",
       "capturedAtLine": 1022,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### The Observer's cost grows with the backlog, again",
       "capturedAtLine": 1031,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Every Alex message carried a quality defect",
       "capturedAtLine": 1040,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Gate B — Observer: read the facts, cheaply and correctly",
       "capturedAtLine": 1072,
-      "status": "partial",
-      "movedTo": ".scratch/conversation-repair/issues/05-salience-outranks-focus.md",
-      "remains": "B1, B4, B8 and B9 as completed history for the measurement log. Open items B2/B3 went to issue 05, B6 to 06, B7 to 07, B5 declined in 08."
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/05-salience-outranks-focus.md"
     },
     {
       "heading": "### 4f-bis. Sixth measurement — T-C1-025, first run with D6, B4 and B1 (2026-09-07)",
       "capturedAtLine": 1086,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "Nothing of substance; the heading stays until the checkpoint is rewritten."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### 4i. Seventh measurement — T-C1-027, first full real session (2026-09-07)",
       "capturedAtLine": 1122,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "The B1 rollback's version bumps and the corrected method note, which belong with the gate."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### 4g. Gate B's premise does not survive the T-C1-024 measurement",
       "capturedAtLine": 1206,
-      "status": "partial",
-      "movedTo": "docs/measurements.md",
-      "remains": "The redirect that reassigned B1/B2/B3/B7 and named the remaining latency levers."
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### 4j. Honest decline and label reservation (2026-09-07)",
       "capturedAtLine": 1258,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/adr/0003-decline-rather-than-defer.md"
     },
     {
       "heading": "### 4k. The scope the decline refuses from (2026-09-07)",
       "capturedAtLine": 1309,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/adr/0003-decline-rather-than-defer.md"
     },
     {
       "heading": "### 4h. Observer overlap — design (2026-09-07)",
       "capturedAtLine": 1386,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/01-deterministic-vetoes-off-the-model-path.md"
     },
     {
       "heading": "#### What the Observer is actually on the critical path for",
       "capturedAtLine": 1394,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/10-split-the-observer-call.md"
     },
     {
       "heading": "#### Option 1 — Split the call: a fast decision observation, a full one behind it",
       "capturedAtLine": 1408,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/10-split-the-observer-call.md"
     },
     {
       "heading": "#### Option 2 — Decide the deterministic vetoes before paying for the Observer",
       "capturedAtLine": 1436,
-      "status": "partial",
-      "movedTo": ".scratch/conversation-repair/issues/01-deterministic-vetoes-off-the-model-path.md",
-      "remains": "The measurement that produced the option, and the comparison against Options 1 and 3, which are not being built yet."
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/01-deterministic-vetoes-off-the-model-path.md"
     },
     {
       "heading": "#### Option 3 — A faster observer model",
       "capturedAtLine": 1463,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/adr/0005-no-model-swap-for-latency.md"
     },
     {
       "heading": "#### Recommendation",
       "capturedAtLine": 1469,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/10-split-the-observer-call.md"
     },
     {
       "heading": "#### What must not regress",
       "capturedAtLine": 1477,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/01-deterministic-vetoes-off-the-model-path.md"
     },
     {
       "heading": "#### How to measure",
       "capturedAtLine": 1489,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/01-deterministic-vetoes-off-the-model-path.md"
     },
     {
       "heading": "### Gate C — Judge: a goal, not a rubber stamp",
       "capturedAtLine": 1496,
-      "status": "partial",
-      "movedTo": ".scratch/conversation-repair/issues/02-the-judge-decides-with-a-role-goal.md",
-      "remains": "Nothing of substance — all four parts are in issue 02, C3 rewritten there and in issue 01 per ADR-0001. The heading stays until the checkpoint is rewritten."
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/02-the-judge-decides-with-a-role-goal.md"
     },
     {
       "heading": "### Gate D — Generator: length as a post-condition, not a request",
       "capturedAtLine": 1511,
-      "status": "partial",
-      "movedTo": ".scratch/conversation-repair/issues/03-length-is-a-post-condition.md",
-      "remains": "D2, D3 and D6 as completed history for the measurement log. D1/D5 went to issue 03, D4's open half to issue 04."
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/03-length-is-a-post-condition.md"
     },
     {
       "heading": "### Measurement targets",
       "capturedAtLine": 1524,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     },
     {
       "heading": "### Open decisions blocking work",
       "capturedAtLine": 1540,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": ".scratch/conversation-repair/issues/11-audit-the-trait-registry.md"
     },
     {
       "heading": "## 5. How to verify",
       "capturedAtLine": 1556,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "kept",
+      "movedTo": null,
+      "remains": "How to verify a change. Grew the docs check as a sixth command."
     },
     {
       "heading": "## 6. Method note",
       "capturedAtLine": 1585,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "kept",
+      "movedTo": null,
+      "remains": "The method discipline. Absorbed the vacuous-test admissions from the progress log, as a table, plus two rules this repair learned after the section was first written."
     },
     {
       "heading": "## 7. Invariants that must not regress",
       "capturedAtLine": 1600,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "kept",
+      "movedTo": null,
+      "remains": "The invariants, now a flat list whose length the docs check asserts."
     },
     {
       "heading": "## 8. Progress log",
       "capturedAtLine": 1624,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "moved",
+      "movedTo": "docs/measurements.md"
     }
   ]
 }

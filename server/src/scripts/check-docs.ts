@@ -21,7 +21,9 @@
  * `enforceAllAccounted` in the map, and from then on an unaccounted section is
  * a failure.
  *
- * Later tickets add the glossary, ADR and invariant assertions here.
+ *   3. The glossary holds terms and only terms.
+ *   4. The ADRs are numbered contiguously and each has a title.
+ *   5. The checkpoint's invariants are a flat list of a fixed length.
  */
 import assert from "node:assert";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
@@ -35,9 +37,10 @@ const MAP_PATH = join(HERE, "docs-migration-map.json");
 type MigrationEntry = {
   heading: string;
   capturedAtLine: number;
-  status: "unmoved" | "partial" | "moved";
+  status: "unmoved" | "partial" | "moved" | "kept";
   movedTo: string | null;
-  /** Required on `partial`: what is still in the source after the move. */
+  /** Required on `partial`: what is still in the source after the move.
+   *  Required on `kept`: why this section stays rather than moving. */
   remains?: string;
 };
 type MigrationMap = {
@@ -222,10 +225,14 @@ const present = new Set(headings(readFileSync(sourcePath, "utf8")).map((h) => h.
 // wrote down rather than something a later reader has to reconstruct.
 let unaccounted = 0;
 for (const entry of map.sections) {
-  const mustBePresent = entry.status === "unmoved" || entry.status === "partial";
+  const mustBePresent =
+    entry.status === "unmoved" || entry.status === "partial" || entry.status === "kept";
   const mustNameTarget = entry.status === "moved" || entry.status === "partial";
 
-  if (entry.status !== "moved") unaccounted += 1;
+  // `unmoved` and `partial` are both transitional: the migration is not finished
+  // while either remains. `kept` is a destination, not a way station — a section
+  // that was always meant to stay in the checkpoint — so it is accounted for.
+  if (entry.status === "unmoved" || entry.status === "partial") unaccounted += 1;
 
   if (mustBePresent) {
     check(
@@ -247,15 +254,24 @@ for (const entry of map.sections) {
     }
   }
 
-  if (entry.status === "partial") {
+  if (entry.status === "partial" || entry.status === "kept") {
     check(
       Boolean(entry.remains?.trim()),
-      `migration map: "${entry.heading}" is partial but does not say what remains in ${map.source}`,
+      `migration map: "${entry.heading}" is ${entry.status} but does not say what ${
+        entry.status === "kept" ? "it keeps and why" : `remains in ${map.source}`
+      }`,
     );
   } else {
     check(
       entry.remains === undefined,
       `migration map: "${entry.heading}" is ${entry.status}, so it must not carry a remains note`,
+    );
+  }
+
+  if (entry.status === "kept") {
+    check(
+      entry.movedTo === null,
+      `migration map: "${entry.heading}" is kept, so it must not name a move target`,
     );
   }
 
@@ -278,6 +294,43 @@ if (map.enforceAllAccounted) {
   notes.push(
     `${unaccounted} of ${map.sections.length} sections still unmoved or partial (not enforced yet)`,
   );
+}
+
+// ── 5. The invariants are a flat, countable list ─────────────────────────────
+// An invariant buried in a paragraph is one nobody can enumerate, and this list
+// has already had an entry retired inside its own bullet. Fixing the count here
+// means adding or removing one is a deliberate edit to this file, not a quiet
+// edit to a document.
+const EXPECTED_INVARIANTS = 8;
+const INVARIANTS_HEADING = /^##\s+7\. Invariants that must not regress\s*$/;
+{
+  const body = readFileSync(sourcePath, "utf8").split("\n");
+  const start = body.findIndex((line) => INVARIANTS_HEADING.test(line));
+  check(start !== -1, `${map.source}: the invariants section is missing`);
+  if (start !== -1) {
+    let end = body.length;
+    for (let i = start + 1; i < body.length; i += 1) {
+      if (/^#{1,6} /.test(body[i]!)) {
+        end = i;
+        break;
+      }
+    }
+    const section = body.slice(start + 1, end);
+    const items = section.filter((line) => /^[-*] /.test(line));
+    const stray = section.filter(
+      (line) => line.trim() !== "" && !/^[-*] /.test(line) && !/^\s+\S/.test(line),
+    );
+    check(
+      items.length === EXPECTED_INVARIANTS,
+      `${map.source}: expected ${EXPECTED_INVARIANTS} invariants, found ${items.length} — ` +
+        `if this is deliberate, change EXPECTED_INVARIANTS in this script in the same commit`,
+    );
+    check(
+      stray.length === 0,
+      `${map.source}: the invariants section has ${stray.length} line(s) outside the list; ` +
+        `an invariant in a paragraph cannot be counted`,
+    );
+  }
 }
 
 // ── Report ───────────────────────────────────────────────────────────────────
