@@ -6,6 +6,9 @@ from, the seven measured rounds of the repair, one partial session run after
 them, and one full baseline session run before the 2026-09-08 issues landed. One
 further entry records a golden baseline, which is not a session.
 
+One further entry, T-C3-003, is a message export rather than a measured session
+and is the only aci material in this record.
+
 Each entry says what the session **confirmed**, what it **disconfirmed**, and
 what it **did not exercise**. The three are kept apart on purpose. A record that
 collapses them turns an expectation into a result, which is how three of the
@@ -745,6 +748,77 @@ C3/C4 behave. The generation-side wiring of the two fixes made after these
 sessions, for want of an engine harness. And whether the Judge would choose
 silence if the cooldown stopped filtering for it, which is unanswerable while
 the branch stays at 0/30.
+
+---
+
+## T-C3-003 — the first aci session in this record
+
+**Member + aci, 66 messages (Alex 15, humans 51), 2026-09-08.** Supplied as a
+message export, not as a full session record. **The build is unverified**: it is
+described as the pushed production version, which is pre-repair, and nothing in
+the export names a `promptVersion`. Treat every figure here as pre-repair and do
+not compare it with the half-B sessions.
+
+No intervention rows accompany the export, so there are no silences, no guard
+events, no latencies and no route kinds — only messages and `sharedInfoIds`.
+
+| | |
+| --- | ---: |
+| Alex words per message, mean | **28.3** |
+| Human words per message, mean | 9.2 |
+| Ratio | **3.1×** |
+| Alex messages ending in the same confirmation-request form | **12 / 15** |
+| Alex messages containing a question mark | 12 / 15 |
+| Alex messages disclosing exactly one trait | 11 / 15 |
+| Final coverage, distinct traits on the board | A 10, B 9, C 10, **D 7** |
+
+**Confirmed — the aci strategy is intact but has collapsed into one sentence
+frame.** Twelve of fifteen messages disclose a single trait and close with the
+same request to confirm it. This satisfies the aci manipulation and satisfies the
+one-trait reveal budget, and it makes Alex's contribution formally identical from
+turn to turn. Recorded as a rate to watch, not as work: see the deferred item in
+`.scratch/leader-decision-frame/spec.md`.
+
+**Confirmed — mean length is inside the target and the ratio is not.** 28.3 words
+clears the ≤30 target, while remaining 3.1× the humans in the same room. The
+target and the thing it was a proxy for have come apart on this session.
+
+**Confirmed — a peer performed a leader's move, and it decided the session.** At
+seq 4 a participant proposed eliminating a candidate, before any trait for any
+candidate had reached the board. Alex answered by conceding the point and then
+disclosing one of its own traits for that candidate, which is blocking premature
+closure. The group's final choice was that same candidate, and three of its six
+positives had come from Alex. Following the group at seq 4 would have ended it
+there. This is the observation `.scratch/leader-decision-frame/issues/06` is
+written from.
+
+**Confirmed — already-surfaced information was offered as a new contribution.**
+At seq 47 a participant asked what *other* misses Alex held for a candidate. Alex
+answered with three trait ids that a human had already put on the board ten turns
+earlier, framed as its own notes: zero new, three restated. The claim was not
+false — those traits are plausibly shared across profiles — and the participant
+accepted it. No guard applied: the turn carried a request, and the restated bound
+is reached only on turns carrying none. See issues 07 and 08.
+
+**Disconfirmed — that a peer's silence reads as restraint.** Alex was silent from
+seq 36 to seq 48, 3.2 minutes. At seq 43 and seq 46 participants remarked on the
+absence and proposed working around it. The closing arrived 14.9 minutes after
+the last human message. Whatever the passive peer is meant to look like, on this
+session it looked like a fault. This is the evidence against the proposal to
+remove long-silence filling from the peer conditions.
+
+**Not exercised.** Everything Chair-only — mediation, summary, closing as a
+generated turn. Every guard, because none is recorded. The narrowing trajectory
+the leader frame is designed for: the group swept A, B, C, D in order and
+tallied, so no candidate was ever set aside mid-discussion.
+
+**What it says about the removal rule.** Applying
+`docs/adr/0008`'s clauses retrospectively: at seq 4 no candidate reaches
+coverage 4, so none could be set aside — the group's own move would have been
+resisted. At the close, D stands at coverage 7 against a best of 10, so D remains
+within the coverage clause's reach and a leader would have raised it once before
+the group finished. Both are the intended behaviour, on a session where neither
+happened.
 
 ---
 
