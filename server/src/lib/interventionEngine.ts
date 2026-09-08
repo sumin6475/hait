@@ -32,6 +32,7 @@ import {
   CONVERSATION_LEDGER_JUDGE_VERSION,
   deterministicVetoBeforeJudge,
   judgeCapitulatedToSilence,
+  unansweredRequestsForAlex,
   judgeCapitulationRuleCodes,
   judgeConversationLedgerTurn,
   judgeConversationTurn,
@@ -677,6 +678,12 @@ async function recordSilence(input: {
     selectedOpportunityExpectation: input.selectedOpportunity?.expectation,
     selectedOpportunityTargets: input.selectedOpportunity?.targets,
     selectedOpportunityRequestedAction: input.selectedOpportunity?.requestedAction,
+    // What the group was still waiting for while this turn said nothing. Read
+    // from whatever was open, not from the Judge's menu: the point of the field
+    // is the turns the Judge never saw, where the router answered first.
+    owedRequestIds: input.ledgerState
+      ? unansweredRequestsForAlex(input.ledgerState.opportunities).map((item) => item.id)
+      : undefined,
     decisionStage: silenceDecisionStage(input.reason),
     outcome: "stay_silent",
     silenceReason: input.reason,

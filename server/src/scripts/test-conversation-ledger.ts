@@ -25,6 +25,7 @@ import {
   ledgerJudgeRoleGoal,
   ledgerJudgeSchemaFor,
   unansweredRequestsForAlex,
+  LEDGER_JUDGE_SYSTEM,
   judgeCapitulatedToSilence,
   judgeCapitulationRuleCodes,
   validateConversationLedgerJudgeDecision,
@@ -394,7 +395,7 @@ const twoRequests: ConversationLedgerState = {
 };
 assert.deepEqual(
   unansweredRequestsForAlex(
-    conversationLedgerDecisionProjection(twoRequests, { cooldownAvailable: true }),
+    conversationLedgerDecisionProjection(twoRequests, { cooldownAvailable: true }).opportunities,
   ).map((item) => item.id),
   [answersAlexOpportunity.id, "opp:20:group_request:alex"],
   "requests are listed oldest first, and an uptake is not a request",
@@ -415,6 +416,59 @@ assert.match(
   twoRequestsPrompt,
   /Unanswered requests addressed to Alex, oldest first: opp:17:invitation:alex \(asked at message 17\), opp:20:group_request:alex \(asked at message 20\)/,
   "the Judge is told which requests are owed before it decides, not after",
+);
+
+// The ranking stops at voluntary acts, and that boundary is the whole of it.
+// `current_required_opportunity_not_selected` forces a required opportunity
+// opened on this turn ahead of everything else. Before half B an older request
+// was never listed, so the two could not disagree; now they can, and a prompt
+// that told the Judge to answer the oldest request first would be telling it to
+// walk into a rejection whose cheapest escape is silence.
+const requiredNowWithOlderRequest: ConversationLedgerState = {
+  ...openRequest,
+  currentTriggerSeq: 21,
+  contextThroughSeq: 21,
+  opportunities: [
+    answersAlexOpportunity,
+    {
+      ...answersAlexOpportunity,
+      id: "opp:21:direct_question:alex",
+      kind: "direct_question",
+      expectation: "required",
+      opportunitySourceSeq: 21,
+      originSeq: 21,
+      openedAtSeq: 21,
+      evidenceSeqs: [21],
+    },
+  ],
+};
+const selectingTheOlderRequest = validateConversationLedgerJudgeDecision({
+  decision: {
+    decision: "speak",
+    act: "participate",
+    selectedOpportunityId: answersAlexOpportunity.id,
+    evidence: "selected_open_opportunity",
+    selectedTraitId: null,
+    evidenceSeqs: [17],
+  },
+  state: requiredNowWithOlderRequest,
+  eligibleTraitIds: [],
+  transcriptSeqs: new Set([16, 17, 21]),
+  cooldownAvailable: true,
+}).ruleCodes;
+assert.ok(
+  selectingTheOlderRequest.includes("current_required_opportunity_not_selected"),
+  "a question asked on this turn is still answered before a request carried over",
+);
+assert.doesNotMatch(
+  LEDGER_JUDGE_SYSTEM,
+  /oldest/i,
+  "so the prompt states no ordering among requests — the validator owns that",
+);
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /outranks a voluntary act/,
+  "and the ranking it does state is the one half B was asked for",
 );
 
 const uptakeReplay = replayObservedConversation({

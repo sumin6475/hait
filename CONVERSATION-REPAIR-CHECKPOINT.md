@@ -69,7 +69,9 @@ The Judge prompt is now `conversation-ledger-judge-prompt-v8` and lists the
 requests it owes. See `docs/adr/0006-a-request-outlives-its-turn.md`.
 
 **Nothing since 2026-09-07 has been measured live.** Thirteen issues' worth of
-changes are verified by build, six suites and deliberate breakages only.
+changes are verified by build, the six `test:*` suites, `docs:check` and
+deliberate breakages only. §5 lists the four the gate requires; `test:seq` and
+`test:conversation-gold` exist and pass but are not in that list.
 
 **The golden set does not cover the live prompts, and never did.** `run-golden`
 builds its prompt through `buildSystemPromptForTask`, which reads
@@ -122,10 +124,16 @@ abandoned (issue 13); and a count request ignores its own source (issue 14).
 for `reserveTurn` / `executeRouteTurn` — the intervention suite tests
 `humanArrivalAction` as a pure function and never drives the engine. So A6's
 timing and cancellation behaviour, A7's broadcast-before-verification ordering,
-and the engine-side early supersession check are all verified by reasoning plus
-live measurement only. Building that harness is worth doing before the generator
-work, which needs generation-level post-conditions. **Do not describe those three
-as regression-covered.**
+the engine-side early supersession check, and issue 13B's `owedRequestIds` on
+the silence record are all verified by reasoning plus live measurement only.
+Building that harness is worth doing before the generator work, which needs
+generation-level post-conditions. **Do not describe those four as
+regression-covered.**
+
+`owedRequestIds` is the sharpest current example of why the harness is owed. Its
+derivation, `unansweredRequestsForAlex`, is asserted directly; the line in
+`recordSilence` that calls it is not, and that is the exact shape — predicate
+tested, wiring untested — that hid the reveal budget for the whole of gate A.
 
 ## 0. Branch and safety rules
 

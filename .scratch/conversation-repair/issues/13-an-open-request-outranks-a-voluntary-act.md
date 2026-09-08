@@ -223,7 +223,57 @@ has been calling a vacuous guard.
 
 The Judge prompt version is now `conversation-ledger-judge-prompt-v8`.
 
-Build, all six suites and `docs:check` green. **Not measured live** - and the
-one thing worth watching in the next session is whether Alex now answers a
-carried-over request on a turn it would previously have spent on a voluntary
+Build, all six `test:*` suites and `docs:check` green. **Not measured live** -
+and the one thing worth watching in the next session is whether Alex now answers
+a carried-over request on a turn it would previously have spent on a voluntary
 contribution.
+
+### What the review caught, and what it changed
+
+The first version of half B shipped a **defect of its own**, and it was the
+exact one this file's own constraint warns about - the Judge must not be offered
+a choice its validator rejects.
+
+The prompt said *"answer the oldest listed request first"*. Ordering among
+requests was never asked for here, and `current_required_opportunity_not_selected`
+already forces a `required` opportunity opened on the current trigger ahead of
+everything else. Before half B an older request was never listed, so the two
+could not disagree; half B made them able to. On a turn with a fresh direct
+question and a carried-over invitation, the prompt would have told the Judge to
+take the invitation and the validator would have rejected it - and the retry's
+cheapest valid answer is `silent`. The sentence is gone. The ranking now says
+what it was asked to say and stops: a request outranks *the acts the Judge
+chooses for itself*, and where a rule names which opportunity to take, that rule
+decides. `LEDGER_JUDGE_SYSTEM` is exported so both halves of that are asserted.
+
+Three smaller things went with it:
+
+- `unansweredRequestsForAlex` took a `ConversationLedgerState` and carried a
+  comment saying "pass the decision projection, never the raw state" - a rule
+  living in a comment, which is the thing this repair keeps removing. It takes
+  the opportunities now, so the caller settles what is on offer.
+- Its `expectation !== "invited"` branch was dead - the uptake branch mints
+  `invited` unconditionally - and worse than dead: it would have silently
+  disabled the uptake rule for the one case that rule exists to cover.
+- `originSeq ?? opportunitySourceSeq` in new code, where `originSeq` is not
+  optional.
+
+### The silence that says both things
+
+`Silence stays attributable, and a turn silenced by cooldown while a request is
+open should say that both were true` was in this issue's constraints and the
+first version did not do it. `deterministicVetoBeforeJudge` returns a bare
+`"cooldown"`, and half B makes the pairing **more** common by design: a request
+now stays open across exactly the cooldown turns that follow it.
+
+Every silence record now carries `owedRequestIds` - the requests that were open
+and unanswered on a turn Alex said nothing. Read from whatever was open rather
+than from the Judge's menu, because the turns that matter most here are the ones
+the Judge never saw.
+
+**It is not regression-covered, and must not be described as though it is.**
+`unansweredRequestsForAlex` is asserted directly; the line in `recordSilence`
+that calls it is not, because this repository still has no runtime harness for
+`reserveTurn` / `executeRouteTurn`. That is predicate-tested and wiring-untested
+- the same shape that hid the reveal budget for all of gate A. Recorded in the
+checkpoint beside the other three.

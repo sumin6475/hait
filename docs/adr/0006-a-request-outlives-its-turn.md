@@ -55,6 +55,13 @@ Judge's answer afterwards. Enforcing it by rejection was the alternative and was
 rejected: the retry's cheapest always-valid output is `silent`, so a ranking
 enforced that way buys silences rather than answers.
 
+The ranking stops at voluntary acts and deliberately says nothing about the
+order *among* requests. `current_required_opportunity_not_selected` already
+decides that, and a prompt that argued with its own validator would buy the
+retry's cheapest answer by another route. A first draft of this change did
+exactly that, and the constraint it broke is the one this projection exists to
+uphold.
+
 The predicate is one exported function that the Judge's prompt, its validation
 and the pre-Judge veto all read. It had been written out twice, in the
 projection and in the validator, which is how a prompt could once offer a choice

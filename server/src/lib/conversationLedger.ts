@@ -167,7 +167,11 @@ export function opportunityMayBypassCooldown(
  * current-trigger requirement is not staleness bookkeeping, it is the whole
  * meaning of the opportunity, and it stays.
  *
- * `required` expectations were never subject to the rule and are untouched.
+ * `required` expectations were never subject to the rule and are untouched: the
+ * uptake branch mints `invited` unconditionally, so a required opportunity is
+ * never an uptake and always takes the first return. Testing the expectation
+ * here as well read as a second safeguard and was the opposite — it would have
+ * silently disabled the uptake rule for the one case it exists to cover.
  *
  * The Judge's prompt, its validation and `deterministicVetoBeforeJudge` all
  * read this one function, so the three can never disagree about what was on
@@ -177,7 +181,6 @@ export function opportunityStillStands(
   state: ConversationLedgerState,
   opportunity: ResponseOpportunity,
 ): boolean {
-  if (opportunity.expectation !== "invited") return true;
   if (opportunity.kind !== "uptake") return true;
   return opportunity.evidenceSeqs.includes(state.currentTriggerSeq);
 }

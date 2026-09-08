@@ -448,7 +448,7 @@ export interface ConversationLedgerJudgeCallResult {
   attempts: ConversationLedgerJudgeCallAttempt[];
 }
 
-const LEDGER_JUDGE_SYSTEM = `You are the Main Judge for Alex, an AI participant in a small live group discussion.
+export const LEDGER_JUDGE_SYSTEM = `You are the Main Judge for Alex, an AI participant in a small live group discussion.
 
 Use the complete transcript as the source of truth and the structured ledger as a correctable projection. Decide one of: select exactly one open response opportunity, choose one useful voluntary act, remain silent, or request re-observation for a material state conflict. Do not write Alex's message.
 
@@ -461,7 +461,7 @@ Opportunity acts are fixed by identity:
 
 Only select an opportunity whose exact id is listed with status open. Deferred and terminal opportunities cannot be handled now. A request somebody made of Alex - invitation, group_request or direct_question - stays selectable while it is listed, whether it was made on this turn or an earlier one; an unanswered request does not stop being one because somebody else spoke next. An uptake is different: it is selectable only when its evidence includes the current trigger message, because it exists only while a human has just replied to Alex. Required opportunities may remain pending across turns. Do not substitute a thread root for the current trigger. Do not combine or consume multiple opportunities.
 
-A listed request that nobody has answered outranks a voluntary act. When the turn lists an unanswered request addressed to Alex, select it rather than contributing, following or acknowledging something of your own choosing. Answer the oldest listed request first, since it is the one the group has waited longest for.
+A listed request that nobody has answered outranks a voluntary act. When the turn lists an unanswered request addressed to Alex, select it rather than contributing, following or acknowledging something of your own choosing. This ranks a request above the acts you choose for yourself and nothing else; where a rule below tells you which opportunity to take, that rule decides.
 
 Voluntary acts have no selectedOpportunityId:
 - contribute adds a relevant non-redundant fact, factual correction, or concrete synthesis.
@@ -712,7 +712,7 @@ export function conversationLedgerDecisionProjection(
 }
 
 /**
- * The requests on this turn's menu that nobody has answered yet, oldest first.
+ * Which of these opportunities are requests nobody has answered, oldest first.
  *
  * [Issue 13B] Making an unanswered request reachable again is only half of it.
  * The other half is that the Judge must be able to see that it outranks a
@@ -723,27 +723,28 @@ export function conversationLedgerDecisionProjection(
  * `canonicalizeConversationLedgerJudgeDecision` exists.
  *
  * So the ranking is a fact in the prompt, beside the ids, and nothing here
- * rewrites the Judge's answer.
+ * rewrites the Judge's answer. It ranks a request above the acts the Judge
+ * chooses for itself and nothing further: an ordering *among* requests would
+ * contradict `current_required_opportunity_not_selected`, which forces a
+ * required opportunity opened on this turn ahead of any older one, and a prompt
+ * that argues with its own validator buys the retry's cheapest answer again.
  *
  * Uptakes are excluded because they are not requests: nobody asked. Ordering is
  * by `originSeq`, the message the request was actually made in, not by when the
  * opportunity was last given evidence — the group has been waiting since it was
  * asked.
  *
- * Pass the decision projection, never the raw state, so this can never name an
- * id the turn does not offer.
+ * Takes the opportunities rather than the state, so the caller settles what
+ * "on offer" means and this cannot quietly disagree with it. The Judge's prompt
+ * passes the decision projection's open set; the silence audit passes whatever
+ * was open on a turn Alex never got to.
  */
 export function unansweredRequestsForAlex(
-  state: ConversationLedgerState,
+  opportunities: readonly ResponseOpportunity[],
 ): ResponseOpportunity[] {
-  return state.opportunities
-    .filter(
-      (opportunity) =>
-        opportunity.status === "open" &&
-        opportunity.kind !== "uptake" &&
-        opportunity.targets.includes("alex"),
-    )
-    .sort((left, right) => (left.originSeq ?? left.opportunitySourceSeq) - (right.originSeq ?? right.opportunitySourceSeq));
+  return opportunities
+    .filter((opportunity) => opportunity.status === "open" && opportunity.kind !== "uptake")
+    .sort((left, right) => left.originSeq - right.originSeq);
 }
 
 /**
@@ -917,7 +918,7 @@ export function buildLedgerJudgeUserMessage(
   // both T-C1-020 and T-C2-039 — the system block alone falls under the 1024
   // token minimum, so nothing was cacheable at all.
   const availability = (available: boolean) => (available ? "available" : "not available");
-  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(decisionState).map((item) => `${item.id} (asked at message ${item.originSeq ?? item.opportunitySourceSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
 }
 
 export async function judgeConversationLedgerTurn(

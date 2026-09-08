@@ -195,6 +195,20 @@ const aiInterventionSchema = new mongoose.Schema(
     // Main Judge selection provenance. Cadence mediation can supersede the
     // build-on route, so this may be recorded even when the trait is not used.
     selectedTraitId: { type: String },
+    /**
+     * [Issue 13B] The requests that were open, and unanswered, on a turn Alex
+     * stayed silent.
+     *
+     * The invariant is that a silence is attributable, and "cooldown" alone
+     * does not say that somebody was also still waiting for an answer. Half B
+     * makes that pairing more common by design — a request now survives the
+     * turn it was made on, so it is open across the cooldown turns that follow
+     * — which is exactly why the pairing has to be visible in the record rather
+     * than reconstructed from `ledgerStateAfter` by re-running the filter.
+     *
+     * Pool-free: opportunity ids only, no participant text.
+     */
+    owedRequestIds: { type: [String], default: undefined },
     // Explicit provenance for separating pre-judge gates, Judge output, and timers.
     decisionStage: { type: String },
     routeReason: { type: String },
