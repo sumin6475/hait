@@ -42,11 +42,11 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
-**What is open.** Fourteen issues in `.scratch/conversation-repair/issues/`. Four
-are open: issue 10 (the Observer split, blocked on a latency measurement), and
-issues 12, 13 and 14, all filed from live sessions on 2026-09-08. Nine are done
-and one records a decision not to act. Start at the lowest-numbered issue whose
-blockers are done.
+**What is open.** Sixteen issues in `.scratch/conversation-repair/issues/`. Two
+are open: issue 10 (the Observer split, blocked on a latency measurement) and
+issue 16 (Alex announces a next step and nothing holds it to it, filed out of
+issue 13 rather than folded into it). Thirteen are done and one records a
+decision not to act. Start at the lowest-numbered issue whose blockers are done.
 
 **The pooling DV changed on 2026-09-08.** Issue 15 corrected the extractor, which
 means `sharedInfoIds` and `revealStats` from sessions after that date are not
@@ -54,13 +54,22 @@ directly comparable with earlier ones — the earlier ones under-record. T-C2-04
 recorded 3 matches and 3 misses for each finalist where the board held 3 and 4.
 Say so before comparing any pooling figure across that line.
 
-**Issues 12 and 13 are one failure at two depths** — a reply to Alex that goes
-unanswered. 12 is the Observer not seeing it; 13 is everything below the Observer
-losing it anyway. Neither blocks the other, and T-C2-045 showed that fixing 12
-alone would not have saved that session.
+**Issues 12 and 13 were one failure at two depths** — a reply to Alex that goes
+unanswered. 12 was the Observer not seeing it; 13 was everything below the
+Observer losing it anyway. Both are now shipped, neither is measured, and
+T-C2-045 showed that fixing 12 alone would not have saved that session.
 
-**Nothing since 2026-09-07 has been measured live.** Nine issues' worth of
-changes are verified by build, four suites and deliberate breakages only.
+**An unanswered request now outlives the turn it was made on.** Issue 13 half B
+split the `invited` selectability rule: a request (`invitation`,
+`group_request`) stays selectable until the reducer retires it, an `uptake` is
+still selectable only while its evidence is the current trigger. The cadence did
+not move — `opportunityMayBypassCooldown` is untouched, so a carried-over
+request becomes an option only on turns where Alex could already have spoken.
+The Judge prompt is now `conversation-ledger-judge-prompt-v8` and lists the
+requests it owes. See `docs/adr/0006-a-request-outlives-its-turn.md`.
+
+**Nothing since 2026-09-07 has been measured live.** Thirteen issues' worth of
+changes are verified by build, six suites and deliberate breakages only.
 
 **The golden set does not cover the live prompts, and never did.** `run-golden`
 builds its prompt through `buildSystemPromptForTask`, which reads

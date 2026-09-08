@@ -86,6 +86,14 @@ _Avoid_: obligation, cue, trigger
 What sort of opening an opportunity is: a direct question, an invitation, a
 request to the group, or an uptake of something Alex just said.
 
+**Request**:
+The kinds where somebody actually asked Alex for something — a direct question,
+an invitation, or a request to the group. A request stays takeable until it is
+answered or retired, because nobody stops waiting for an answer just because
+somebody else spoke next. An uptake is not a request: nobody asked, and it lasts
+only while the reply that minted it is the current message.
+_Avoid_: prompt, ask
+
 **Expectation**:
 How strongly an opportunity calls for an answer: required, invited, or optional.
 A direct question is the only thing that makes an answer required.

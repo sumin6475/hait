@@ -24,6 +24,7 @@ import {
   deterministicVetoBeforeJudge,
   ledgerJudgeRoleGoal,
   ledgerJudgeSchemaFor,
+  unansweredRequestsForAlex,
   judgeCapitulatedToSilence,
   judgeCapitulationRuleCodes,
   validateConversationLedgerJudgeDecision,
@@ -255,6 +256,165 @@ assert.equal(
   opportunityMayBypassCooldown(ordinaryInvitation, ordinaryInvitation.opportunities[0]!),
   false,
   "the cooldown still governs every invitation that is not an answer to Alex",
+);
+
+// --- Issue 13 half B: an unanswered request survives the turn it was made on -
+//
+// The same T-C2-045 stretch, one layer down. Half A got seq 17 past the
+// cooldown; this is what happens on seqs 18, 21 and 25, where Alex spoke three
+// times with that request still open and answered something else each time. The
+// Judge was not choosing a voluntary act over the request — the projection had
+// removed it, so the Judge was never shown it at all.
+const openRequest = { ...answersAlexRequest, foregroundThreadId: "thread-1" };
+for (const laterSeq of [18, 21, 25]) {
+  const later = { ...openRequest, currentTriggerSeq: laterSeq, contextThroughSeq: laterSeq };
+  assert.deepEqual(
+    conversationLedgerDecisionProjection(later, { cooldownAvailable: true }).opportunities.map(
+      (item) => item.id,
+    ),
+    [answersAlexOpportunity.id],
+    `seq ${laterSeq}: an unanswered request is still one of the turn's options`,
+  );
+  assert.equal(
+    validateConversationLedgerJudgeDecision({
+      decision: {
+        decision: "speak",
+        act: "participate",
+        selectedOpportunityId: answersAlexOpportunity.id,
+        evidence: "selected_open_opportunity",
+        selectedTraitId: null,
+        evidenceSeqs: [17],
+      },
+      state: later,
+      eligibleTraitIds: [],
+      transcriptSeqs: new Set([16, 17, 18, 21, 25]),
+      cooldownAvailable: true,
+    }).ruleCodes.includes("selected_invited_opportunity_not_current"),
+    false,
+    `seq ${laterSeq}: and taking it is valid, so the prompt and the validator agree`,
+  );
+}
+
+// The cadence is untouched. An older request cannot bypass the cooldown, because
+// `opportunityMayBypassCooldown` still requires current-trigger evidence — so
+// the widened selectability only ever adds an option to a turn where Alex could
+// already have spoken voluntarily.
+const laterBlocked = { ...openRequest, currentTriggerSeq: 18, contextThroughSeq: 18 };
+assert.deepEqual(
+  conversationLedgerDecisionProjection(laterBlocked, { cooldownAvailable: false }).opportunities,
+  [],
+  "an unanswered request does not speak through the cooldown on a later turn",
+);
+assert.equal(
+  deterministicVetoBeforeJudge(laterBlocked, { cooldownAvailable: false }),
+  "cooldown",
+  "and the turn is still vetoed before the Judge runs, as it was",
+);
+assert.equal(
+  deterministicVetoBeforeJudge(
+    {
+      ...laterBlocked,
+      floor: { holder: "humanX", expectedNext: ["humanX"], transition: "held", evidenceSeqs: [18] },
+    },
+    { cooldownAvailable: true },
+  ),
+  "human_floor_held",
+  "an owed answer is still not a reason to take a floor a human holds",
+);
+
+// The other population is unchanged. An uptake is not a request: nobody asked,
+// and the licence to follow is the reply being fresh. Left standing it would
+// become an unconditional right to speak, which is the thing the cadence
+// invariant exists to prevent.
+const staleUptake: ConversationLedgerState = {
+  ...openRequest,
+  currentTriggerSeq: 19,
+  contextThroughSeq: 19,
+  opportunities: [
+    { ...answersAlexOpportunity, id: "opp:16:uptake:alex", kind: "uptake", answersAlexSeq: undefined },
+  ],
+};
+assert.deepEqual(
+  conversationLedgerDecisionProjection(staleUptake, { cooldownAvailable: true }).opportunities,
+  [],
+  "an uptake whose evidence is not the current trigger is still history, not a choice",
+);
+
+// An expired request is not revived. The [B4] TTL is what bounds how long an
+// unanswered request stays reachable now that its own seq no longer does, so it
+// has to actually fire.
+const ttlDelta = observerDeltaFromTurn({
+  sessionKey: "T-C2-045-ANSWERS-ALEX",
+  observerVersion: "test-observer",
+  roster,
+  sourceRole: "humanX",
+  currentTriggerSeq: 26,
+  contextThroughSeq: 26,
+  observation: observation(),
+});
+const afterTtl = reduceConversationLedger(openRequest, ttlDelta).state;
+assert.equal(
+  afterTtl.opportunities[0]!.status,
+  "expired",
+  "eight seqs past its opening, the request is retired by the reducer",
+);
+assert.deepEqual(
+  conversationLedgerDecisionProjection(afterTtl, { cooldownAvailable: true }).opportunities,
+  [],
+  "and an expired request is not offered back to the Judge",
+);
+assert.ok(
+  validateConversationLedgerJudgeDecision({
+    decision: {
+      decision: "speak",
+      act: "participate",
+      selectedOpportunityId: answersAlexOpportunity.id,
+      evidence: "selected_open_opportunity",
+      selectedTraitId: null,
+      evidenceSeqs: [17],
+    },
+    state: afterTtl,
+    eligibleTraitIds: [],
+    transcriptSeqs: new Set([16, 17, 26]),
+    cooldownAvailable: true,
+  }).ruleCodes.includes("selected_opportunity_not_open_for_alex"),
+  "selecting it anyway is rejected",
+);
+
+// The ranking is a fact the Judge reads, not a correction applied to its answer.
+const twoRequests: ConversationLedgerState = {
+  ...openRequest,
+  currentTriggerSeq: 21,
+  contextThroughSeq: 21,
+  opportunities: [
+    { ...answersAlexOpportunity, id: "opp:20:group_request:alex", kind: "group_request", opportunitySourceSeq: 20, originSeq: 20, openedAtSeq: 20, evidenceSeqs: [20] },
+    answersAlexOpportunity,
+    { ...answersAlexOpportunity, id: "opp:21:uptake:alex", kind: "uptake", opportunitySourceSeq: 21, originSeq: 21, openedAtSeq: 21, evidenceSeqs: [21] },
+  ],
+};
+assert.deepEqual(
+  unansweredRequestsForAlex(
+    conversationLedgerDecisionProjection(twoRequests, { cooldownAvailable: true }),
+  ).map((item) => item.id),
+  [answersAlexOpportunity.id, "opp:20:group_request:alex"],
+  "requests are listed oldest first, and an uptake is not a request",
+);
+const twoRequestsPrompt = buildLedgerJudgeUserMessage({
+  messages: [16, 17, 20, 21].map((seq) => ({
+    seq,
+    senderRole: "humanY" as const,
+    speaker: "Participant Y",
+    content: `m${seq}`,
+  })),
+  state: twoRequests,
+  cooldownAvailable: true,
+  backchannelAvailable: true,
+  eligibleTraitIds: [],
+});
+assert.match(
+  twoRequestsPrompt,
+  /Unanswered requests addressed to Alex, oldest first: opp:17:invitation:alex \(asked at message 17\), opp:20:group_request:alex \(asked at message 20\)/,
+  "the Judge is told which requests are owed before it decides, not after",
 );
 
 const uptakeReplay = replayObservedConversation({

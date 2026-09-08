@@ -137,6 +137,51 @@ export function opportunityMayBypassCooldown(
   );
 }
 
+/**
+ * Whether an open opportunity is still one of this turn's options, or has
+ * become history the Judge may read but not take.
+ *
+ * [Issue 13B] There used to be one rule for every `invited` expectation: its
+ * evidence must include the current trigger. That made an invited opportunity
+ * answerable during exactly one turn. Miss that turn for any reason — the
+ * cooldown, a held floor, a Judge that chose otherwise — and the request became
+ * unreachable while `state.opportunities` went on reporting it open. At
+ * T-C2-045 `opp:17` was never selectable on any turn at all: cooldown filtered
+ * it on the seq it was current, and this rule filtered it on every seq after.
+ *
+ * Two populations were sharing that rule, and only one of them is momentary.
+ *
+ * A **request** — `invitation` or `group_request` — is somebody asking Alex for
+ * something. It is an obligation, and an obligation does not stop existing
+ * because the next message was somebody else's. It stays takeable until it is
+ * answered or the reducer retires it, which it does three ways: the thread
+ * closes, Alex answers on the thread and supersedes the older ones, or the
+ * [B4] TTL expires it. All three are seq arithmetic already in the reducer, so
+ * nothing here needs a second staleness rule.
+ *
+ * An **uptake** is not a request. Nobody asked; it is minted because a human
+ * just replied to Alex, and it licenses Alex to carry that reply one step
+ * further. The licence is the reply being fresh. Left standing for the TTL it
+ * would become an unconditional right to speak on every turn, which is the
+ * thing the cadence invariant exists to prevent — so for an uptake the
+ * current-trigger requirement is not staleness bookkeeping, it is the whole
+ * meaning of the opportunity, and it stays.
+ *
+ * `required` expectations were never subject to the rule and are untouched.
+ *
+ * The Judge's prompt, its validation and `deterministicVetoBeforeJudge` all
+ * read this one function, so the three can never disagree about what was on
+ * offer. They used to state the rule separately in two places.
+ */
+export function opportunityStillStands(
+  state: ConversationLedgerState,
+  opportunity: ResponseOpportunity,
+): boolean {
+  if (opportunity.expectation !== "invited") return true;
+  if (opportunity.kind !== "uptake") return true;
+  return opportunity.evidenceSeqs.includes(state.currentTriggerSeq);
+}
+
 export interface ThreadProposal {
   id: string;
   threadRootSeq: number;

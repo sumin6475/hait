@@ -7,7 +7,7 @@ reporting it open.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## The defect, as observed
 
@@ -102,18 +102,16 @@ helped this session at all. Neither blocks the other.
 
 - [x] An explicit request addressed to Alex is answered **on the turn** - half A,
       shipped
-- [ ] ...or on the next one Alex takes - half B, still open
+- [x] ...or on the next one Alex takes - half B
 - [x] The T-C2-045 seq 17 turn is now offered to the Judge instead of vetoed
       before it runs
-- [ ] The decision to prefer an open request over a voluntary act is made where
+- [x] The decision to prefer an open request over a voluntary act is made where
       the Judge can see it, not by rewriting its answer
 - [x] Cooldown cadence and the human-floor veto are unchanged, with a regression
       for each
-- [ ] An expired opportunity is not revived
-- [ ] Say whether Alex's own stated next step is covered by this, and if not, why
-
-**Status after half A: still open.** Half B is the general defect and is
-untouched.
+- [x] An expired opportunity is not revived
+- [x] Say whether Alex's own stated next step is covered by this, and if not, why
+      - it is not; see the comment below and issue 16
 
 ## Comments
 
@@ -133,24 +131,99 @@ current trigger, no human floor held. This widens what may bypass, never how far
 An ordinary invitation still waits its turn, and the existing assertion that an
 invited group request cannot bypass the cooldown fails if that stops being true.
 
-### Half B, deliberately not attempted
+### Half B, shipped: the rule split in two
 
-The general defect is that **an invited opportunity is selectable for exactly one
-turn**. Fixing it means changing the projection filter that the Judge's prompt,
-its validation and `deterministicVetoBeforeJudge` are all built from - the one
-place this repair has been most careful to keep single-sourced. The filter has a
-documented reason (B4: stale invitations must not linger) and a TTL already
-bounds how long one survives, so the shape of the fix is probably "selectable
-while unanswered and within TTL" rather than "only on its own seq".
+The previous pass deferred this and guessed the shape would be "selectable while
+unanswered and within TTL". That was right about the bound and wrong about the
+population. The filter was not one rule being too strict - it was **two
+different objects sharing one rule**, and only one of them is momentary.
 
-That is a design change to a load-bearing filter, and it deserves its own pass
-rather than being appended to a narrow bypass fix. Half A resolves the observed
-turn; half B is what stops the next one.
+An **uptake** is not a request. Nobody asked; it is minted because a human just
+replied to Alex, and it licenses Alex to carry that reply one step further. The
+licence is the reply being fresh, so for an uptake the current-trigger
+requirement is not staleness bookkeeping, it is the whole meaning of the
+opportunity. It stays, unchanged.
+
+An **invitation** or **group_request** is somebody asking Alex for something,
+and an obligation does not stop existing because the next message was somebody
+else's. Those now stay selectable while open.
+
+What bounds them instead is the reducer, which already had three retirement
+paths and needed no fourth: the thread closes, Alex answers on the thread and
+supersedes the older ones, or the [B4] TTL expires it eight seqs on. All three
+are seq arithmetic that was already running every turn.
+
+The predicate is now one exported function, `opportunityStillStands`. It had
+been written out twice - once in the projection, once in the validator - which
+is the duplication that lets a prompt offer a choice its own validator rejects.
+See `docs/adr/0006-a-request-outlives-its-turn.md`.
+
+### The cadence did not move, and that is not incidental
+
+`opportunityMayBypassCooldown` still requires current-trigger evidence, and half
+B did not touch it. So an older request never speaks *through* the cooldown: it
+becomes an option only on a turn where Alex could already have spoken
+voluntarily. `deterministicVetoBeforeJudge` returns exactly what it returned
+before, on every input.
+
+That containment is what makes this safe against the checkpoint's standing
+warning - that a prompt-contract fix must not make every previously rejected
+invited opportunity speak immediately. The bulk of those rejections were
+uptakes, which are unchanged; the rest gain a turn they could already speak on,
+not a turn they could not.
+
+### The ranking is told, not enforced
+
+The issue required that preferring an open request over a voluntary act be
+decided where the Judge can see it. Two ways were available and only one is
+compatible with the rest of this repair.
+
+A validation rule rejecting a voluntary act while a request is open would be a
+correction after the fact, and the retry's cheapest always-valid output is
+`silent` - the same trade that produced `judgeCapitulatedToSilence` and forced
+`canonicalizeConversationLedgerJudgeDecision` into existence. A ranking enforced
+that way buys silences, not answers.
+
+So it is a fact in the prompt instead. Every turn now lists
+`Unanswered requests addressed to Alex, oldest first`, beside the selectable
+ids, built by `unansweredRequestsForAlex` from the same projection - it can
+never name an id the turn does not offer. The system prompt says a listed
+unanswered request outranks a voluntary act and that the oldest goes first.
+Nothing rewrites the Judge's answer.
+
+### Alex's own commitment is not covered
+
+Alex said at seq 22 that it would present its notes on D, and never did. Half B
+does not reach that and cannot be extended to.
+
+Every opportunity is minted from a **human** source message - the reducer
+rejects any proposal whose `sourceRole` is not on the human roster, and every
+branch in `observerDeltaFromTurn` is built off the human turn being observed. An
+Alex commitment creates no ledger object at all, so there is nothing for a
+selectability rule to keep alive. What Alex owes the group is a different object
+with a different lifecycle and a different way of being discharged, and it
+touches what Alex says rather than when. Filed as issue 16.
 
 ### Verification
 
-Two breaks confirmed the assertions fail: removing the bypass, and granting it to
-every invitation - the second trips a pre-existing assertion, which is the one
-that says the cadence has not moved.
+Half A: two breaks confirmed the assertions fail - removing the bypass, and
+granting it to every invitation. The second trips a pre-existing assertion,
+which is the one that says the cadence has not moved.
 
-Build, all five suites and `docs:check` green. **Not measured live.**
+Half B: six more. Restoring the old rule for every invited expectation; dropping
+the rule for uptakes too; disabling the TTL; listing requests newest first;
+counting an uptake as an owed request; and removing the owed-request line from
+the prompt. Each fails its own assertion and no other's.
+
+A seventh candidate assertion was written and then removed rather than kept: a
+`doesNotMatch` on the prompt text saying an uptake is not listed as owed. No
+single change could make it fail while the assertion above it still passed, so
+it was a guard over a predicate that was already covered - the shape this repair
+has been calling a vacuous guard.
+
+The Judge prompt version is now `conversation-ledger-judge-prompt-v8`.
+
+Build, all six suites and `docs:check` green. **Not measured live** - and the
+one thing worth watching in the next session is whether Alex now answers a
+carried-over request on a turn it would previously have spent on a voluntary
+contribution.
