@@ -6,7 +6,7 @@ still live, written to the turn record and to nothing else.
 **Blocked by:** None. It is shadow-only, so it can land before issue 01's
 sessions — and should, because those sessions are what validates its thresholds.
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## What it computes
 
@@ -52,7 +52,75 @@ plausible causal story outrun the data.
 - The Observer and the extractor do not see it and do not change
 - Both conditions compute it identically; issue 03 is what makes it condition-dependent
 
-- [ ] `coverage`, `score` and the live list are on the turn record every turn
-- [ ] Reverting the derivation fails a test that drives it from a real transcript
-- [ ] A candidate with high `score` and low `coverage` stays live — the hidden-profile case
-- [ ] A shadow-only assertion: no live routing, cadence or generation input differs with the field present or absent
+- [x] `coverage`, `score` and the live list are on the turn record every turn
+- [x] Reverting the derivation fails a test that drives it from a real transcript
+- [x] A candidate with high `score` and low `coverage` stays live — the hidden-profile case
+- [x] A shadow-only assertion: no live routing, cadence or generation input differs with the field present or absent
+
+## Comments
+
+### What landed
+
+`candidateList.ts` derives `coverage`, `score`, `live` and `setAside` from the
+board, and the derivation is written to `AIIntervention.candidateList` on every
+record a turn can leave: the four in `executeRouteTurn` (spoken, generation
+failed, superseded, lifecycle-cancelled), the silence record, the cancelled
+reservation, and both closing fallbacks. `aiTurn.ts` is untouched — it is the
+historical golden path, not a live turn.
+
+`coverage` and `score` are stored beside `live` on purpose. The list alone cannot
+be re-checked against a different threshold afterwards, and the thresholds are
+the thing under question.
+
+**One decision the spec left open.** "Coverage within 2 of the best-covered
+*live* candidate" is circular — which candidates are live is what is being
+computed. The three tests are therefore applied once, in one pass, against all
+four candidates rather than to a fixed point over a shrinking set. Setting a
+candidate aside can only lower `max(coverage of the others)`, which loosens the
+coverage clause for everyone left, so iterating would let one removal cascade
+into exactly the removals that clause exists to prevent. The best-scoring
+candidate trails itself by 0 and is never set aside, so the score clause's
+reference point is identical either way and the list is never empty. One pass
+sets aside a subset of what iterating would; the conservative reading is the one
+the clause was written for.
+
+**The shadow-only criterion is checked in the imports, not in behaviour.** The
+claim is the absence of a reader, which no behavioural fixture can state. The
+test asserts that only `candidateList.ts`, the two files that write the record,
+the schema and the test itself mention the derivation at all, and that in the two
+writers every line naming it is a comment, the import, or the record field.
+
+### First read against the thresholds — they do not survive it
+
+The pre-repair export was replayed message by message, rebuilding the board with
+the deterministic keyword extractor and computing the list at every message. This
+is a weak instrument twice over: it is a different architecture, and the fast
+extractor is not the live one. It does not replace issue 01. It is reported
+because of what it found.
+
+Forty-three of its 48 sessions have any messages at all. Three of those ever
+set a candidate aside.
+
+| Session | Ends at | Coverage A/B/C/D | Score A/B/C/D |
+| --- | --- | --- | --- |
+| T-C3-007 | live `C` | 6 / 6 / 5 / 8 | 0 / 0 / **3** / 0 |
+| T-C2-001 | sets aside `A` | 5 / 3 / 6 / 3 | 1 / 1 / 4 / 1 |
+| T-C1-016 | **sets aside `C`** | 3 / 0 / **4** / 3 | 3 / 0 / 0 / −1 |
+
+T-C3-007 is the case the design hoped for: the list narrows to the pooled answer
+as the board fills, and candidates re-enter it three times when new information
+arrives — with no reopening path, because nothing is carried.
+
+**T-C1-016 is the case that matters.** The pooled answer is set aside there while
+it is the *best-covered* candidate on the board, on four traits whose score is 0
+against a leader on 3. The coverage clause protects a candidate that is *behind*
+on coverage; C is ahead. That is not an unlucky session — it is the pooled
+answer's shape. Its three misses are shared across all profiles and surface
+early; its seven matches are distributed and surface late. A candidate whose
+shared traits are its misses crosses the coverage minimum looking weak, and
+nothing in the rule as written holds it.
+
+So the thresholds do not simply need validating. The removal rule has a gap that
+the sessions in issue 01 will not close by themselves, and issue 03 must not
+inherit it — a leader that steers by this list steers away from the right answer
+in exactly the sessions the study is about. Recorded as a comment on issue 03.

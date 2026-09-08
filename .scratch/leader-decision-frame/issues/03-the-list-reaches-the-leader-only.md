@@ -41,3 +41,20 @@ profile, with the board available as grounding for an answer.
 - [ ] Removing the list from the leader's input changes a leader decision in a fixture, and changes no peer decision
 - [ ] The peer answers a direct board question correctly with the list absent
 - [ ] Prompt-hash verification and the orthogonality assertions pass untouched
+
+## Comments
+
+### From issue 02: the removal rule has a gap before it reaches anyone
+
+Issue 02 landed the shadow list and replayed the 39-session export against it.
+In T-C1-016 the pooled answer is set aside while it is the best-covered candidate
+on the board — coverage 4, score 0, against a leader on score 3. The coverage
+clause only protects a candidate that is *behind* on coverage, and the pooled
+answer is typically ahead of it early: its misses are shared across profiles and
+surface first, its matches are distributed and surface last.
+
+A leader steering by this list would steer away from the right answer in the one
+session shape the study exists to produce. Whatever else 03 does, it does not
+start by handing the leader the rule as written. The replay is a weak instrument
+— pre-repair architecture, deterministic keyword extractor — so issue 01's
+sessions are still the evidence; this says what to look for in them.
