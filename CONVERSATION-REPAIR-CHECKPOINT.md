@@ -35,13 +35,21 @@ byte-identical to the backup branch HEAD, so the mirror is faithful and either
 location can be recovered from the other.
 
 **What is done, in one line.** Gate A is finished and confirmed live. Length is
-solved. The reveal guards enforce for real, since the extractor that made them
-pass vacuously was replaced. The honest decline and the request scope behind it
-are built but have never been seen in a live session.
+now a post-condition rather than a request, and the per-turn reveal budget
+reaches a live turn for the first time — it was computed for `address` and
+`followup` and then dropped before generation, and passed its own suite the whole
+time because every assertion called the predicate directly. The honest decline
+and the request scope behind it are built but have never been seen in a live
+session.
 
-**What is open.** Eleven issues in `.scratch/conversation-repair/issues/`. Ten
-are open; one records a decision not to act. Start at the lowest-numbered issue
-whose blockers are done.
+**What is open.** Eleven issues in `.scratch/conversation-repair/issues/`. One is
+open — issue 10, the Observer split, which is blocked on a live measurement that
+has not been taken. Nine are done and one records a decision not to act. Start at
+the lowest-numbered issue whose blockers are done.
+
+**Nothing since 2026-09-07 has been measured live.** Nine issues' worth of
+changes are verified by build, four suites and deliberate breakages only. The
+prompt source moved 1.8.0 → 1.9.0, so the golden set needs re-running as well.
 
 **Before the next measurement, two things.**
 

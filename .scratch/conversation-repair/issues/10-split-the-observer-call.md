@@ -7,7 +7,7 @@ runs off the decision path and merges into the ledger before the next turn.
 **Blocked by:** 01 — this is the second of the two decided steps, and it must not
 be designed against a latency budget nobody has re-measured.
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 ## Why the split exists
 
@@ -70,3 +70,39 @@ Observer model. See `docs/adr/0005-no-model-swap-for-latency.md`.
 - [ ] No turn is re-decided after the fact
 - [ ] Spoken turns measure ≤ 6 s by the existing per-turn arithmetic, with no
       rise in wrong-candidate turns and no new ledger conflict codes
+
+
+## Comments
+
+### Not started, and why
+
+The blocker is unmet. Issue 01 is `done` but its own closing line says **"Not yet
+measured live — and the server must be restarted before it can be."** No session
+has run since; nine issues' worth of changes have landed on top, verified by
+build and suites only.
+
+This issue's entire justification is that the Observer is the whole remaining
+latency budget, and its own scope note says so in as many words: *"Do not start
+it before issue 01 has been measured — its whole justification is that the
+Observer is the entire remaining budget, and that claim is currently a year-old
+inference from a build that has since changed twice."* It has now changed rather
+more than twice. Designing a two-call split, a new schema, a new prompt, a
+version bump and a reconciliation rule against an unmeasured budget is exactly
+what that sentence forbids.
+
+Two things also make the current numbers less predictive than they were, both
+from work done since:
+
+- Issue 01 takes the Observer **and** the Judge off every deterministically
+  vetoed turn. In T-C1-024 that was every non-greeting silence; in T-C1-025,
+  three turns of five. The Observer's share of a silent turn is now zero, and the
+  split only ever helped spoken turns anyway — so the measurement needs to
+  separate the two populations, which no run has yet done.
+- Issue 03 set `verbosity: "low"` on the generator, which moves generation
+  latency. The critical-path arithmetic this issue quotes predates it.
+
+`needs-info` rather than `ready-for-agent`: what is missing is a measurement, and
+that is the maintainer's to supply. Restart the server, run a session, record it
+in `docs/measurements.md` with spoken and silent turns separated, and this
+becomes actionable — or stops being worth doing, which is also an answer the
+measurement can give.
