@@ -19,6 +19,7 @@ import { eligibleTraitIdsForLedgerState } from "../lib/interventionEngine.js";
 import {
   canonicalizeConversationLedgerJudgeDecision,
   conversationLedgerDecisionProjection,
+  deterministicVetoBeforeJudge,
   judgeCapitulatedToSilence,
   judgeCapitulationRuleCodes,
   validateConversationLedgerJudgeDecision,
@@ -1547,6 +1548,87 @@ assert.deepEqual(
   b4Live(b4TtlQuestion),
   ["opp:5:direct_question:alex"],
   "the TTL never expires a direct question, however far the conversation moves",
+);
+
+// --- Issue 01: the router's verdict is known before the Judge is asked -------
+//
+// Every silence in T-C1-024 and T-C1-025, and both non-greeting silences in
+// T-C2-041, were the router's cooldown veto applied *after* a full Observer and
+// a full Judge had run. The veto is arithmetic over documents already loaded,
+// so on those turns the answer was known before either model was called.
+//
+// The predicate is built from the same projection the Judge's prompt is built
+// from, deliberately. A second, independently written rule for "what can Alex
+// take this turn" is how the prose summary and the serialized ledger came to
+// disagree once already.
+assert.equal(
+  deterministicVetoBeforeJudge(cooldownBlockedState, { cooldownAvailable: true }),
+  null,
+  "with cooldown available the Judge decides; nothing here pre-empts it",
+);
+assert.equal(
+  deterministicVetoBeforeJudge(cooldownBlockedState, { cooldownAvailable: false }),
+  "cooldown",
+  "an invited opportunity cooldown forbids leaves nothing takeable, so the Judge is not asked",
+);
+assert.equal(
+  deterministicVetoBeforeJudge(provisionalDirect.state, { cooldownAvailable: false }),
+  null,
+  "a required opportunity speaks through the cooldown and must still reach the Judge",
+);
+assert.equal(
+  deterministicVetoBeforeJudge(uptakeState, { cooldownAvailable: false }),
+  null,
+  "the current uptake cluster bypasses the cooldown and must still reach the Judge",
+);
+const notForAlex: ConversationLedgerState = {
+  ...cooldownBlockedState,
+  opportunities: [
+    {
+      ...cooldownBlockedState.opportunities[0]!,
+      expectation: "required",
+      kind: "direct_question",
+      targets: ["humanX"],
+    },
+  ],
+};
+assert.equal(
+  deterministicVetoBeforeJudge(notForAlex, { cooldownAvailable: false }),
+  "cooldown",
+  "an opportunity aimed at a human is not Alex's to take, whatever its expectation",
+);
+
+// The floor is the other deterministic veto, and it outranks the cooldown
+// because the router applies it first. Reporting the wrong one would conflate
+// two silences the invariants require to stay distinct.
+const floorHeld: ConversationLedgerState = {
+  ...provisionalDirect.state,
+  floor: { ...provisionalDirect.state.floor, transition: "held", holder: "humanY" },
+};
+assert.equal(humanFloorHeld(floorHeld), true, "fixture check: the floor is held by a human");
+assert.equal(
+  deterministicVetoBeforeJudge(floorHeld, { cooldownAvailable: true }),
+  "human_floor_held",
+  "a held human floor vetoes every act even when the cooldown is available",
+);
+// The fixture for the ordering has to be one where the two vetoes disagree.
+// The first version of this assertion reused a state holding a required
+// opportunity, so both the correct order and the reverse returned the floor and
+// the test passed with the order inverted. It is the fifth vacuous first
+// attempt in this repair; recorded in the checkpoint's method note.
+const floorHeldNothingTakeable: ConversationLedgerState = {
+  ...cooldownBlockedState,
+  floor: { ...cooldownBlockedState.floor, transition: "held", holder: "humanY" },
+};
+assert.equal(
+  humanFloorHeld(floorHeldNothingTakeable),
+  true,
+  "fixture check: the floor is held and the cooldown also forbids everything",
+);
+assert.equal(
+  deterministicVetoBeforeJudge(floorHeldNothingTakeable, { cooldownAvailable: false }),
+  "human_floor_held",
+  "when both vetoes apply the floor is reported, matching the order the router applies them",
 );
 
 console.log("[conversation-ledger] deterministic reducer tests passed");

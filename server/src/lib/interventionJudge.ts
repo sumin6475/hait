@@ -13,6 +13,7 @@ import type { CommunicativeAct } from "../types.js";
 import {
   candidateSalienceOrder,
   describeConversationLedger,
+  humanFloorHeld,
   opportunityMayBypassCooldown,
   type ConversationLedgerState,
   type OpportunityKind,
@@ -475,14 +476,12 @@ export function validateConversationLedgerJudgeDecision(input: {
       )
       .map((opportunity) => opportunity.id),
   );
-  const humanFloorHeld =
-    state.floor.transition === "held" &&
-    state.floor.holder !== "alex" &&
-    state.floor.holder !== "open" &&
-    state.floor.holder !== "unclear";
+  // This was a second, inline copy of the reducer's floor rule. Two rules for
+  // one question is what B9 had to unify between the opportunity derivation and
+  // the floor check, and it cost three consecutive turns before it was found.
   if (
     currentRequiredOpportunityIds.size > 0 &&
-    !humanFloorHeld &&
+    !humanFloorHeld(state) &&
     !(
       (decision.decision === "speak" &&
         decision.selectedOpportunityId !== null &&
@@ -644,6 +643,46 @@ export function conversationLedgerDecisionProjection(
       return true;
     }),
   };
+}
+
+/**
+ * The router's verdict, when it is already knowable without asking the Judge.
+ *
+ * Two of the router's vetoes are pure functions of state the reducer has
+ * already settled: a held human floor, and the ordinary cooldown. Both used to
+ * be applied *after* a full Observer and a full Judge had run. Every silence in
+ * T-C1-024 and T-C1-025, and both non-greeting silences in T-C2-041, took that
+ * path — a model call, and then a second one, to reach a conclusion arithmetic
+ * had already reached.
+ *
+ * The cooldown does not veto unconditionally: a `required` expectation, or an
+ * `uptake` invitation on the foreground thread, speaks through it. So the test
+ * is not "is the cooldown available" but "is there anything left that Alex
+ * could take" — and that question is answered by the decision projection, which
+ * is the same filter the Judge's prompt and its validation are built from. A
+ * separately written rule for the same question is how the prose summary and
+ * the serialized ledger came to disagree once already.
+ *
+ * The order matters: the router checks the floor first, so this does too.
+ * Reporting the cooldown for a floor-held turn would conflate two silences the
+ * invariants require to stay distinct.
+ *
+ * Returns the veto that applies, or null when the Judge has a real decision to
+ * make. Nothing here reads the condition, and nothing here may: which turns
+ * Alex can speak on is held constant across conditions.
+ */
+export type DeterministicJudgeVeto = "human_floor_held" | "cooldown";
+
+export function deterministicVetoBeforeJudge(
+  state: ConversationLedgerState,
+  options: { cooldownAvailable: boolean },
+): DeterministicJudgeVeto | null {
+  if (humanFloorHeld(state)) return "human_floor_held";
+  if (options.cooldownAvailable) return null;
+  const takeable = conversationLedgerDecisionProjection(state, options).opportunities.some(
+    (opportunity) => opportunity.status === "open" && opportunity.targets.includes("alex"),
+  );
+  return takeable ? null : "cooldown";
 }
 
 /**

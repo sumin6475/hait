@@ -396,6 +396,26 @@ real participant text; nothing is quoted from it anywhere.
   the guard path — network-free, cannot time out, and with no failure mode that
   reads as absence. All three shipped messages are now rejected.
 
+**Re-read 2026-09-08, for issue 01.** Fifteen of the 49 decisions were staged
+`cooldown`. **Every one of the fifteen had exactly one human message since Alex
+last spoke** — that is, every cooldown-blocked turn in this session was the first
+message after an Alex turn.
+
+That kills half of the Observer overlap design. Its fast path was gated on a
+conservative test that the turn is *not* the first message after an Alex turn,
+because an uptake — which speaks through the cooldown — cannot exist otherwise.
+But the cooldown only blocks below two messages since Alex, and a decision turn
+always has at least one, so **the only turns the cooldown blocks are exactly the
+turns the test excludes**. The fast path would have fired on 0 of 15 here, and on
+0 of 2 in T-C2-041. It is arithmetic, not bad luck: with the current cooldown
+constant the test can never fire, and it was not built.
+
+What could be taken off the model path is the Judge, which on those same fifteen
+turns cost **20.2 s in total, mean 1.34 s** — against **80.5 s of Observer on the
+same turns**, which still has to be paid. So the saving on a blocked turn is
+about **20%**, not the near-total the gate predicted, and 15 model calls per
+session.
+
 **Speech quality, as Sumin read it. This sets the requirement.**
 
 - **Alex accepted a candidate label as its own name.** Asked whether to call it

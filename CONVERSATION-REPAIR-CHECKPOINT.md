@@ -189,8 +189,9 @@ lesson:
 | 2 | The Observer review path | The normalizer, not the call site — replaced with a test that counts model calls |
 | 3 | The reveal guard | Pre-computed trait ids, instead of driving the real generation path |
 | 4 | The decline precedence | A request phrasing that could never reach the template — replaced, with a Chair positive control |
+| 5 | The order of the two deterministic vetoes | A fixture where both orders give the same answer — replaced with one where they disagree |
 
-A fifth assertion could not be written at all: removing unreachable code is
+A sixth assertion could not be written at all: removing unreachable code is
 unobservable. That was said plainly in the test rather than faked.
 
 **A rule that lives only in a prompt is not a rule.** The length contract was

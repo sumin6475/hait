@@ -30,6 +30,7 @@ import {
   CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION,
   CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION,
   CONVERSATION_LEDGER_JUDGE_VERSION,
+  deterministicVetoBeforeJudge,
   judgeCapitulatedToSilence,
   judgeCapitulationRuleCodes,
   judgeConversationLedgerTurn,
@@ -39,6 +40,7 @@ import {
   legacyDecisionForAct,
   type ConversationLedgerJudgeCallAttempt,
   type ConversationLedgerJudgeDecision,
+  type DeterministicJudgeVeto,
 } from "./interventionJudge.js";
 import {
   CONVERSATION_LEDGER_VERSION,
@@ -337,6 +339,9 @@ interface LiveLedgerJudgeResult {
   state: ConversationLedgerState;
   snapshot: ConversationObserverSnapshot | null;
   reobserved: boolean;
+  /** Set when the Judge was never called because the router's answer was
+   *  already settled. Distinct from a Judge that ran and produced nothing. */
+  vetoedBeforeJudge?: DeterministicJudgeVeto;
 }
 
 function selectedOpportunityGenerationContext(input: {
@@ -378,6 +383,9 @@ async function judgeLiveLedgerTurn(input: {
   messagesSinceAlex: number;
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
+  /** Live routing only. In shadow mode the Judge still runs on every turn, so
+   *  the comparison it exists to produce is not silently thinned out. */
+  applyDeterministicVeto: boolean;
 }): Promise<LiveLedgerJudgeResult | null> {
   let snapshot = input.snapshot;
   let reobserved = false;
@@ -394,6 +402,18 @@ async function judgeLiveLedgerTurn(input: {
   let state = snapshot?.ledgerStateAfter;
   if (!state) return null;
   state = reconcileRuntimeBroadcasts(state, input.runtime.ledgerBroadcasts);
+
+  // Ask the Judge only when its answer can matter. Both vetoes below are pure
+  // functions of the state the reducer has already settled, and both used to be
+  // applied after the call. Skipping the call does not change which turns Alex
+  // speaks on — the same vetoes still run downstream — it changes only whether a
+  // model was paid to be overruled.
+  const veto = input.applyDeterministicVeto
+    ? deterministicVetoBeforeJudge(state, { cooldownAvailable: input.cooldownAvailable })
+    : null;
+  if (veto) {
+    return { decision: null, attempts: [], state, snapshot, reobserved, vetoedBeforeJudge: veto };
+  }
 
   const allTranscript = transcript(input.docs);
   let judged = await judgeConversationLedgerTurn({
@@ -1849,6 +1869,7 @@ export async function onHumanMessage(input: {
       messagesSinceAlex: sinceAI,
       cooldownAvailable,
       backchannelAvailable,
+      applyDeterministicVeto: controllerMode === "ledger_active",
     });
     if (runtime.latestPushSeq !== input.messageSeq) {
       finishSupersededTurnTrace(runtime, input.messageSeq);
@@ -1895,6 +1916,17 @@ export async function onHumanMessage(input: {
           judgeEvidenceSeqs: decision?.evidenceSeqs,
         });
 
+      // The Judge was never asked, because the router had already answered.
+      // This must be checked before the no-decision case below: an absent
+      // decision here means "not consulted", not "consulted and failed".
+      if (ledgerResult.vetoedBeforeJudge) {
+        await recordLedgerSilence(
+          ledgerResult.vetoedBeforeJudge === "human_floor_held"
+            ? "ledger_router_human_floor_held"
+            : "cooldown",
+        );
+        return;
+      }
       if (!decision) {
         await recordLedgerSilence(
           ledgerResult.state.degradedMode
