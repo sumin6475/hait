@@ -42,11 +42,33 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
-**What is open.** Nineteen issues in `.scratch/conversation-repair/issues/`.
-Both remaining ones are blocked on a measurement rather than on code: issue 10
-needs a live Observer latency figure, and issue 16 needs a frequency count
-before a guard for it is worth its cost. Sixteen are done and one records a
-decision not to act.
+**What is open.** Twenty-one issues in `.scratch/conversation-repair/issues/`.
+Two are actionable — issues 20 and 21, both from the guard audit below, and both
+of which *remove* enforcement rather than add it. Two more are blocked on a
+measurement rather than on code: issue 10 needs a live Observer latency figure,
+and issue 16 needs a frequency count before a guard for it is worth its cost.
+Sixteen are done and one records a decision not to act.
+
+**The guard audit, 2026-09-08.** Across both sessions, thirteen guard events:
+
+| bound | repair worked | turn died |
+| --- | ---: | ---: |
+| `too_many_restated_traits` | 1 | **8** |
+| `too_many_traits` | 0 | **2** |
+| `trait_outside_selected_contribution` | 1 | 0 |
+| `candidate_outside_current_focus` | 1 | 0 |
+
+**A count bound almost never repairs; a scope bound always did.** Asking for
+fewer traits about the same subject is something the model cannot do without
+failing the task, so it keeps the answer and loses the turn; asking it to talk
+about a different candidate is something it can simply do. `maxSentences`,
+`maxWords` and the metadata check never fired first in either session — the
+prompt is holding those on its own.
+
+Of the ten deaths, issue 18 closes two. Eight are issue 20 (the scope is read
+from the anchor, but the turn is answering a request three messages back) and
+one is issue 21 (the guard was right, the repair complied, and a bound nobody
+named to it killed the result).
 
 **Guards are now the largest source of lost turns.** Ten in T-C1-021 against the
 cooldown's seven. Before adding another server-side check, read §6's sixth rule
