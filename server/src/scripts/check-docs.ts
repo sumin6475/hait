@@ -80,6 +80,10 @@ function headingLabel(heading: string): string | null {
   return null;
 }
 
+/** Documentation that must exist, not merely be checked when present. A doc
+ *  joins this list in the ticket that creates it. */
+const REQUIRED_DOCS = ["CONTEXT.md"];
+
 const failures: string[] = [];
 const notes: string[] = [];
 
@@ -125,7 +129,57 @@ for (const path of trackedDocPaths()) {
   }
 }
 
-// ── 2. Nothing vanishes unaccounted for ──────────────────────────────────────
+// ── 2. The glossary is a glossary ────────────────────────────────────────────
+// Terms follow the project's glossary format: a bolded term, a colon, then the
+// definition. These assertions are about the file being usable as a glossary —
+// every term resolves to exactly one definition — never about which terms it
+// contains or how they are worded.
+for (const relative of REQUIRED_DOCS) {
+  check(existsSync(join(REPO_ROOT, relative)), `${relative} is required and does not exist`);
+}
+
+const glossaryPath = join(REPO_ROOT, "CONTEXT.md");
+if (existsSync(glossaryPath)) {
+  const body = readFileSync(glossaryPath, "utf8");
+  const lines = body.split("\n");
+  const seen = new Map<string, number>();
+
+  lines.forEach((line, index) => {
+    const term = line.match(/^\*\*(.+?)\*\*:\s*(.*)$/);
+    if (!term) return;
+    const name = term[1]!.trim();
+    const key = name.toLowerCase();
+    const inlineBody = term[2]!.trim();
+    const nextLine = (lines[index + 1] ?? "").trim();
+
+    check(
+      Boolean(inlineBody) || (Boolean(nextLine) && !nextLine.startsWith("**")),
+      `CONTEXT.md: "${name}" has no definition body`,
+    );
+    const earlier = seen.get(key);
+    check(
+      earlier === undefined,
+      `CONTEXT.md: "${name}" is defined twice (lines ${earlier} and ${index + 1})`,
+    );
+    if (earlier === undefined) seen.set(key, index + 1);
+  });
+
+  check(seen.size > 0, "CONTEXT.md defines no terms");
+
+  // A glossary and nothing else. Code fences and file paths are the mechanical
+  // proxy for implementation detail leaking in — a term that can only be
+  // explained by pointing at a file is not yet a domain term.
+  check(!body.includes("```"), "CONTEXT.md contains a code fence");
+  // Deliberately excludes a bare "client/" and "server/" prefix: "a client/server
+  // split" is ordinary prose a glossary may well contain, while a real path in
+  // this repo always carries one of the segments below.
+  const pathLike = body.match(/\b(?:src|docs|dist|node_modules|scripts)\/[\w./-]+/);
+  check(!pathLike, `CONTEXT.md names a file path: ${pathLike?.[0] ?? ""}`);
+  const fileLike = body.match(/\b[\w-]+\.(?:ts|tsx|js|mjs|json|ya?ml)\b/);
+  check(!fileLike, `CONTEXT.md names a file: ${fileLike?.[0] ?? ""}`);
+}
+
+// ── 3. Nothing vanishes unaccounted for ──────────────────────────────────────
 const map: MigrationMap = JSON.parse(readFileSync(MAP_PATH, "utf8"));
 const sourcePath = join(REPO_ROOT, map.source);
 assert.ok(existsSync(sourcePath), `migration map source ${map.source} is missing`);
