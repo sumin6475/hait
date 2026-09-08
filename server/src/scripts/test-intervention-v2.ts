@@ -2268,9 +2268,104 @@ const knownCountContext = buildRouteUserContext({
   anchorSeq: 37,
 });
 assert.equal(knownCountContext.requestIntent.kind, "known_count_request");
+assert.equal(knownCountContext.requestIntent.source, "known_profile");
 assert.equal(
   knownCountContext.deterministicResponse,
   "Combining my complete notes with what the team has shared, I know 4 matches for Candidate D.",
+);
+
+// T-C2-045 seq 46. "we've discussed together" asks about the board, and the
+// Observer said so — `source: "visible_board"`. The count read Alex's own
+// knowledge anyway and reported 4 matches and 3 misses where the board held 3
+// and 3, behind a preamble that describes the wrong set accurately.
+const boardCountContext = buildRouteUserContext({
+  routeKind: "followup",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 37,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "How many of Candidate D's traits have we discussed together?",
+    },
+  ],
+  revealStats: tC2030PreferenceStats,
+  language: "en",
+  anchorSeq: 37,
+});
+assert.equal(boardCountContext.requestIntent.kind, "known_count_request");
+assert.equal(
+  boardCountContext.requestIntent.source,
+  "visible_board",
+  "asking what the group discussed is a question about the board",
+);
+assert.notEqual(
+  boardCountContext.deterministicResponse,
+  knownCountContext.deterministicResponse,
+  "the two questions have different answers and must not share one",
+);
+assert.match(
+  boardCountContext.deterministicResponse!,
+  /we(?:'ve| have) discussed/i,
+  "the preamble names the set it counted",
+);
+assert.doesNotMatch(boardCountContext.deterministicResponse!, /my complete notes/i);
+// The board count is the visible-board union, and it is smaller than what Alex
+// knows — that gap is the whole point of the distinction.
+const boardIds = [...allSurfacedIds(tC2030PreferenceStats)].filter(
+  (id) => TRAIT_BY_ID.get(id)?.candidate === "D",
+);
+assert.ok(boardIds.length > 0, "the fixture has a visible board for D");
+assert.match(
+  boardCountContext.deterministicResponse!,
+  new RegExp(`\\b${boardIds.filter((id) => TRAIT_BY_ID.get(id)!.valence === "pos").length} matches\\b`),
+);
+assert.equal(
+  buildRouteUserContext({
+    routeKind: "followup",
+    conditionCode: "C2",
+    messages: [
+      {
+        seq: 37,
+        senderRole: "humanY",
+        speaker: "Participant Y",
+        content: "How many D's misses have we discussed together?",
+      },
+    ],
+    revealStats: tC2030PreferenceStats,
+    language: "en",
+    anchorSeq: 37,
+  }).deterministicResponse!.includes("misses"),
+  true,
+  "countKind still works under the board source",
+);
+// The live path: on a selected opportunity the Observer supplies the intent and
+// the lexical classifier is never consulted. That is how seq 46 reached the
+// count with `visible_board` on it.
+assert.match(
+  buildRouteUserContext({
+    routeKind: "address",
+    conditionCode: "C2",
+    messages: [
+      {
+        seq: 37,
+        senderRole: "humanY",
+        speaker: "Participant Y",
+        content: "How many A's attributes, and B's attributes we've discussed together?",
+      },
+    ],
+    revealStats: tC2030PreferenceStats,
+    language: "en",
+    anchorSeq: 37,
+    requestIntentOverride: {
+      kind: "known_count_request",
+      candidate: "D",
+      source: "visible_board",
+      countKind: "all",
+    },
+  } as any).deterministicResponse!,
+  /we(?:'ve| have) discussed/i,
+  "an Observer-supplied board source reaches the count",
 );
 
 const insightQuestionContext = buildRouteUserContext({

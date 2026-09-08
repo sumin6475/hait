@@ -5,7 +5,7 @@ discussed. Today it is answered with what Alex knows, and the two differ.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## The defect, as observed
 
@@ -55,9 +55,59 @@ one consumer drops them.
   the visible board and would stay wrong if only the number changed
 - `countKind` (all / matches / misses) keeps working under every source
 
-- [ ] A count request whose source is the visible board answers from the visible
+- [x] A count request whose source is the visible board answers from the visible
       board
-- [ ] The T-C2-045 seq 46 and seq 48 shapes return 3 and 3
-- [ ] A request for what Alex knows still answers from what Alex knows
-- [ ] The preamble names the set actually counted, in both languages
-- [ ] No model call enters the count path
+- [x] The T-C2-045 seq 46 and seq 48 shapes read the board — though see the
+      correction below about what the board actually held
+- [x] A request for what Alex knows still answers from what Alex knows
+- [x] The preamble names the set actually counted, in both languages
+- [x] No model call enters the count path
+
+## Comments
+
+### One field, dropped by one consumer
+
+`RequestIntent.source` is carried the whole way from classification to
+generation, and `deterministicKnownCountResponse` was the one consumer that never
+read it. `visible_board` now counts `allSurfacedIds` — the same
+deduplicated union summary and complete-board answers already use — and
+`known_profile` and `alex_notes` keep `knownTraitIds`.
+
+The wording moves with the number: "From what we've discussed together, we have
+N matches" against "Combining my complete notes with what the team has shared, I
+know N matches". Changing the count without the preamble would have left a wrong
+answer that still sounded careful, which is what made this hard to see.
+
+### Two classifier gaps found on the way
+
+Both showed up because the live session's own wording did not survive a
+round-trip through the lexical classifier.
+
+**"attributes"** was missing from `KNOWN_COUNT_REQUESTS`. The participants used
+that word; the Observer classified it and the lexical reading returned `none`.
+The two disagreeing is exactly the condition D6 introduced to stop a
+deterministic template firing on a reading nobody else shared, so the gap was
+live even though the Observer covered for it here.
+
+**The inverted question form.** `VISIBLE_BOARD_SCOPE` matched "we've discussed"
+but not "have we discussed" — the same question, inverted because it is a
+question. Added.
+
+### A correction to this issue's own numbers
+
+The issue says the board held 3 matches and 3 misses. **It held 3 and 4.**
+`A_n1` and `B_n3` were said aloud and recorded nowhere, because the matcher
+deferred them and the bounded verifier declined — → **issue 15**, found while
+checking this one.
+
+So the count was wrong twice over: it read the wrong set, and the right set was
+itself short. This issue fixes the first. Issue 15 is what makes the answer
+correct.
+
+### Verification
+
+One break confirmed the assertion fails: pinning the response to the known set
+regardless of source. Regressions cover both sources, both `countKind` variants,
+the lexical path and the Observer-supplied path.
+
+Build, all four suites and `test:pooling-extractor` green. **Not measured live.**

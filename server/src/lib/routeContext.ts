@@ -1065,8 +1065,11 @@ export const NO_REQUEST_INTENT: RequestIntent = {
   source: "alex_notes",
 };
 
+// "have we discussed" is the same question as "we've discussed", inverted for a
+// question. T-C2-045 seq 46 asked it that way and was read as a question about
+// Alex's own knowledge instead of about the board.
 const VISIBLE_BOARD_SCOPE =
-  /\b(?:on the table|so far|at this point|already (?:shared|said|mentioned|discussed)|been (?:said|shared|discussed|covered)|we(?:'ve| have)(?: all)? (?:heard|got|covered|said|shared|mentioned|discussed)|we all (?:heard|covered|said|shared|mentioned|discussed)|(?:our|everyone's|the team'?s|the group'?s) (?:all )?(?:traits?|points?|information|notes?)|in the (?:chat|discussion))\b|(?:테이블|지금까지|여태|나온|공유된|말해진|논의된)/i;
+  /\b(?:on the table|so far|at this point|already (?:shared|said|mentioned|discussed)|been (?:said|shared|discussed|covered)|we(?:'ve| have)(?: all)? (?:heard|got|covered|said|shared|mentioned|discussed)|(?:have|did)\s+we(?: all)? (?:hear|heard|cover(?:ed)?|say|said|share[d]?|mention(?:ed)?|discuss(?:ed)?)|we all (?:heard|covered|said|shared|mentioned|discussed)|(?:our|everyone's|the team'?s|the group'?s) (?:all )?(?:traits?|points?|information|notes?)|in the (?:chat|discussion))\b|(?:테이블|지금까지|여태|나온|공유된|말해진|논의된)/i;
 
 const PREFERENCE_REASON_REQUESTS = [
   /\bwhy\b.{0,80}\b(?:best|pick(?:ed)?|cho(?:ose|se|sen)|prefer(?:ence|red)?|choice)\b/i,
@@ -1074,9 +1077,13 @@ const PREFERENCE_REASON_REQUESTS = [
   /\b(?:reason|basis)\b.{0,80}\b(?:best|pick|choice|preference)\b/i,
   /(?:왜|이유|근거).*(?:최고|선택|골랐|선호|맞다고\s*생각|낫다고\s*생각|좋다고\s*생각)/,
 ];
+// "attributes" is the word the participants actually used in T-C2-045 seq 46.
+// The Observer classified it and the lexical reading did not, and the two
+// disagreeing is the condition D6 added to stop a deterministic template firing
+// on a reading nobody else shared.
 const KNOWN_COUNT_REQUESTS = [
-  /\bhow many\b.{0,80}\b(?:matches?|misses?|traits?|points?)\b/i,
-  /\b(?:matches?|misses?|traits?|points?)\b.{0,80}\bhow many\b/i,
+  /\bhow many\b.{0,80}\b(?:matches?|misses?|traits?|points?|attributes?)\b/i,
+  /\b(?:matches?|misses?|traits?|points?|attributes?)\b.{0,80}\bhow many\b/i,
   /(?:매치|미스|긍정|부정|특성|속성).*(?:몇\s*개|얼마나)|(?:몇\s*개|얼마나).*(?:매치|미스|긍정|부정|특성|속성)/,
 ];
 const INSIGHT_REQUESTS = [
@@ -1255,7 +1262,10 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
     return {
       kind: "known_count_request",
       candidate: named,
-      source: "known_profile",
+      // A count defaults to what Alex knows, but "how many have we discussed"
+      // is a question about the board and says so. The source was hard-coded
+      // here, so the two questions shared one answer.
+      source: VISIBLE_BOARD_SCOPE.test(text) ? "visible_board" : "known_profile",
       countKind: requestCountKind(text),
     };
   }
@@ -1351,13 +1361,25 @@ function deterministicKnownCountResponse(input: {
   revealStats: any;
 }): string | undefined {
   if (input.intent.kind !== "known_count_request" || !input.candidate) return undefined;
-  const traits = [...knownTraitIds(input.revealStats)]
+  // The request carries the set it is asking about, and this consumer used to
+  // drop it: T-C2-045 seq 46 asked what the group had discussed, the Observer
+  // said `visible_board`, and the answer counted Alex's own knowledge — 4 and 3
+  // where the board held 3 and 3, behind a preamble that described the wrong
+  // set accurately.
+  const board = input.intent.source === "visible_board";
+  const pool = board ? allSurfacedIds(input.revealStats) : knownTraitIds(input.revealStats);
+  const traits = [...pool]
     .map((id) => TRAIT_BY_ID.get(id))
     .filter((trait) => trait?.candidate === input.candidate);
   const matches = traits.filter((trait) => trait?.valence === "pos").length;
   const misses = traits.filter((trait) => trait?.valence === "neg").length;
-  const source =
-    input.language === "ko"
+  // The preamble names the set actually counted. Changing the number without
+  // the wording would only make a wrong answer harder to spot.
+  const source = board
+    ? input.language === "ko"
+      ? "지금까지 함께 논의된 내용으로는"
+      : "From what we've discussed together"
+    : input.language === "ko"
       ? "제 전체 노트와 팀이 공유한 정보를 합치면"
       : "Combining my complete notes with what the team has shared";
   if (input.language === "ko") {
@@ -1369,13 +1391,14 @@ function deterministicKnownCountResponse(input: {
     }
     return `${source} Candidate ${input.candidate}는 MATCH ${matches}개, MISS ${misses}개입니다.`;
   }
+  const verb = board ? "we have" : "I know";
   if (input.intent.countKind === "matches") {
-    return `${source}, I know ${matches} matches for Candidate ${input.candidate}.`;
+    return `${source}, ${verb} ${matches} matches for Candidate ${input.candidate}.`;
   }
   if (input.intent.countKind === "misses") {
-    return `${source}, I know ${misses} misses for Candidate ${input.candidate}.`;
+    return `${source}, ${verb} ${misses} misses for Candidate ${input.candidate}.`;
   }
-  return `${source}, I know ${matches} matches and ${misses} misses for Candidate ${input.candidate}.`;
+  return `${source}, ${verb} ${matches} matches and ${misses} misses for Candidate ${input.candidate}.`;
 }
 
 const BARE_ALEX_ADDRESS = /^\s*(?:hey\s+)?alex[\s?!.,]*$/i;
