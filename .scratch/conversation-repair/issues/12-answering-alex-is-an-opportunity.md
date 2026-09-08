@@ -93,3 +93,25 @@ wrong about it.
 - [ ] `floor.expectedNext` naming Alex and an empty addressee list cannot both
       stand — say which one the ledger keeps, and why
 - [ ] No new bypass of the floor or the cooldown
+
+
+## Comments
+
+### T-C2-045: the Observer got it right, and the turn was lost anyway
+
+The same shape ran again two hours later on the new build — Alex offered a choice
+at seq 16, a participant answered at seq 17 — and **this time the Observer read
+every field correctly**: `addressees: ["alex"]`, `explicit_addressee`,
+`requestExplicitness: explicit`, `relationToPendingAlexQuestion:
+related_addition`, floor expecting Alex, confidence 0.9. An opportunity was
+minted.
+
+The comparison still never arrived. Cooldown vetoed the turn, and the three later
+turns that spoke each chose a voluntary act with the opportunity still open. →
+**issue 13**, which is this failure one layer further down.
+
+That is worth recording here for two reasons. It confirms the reliability
+distribution this issue describes — two instances of one pattern, read two ways.
+And it shows the fix is **necessary but not sufficient**: minting the opportunity
+deterministically would not have saved either session on its own. Issue 13 does
+not block this one, and this one does not block issue 13.

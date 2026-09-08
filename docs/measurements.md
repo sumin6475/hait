@@ -1,7 +1,7 @@
 # Session measurements
 
 Every live session run against the conversation repair, in one place and in one
-shape. Twelve session entries: three diagnostic sessions that the early gates were built
+shape. Thirteen session entries: three diagnostic sessions that the early gates were built
 from, the seven measured rounds of the repair, one partial session run after
 them, and one full baseline session run before the 2026-09-08 issues landed. One
 further entry records a golden baseline, which is not a session.
@@ -19,21 +19,21 @@ them.
 
 ## Summary
 
-| | T-C2-034 | T-C2-035 | T-C2-037 | T-C1-020 | T-C2-039 | T-C1-022 | T-C1-023 | T-C1-024 | T-C1-025 | T-C1-027 | T-C2-041 | T-C2-043 |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| Condition | Chair | Chair | Chair | Member | Chair | Member | Member | Member | Member | Member | Chair | Chair |
-| Messages | 28 | — | — | 51 human | 19 human | — | — | 14 | 8 | 81 | 10 | 50 |
-| Decisions | 18 | — | 23 | 51 | 19 | — | — | 9 | 5 | 49 | 6 | 30 |
-| Spoken | 10 (56%) | — | 6 (26%) | 18 | 11 | 5 | — | 5 (56%) | 2 | 28 (57%) | 4 | 20 (67%) |
-| Median turn | — | — | — | 10.2 s | 12.7 s | — | — | **9.6 s** | — | — | — | 10.0 s |
-| Turns superseded | — | — | — | **39%** | 2/19 | — | — | **11%** | — | — | — | 1/30 |
-| Observer per call, mean | — | — | — | 6.9 s | 6.8 s | — | — | 6.5 s | — | 5.3 s *(med)* | 5.8 s | — |
-| Observer max | — | — | — | 14.3 s | 11.9 s | 13.9 s | 10.5 s | 11.2 s | — | 9.4 s | 7.6 s | — |
-| Pre-broadcast tail | — | — | — | — | — | — | 2.5–3.5 s | **0.2–1.5 s** | — | — | — | — |
-| Alex words, mean | — | — | — | 43.8 | 55.6 | 30.8 | — | 34 | **138** | **34.7** | 34.5 | **56.0** |
-| Max traits, one message | — | — | — | **15** | 6 | — | — | 4 | **16** | — | — | 8 † |
-| Judge cache hits | — | — | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** | — |
-| Judge first-attempt accepts | 12/18 | — | — | — | 17/17 | — | — | 8/8 | — | — | 4/5 | — |
+| | T-C2-034 | T-C2-035 | T-C2-037 | T-C1-020 | T-C2-039 | T-C1-022 | T-C1-023 | T-C1-024 | T-C1-025 | T-C1-027 | T-C2-041 | T-C2-043 | T-C2-045 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Condition | Chair | Chair | Chair | Member | Chair | Member | Member | Member | Member | Member | Chair | Chair | Chair |
+| Messages | 28 | — | — | 51 human | 19 human | — | — | 14 | 8 | 81 | 10 | 50 | 49 |
+| Decisions | 18 | — | 23 | 51 | 19 | — | — | 9 | 5 | 49 | 6 | 30 | 29 |
+| Spoken | 10 (56%) | — | 6 (26%) | 18 | 11 | 5 | — | 5 (56%) | 2 | 28 (57%) | 4 | 20 (67%) | 20 (69%) |
+| Median turn | — | — | — | 10.2 s | 12.7 s | — | — | **9.6 s** | — | — | — | 10.0 s | 10.4 s |
+| Turns superseded | — | — | — | **39%** | 2/19 | — | — | **11%** | — | — | — | 1/30 | 1/29 |
+| Observer per call, mean | — | — | — | 6.9 s | 6.8 s | — | — | 6.5 s | — | 5.3 s *(med)* | 5.8 s | — | — |
+| Observer max | — | — | — | 14.3 s | 11.9 s | 13.9 s | 10.5 s | 11.2 s | — | 9.4 s | 7.6 s | — | — |
+| Pre-broadcast tail | — | — | — | — | — | — | 2.5–3.5 s | **0.2–1.5 s** | — | — | — | — | — |
+| Alex words, mean | — | — | — | 43.8 | 55.6 | 30.8 | — | 34 | **138** | **34.7** | 34.5 | **56.0** | **39.4** |
+| Max traits, one message | — | — | — | **15** | 6 | — | — | 4 | **16** | — | — | 8 † | 8 |
+| Judge cache hits | — | — | — | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** | — | — |
+| Judge first-attempt accepts | 12/18 | — | — | — | 17/17 | — | — | 8/8 | — | — | 4/5 | — | 11/11 |
 
 A dash means the figure was not recorded for that run, not that it was zero.
 
@@ -583,6 +583,75 @@ that preceded them.
   whether the 13 budget-exceeding messages would have been caught, because the
   build that produced them had no enforcement and no record — which is issue 09's
   argument, stated by a session rather than by an issue.
+
+---
+
+## T-C2-045 — the same script, on the new build
+
+Chair, 49 messages, 29 decisions, 20 spoken. **The controlled comparison this
+repair never had**: the operator re-ran T-C2-043's human script almost message
+for message, two hours later, on the build with issues 01–11 in it. Every row
+carries `promptVersion 1.9.0` and an `outputGuard`.
+
+| | T-C2-043 (old) | T-C2-045 (new) |
+| --- | ---: | ---: |
+| Alex words, mean | 56.0 | **39.4** | **39.4** |
+| Alex words, max | 145 | **72** |
+| Sentences, mean | 2.9 | **1.9** |
+| Messages over the reveal budget | 13/20 | **4/20** |
+| Same trait set broadcast verbatim | **3×** | none |
+| Messages over 80 words | 2 | **0** |
+| Median turn | 10.1 s | 10.4 s | 10.4 s |
+| Median silent turn | 7.4 s | **6.4 s** |
+| Median spoken turn | 10.8 s | 11.0 s |
+
+**Confirmed.**
+
+- **Issues 03 and 04 work.** Mean length fell 30% and the maximum by half, on the
+  same script, and the verbatim recital — one seven-trait set broadcast three
+  times in T-C2-043 — did not happen once.
+- **Issue 09 works, and immediately earned itself.** Every spoken turn now says
+  which guard held it. Six turns ran under `route_reveal_budget` (1 new / 2
+  restated / 3 sentences / 80 words) and **five ran with `inForce: false`** —
+  including seq 44, which disclosed eight traits under no guard at all. That is
+  the T-C2-041 seq 4 shape, and this time it is legible from the export rather
+  than needing the turn rebuilt by hand. No violation was recorded on any turn.
+- **Issue 01 works.** Every one of the nine cooldown silences has an empty
+  Judge-attempt list. Median silent turn 7.4 s → 6.4 s; the remainder is the
+  Observer, which is issue 10's subject.
+- **Issue 06's mechanism works.** seq 5 is the drift-plus-elimination message
+  again. The fixed sentence stood aside as designed and the turn went to
+  generation under the mediation guard.
+
+**Disconfirmed.**
+
+- **Issue 06's mechanism fired and the content still missed.** Alex's seq 6
+  stated the standard and then said A, C and D were "still to cover" — it did not
+  acknowledge that a participant had just eliminated C. The route no longer
+  discards the observation; the generated turn simply did not use it. **The
+  acceptance criterion "a message that both drifts and contributes gets both
+  handled" is not met by the fix that was built for it.**
+- **An explicit request to Alex was silenced and then abandoned.** seq 16 Alex
+  offered a choice; seq 17 answered it ("a concise comparison"), and the
+  Observer read it correctly — addressed to Alex, explicit, floor expecting Alex,
+  confidence 0.9 — and minted an opportunity. Cooldown vetoed the turn without
+  the Judge seeing it, and on seqs 18, 21 and 25 the Judge had that opportunity
+  in its selectable list and chose a voluntary act each time. The request was
+  never answered. → issue 13.
+- **A count request ignores its own source.** seq 46 asked how many attributes
+  "we've discussed together". The Observer classified it correctly, with
+  `source: "visible_board"`. `deterministicKnownCountResponse` never reads that
+  field: it answered Alex's *known* count, 4 matches and 3 misses, where the
+  board actually held 3 and 3. → issue 14.
+- **Issue 12's Observer defect did not recur, and did not need to.** The seq 16-17
+  pair is the same shape as T-C2-043 seq 16-17, and this time the Observer got
+  every field right. The turn was lost anyway, one layer further down. Reading
+  the reply correctly is necessary and was never sufficient.
+
+**Not exercised.** Issue 05's bare-letter detector — no turn in this script names
+a candidate by a bare letter in a position the old detector missed. Issue 07's
+change is invisible from an export; the thread's requested action is absent from
+prompts by construction now.
 
 ---
 

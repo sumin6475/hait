@@ -42,11 +42,16 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
-**What is open.** Twelve issues in `.scratch/conversation-repair/issues/`. Two are
-open — issue 10, the Observer split, blocked on a live measurement; and issue 12,
-filed from T-C2-043, where Alex asked a question, was answered, and lost the turn
-to `ledger_judge_failure`. Nine are done and one records a decision not to act.
-Start at the lowest-numbered issue whose blockers are done.
+**What is open.** Fourteen issues in `.scratch/conversation-repair/issues/`. Four
+are open: issue 10 (the Observer split, blocked on a latency measurement), and
+issues 12, 13 and 14, all filed from live sessions on 2026-09-08. Nine are done
+and one records a decision not to act. Start at the lowest-numbered issue whose
+blockers are done.
+
+**Issues 12 and 13 are one failure at two depths** — a reply to Alex that goes
+unanswered. 12 is the Observer not seeing it; 13 is everything below the Observer
+losing it anyway. Neither blocks the other, and T-C2-045 showed that fixing 12
+alone would not have saved that session.
 
 **Nothing since 2026-09-07 has been measured live.** Nine issues' worth of
 changes are verified by build, four suites and deliberate breakages only.
@@ -66,11 +71,16 @@ structurally instead — startup hash verification plus the assertions in
 real gap, not a decision; name it before assuming a session is the only way to
 see a prompt regression.
 
-**T-C2-043 does not change that.** It is a full Chair session run on the
-pre-repair build — `promptVersion 1.8.0`, no `outputGuard` on any row — so it is
-a baseline, not a result. It reproduced issue 06's defect exactly, gave issues 03
-and 04 their strongest evidence yet (mean 56.0 words, one seven-trait set
-broadcast three times verbatim), and produced issue 12.
+**Two sessions ran on 2026-09-08, and together they are the controlled
+comparison this repair never had.** T-C2-043 is the pre-repair build
+(`promptVersion 1.8.0`, no `outputGuard`); T-C2-045 re-ran almost the same human
+script on the new one. **Alex's mean length fell 56.0 → 39.4 words, the maximum
+145 → 72, budget-exceeding messages 13/20 → 4/20, and the verbatim recital
+stopped.** Issues 01, 03, 04 and 09 are measured, not merely built.
+
+What the pair also showed: issue 06's mechanism fires and its content still
+misses; an explicit request to Alex can be silenced by cooldown and then
+abandoned (issue 13); and a count request ignores its own source (issue 14).
 
 **Before the next measurement, two things.**
 
