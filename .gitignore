@@ -55,9 +55,11 @@ MEMORY.md
 # `docs/*` rather than `docs/`: git never descends into an excluded directory,
 # so the negation below only works if the directory itself stays visible.
 docs/*
-# The agent-skill configuration is the exception — CLAUDE.md points at it, so it
-# has to travel with the repo.
+# Two exceptions, each narrow: the agent-skill configuration, which CLAUDE.md
+# points at, and the architecture decision records. Both have to travel with the
+# repo. Everything else under docs/ stays local notes, deliberately.
 !docs/agents/
+!docs/adr/
 cursor_steps/
 IRB/
 # prompt-management-system (오서링타임 툴 — 산출물 캐시는 지금 제외)

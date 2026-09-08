@@ -1,0 +1,376 @@
+{
+  "note": "A census of the repair checkpoint taken before any content was moved. Each entry is a section that existed at capture time. An entry marked unmoved must still be present in the source; an entry marked moved must name where it went. This file is read by check-docs, and it is the only thing standing between 'moved' and 'lost' — update it as part of the move that changes a section, never afterwards from memory.",
+  "source": "CONVERSATION-REPAIR-CHECKPOINT.md",
+  "capturedAt": "2026-09-07",
+  "capturedAtSourceLines": 1807,
+  "enforceAllAccounted": false,
+  "enforceAllAccountedNote": "Flipped to true by the ticket that rewrites the checkpoint. Until then a remaining unmoved entry is reported, not failed, so the checker passes while the migration is in progress.",
+  "sections": [
+    {
+      "heading": "# Conversation System Repair — Checkpoint",
+      "capturedAtLine": 1,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## Current state — read this first",
+      "capturedAtLine": 18,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 0. Branch and safety rules",
+      "capturedAtLine": 105,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 1. Goal state (what \"fixed\" means)",
+      "capturedAtLine": 126,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 2. Evidence base",
+      "capturedAtLine": 151,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 3. Confirmed root causes",
+      "capturedAtLine": 172,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### A. Opportunity id is keyed to the thread root, so the session can only ever hold one",
+      "capturedAtLine": 176,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### B. The Judge retry loop converges on silence",
+      "capturedAtLine": 212,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### C. No focus candidate means nothing to say",
+      "capturedAtLine": 228,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### D. A regex pre-empt swallows the context",
+      "capturedAtLine": 237,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### E. Natural uptake is forbidden by the prompt contract",
+      "capturedAtLine": 248,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### F. Extractor miscounting is unobservable, and the agreed design is unwired",
+      "capturedAtLine": 268,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 4. Repair gates",
+      "capturedAtLine": 288,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate 1 — Opportunity identity — DONE (`ebd697d`)",
+      "capturedAtLine": 295,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate 2 — Separate the real reason for silence — DONE (uncommitted)",
+      "capturedAtLine": 333,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate 3 — Supply something to say — DONE (uncommitted)",
+      "capturedAtLine": 388,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate 3R — What T-C2-037 showed after Gates 1–3 — DONE (uncommitted)",
+      "capturedAtLine": 443,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gates 4 and 5 (original) — RETIRED 2026-09-07",
+      "capturedAtLine": 555,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 4b. Second evidence base — T-C1-020 and T-C2-039 (2026-09-07)",
+      "capturedAtLine": 583,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### What the two runs settled",
+      "capturedAtLine": 607,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 4c. Repair gates, second series",
+      "capturedAtLine": 657,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate A — Latency and flow — A1–A4, A6, A7 DONE (uncommitted); A5 not needed",
+      "capturedAtLine": 662,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### A5 — `floorMs` — NOT NEEDED, superseded by A6",
+      "capturedAtLine": 752,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### A6 — Overlap the floor pause with generation — DONE (uncommitted)",
+      "capturedAtLine": 758,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 4d. Third measurement — T-C1-022 (2026-09-07)",
+      "capturedAtLine": 799,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### A6 does not appear to have been in effect in this run — SUPERSEDED by §4e",
+      "capturedAtLine": 809,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### A3 worked for the Observer and cannot work for the Judge as built",
+      "capturedAtLine": 823,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### The Observer review path can double a turn",
+      "capturedAtLine": 836,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Two speech-quality regressions, both traceable",
+      "capturedAtLine": 844,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 4e. Fourth measurement — T-C1-023, restarted server (2026-09-07)",
+      "capturedAtLine": 888,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### New defect: the ledger and the floor disagree inside one observation",
+      "capturedAtLine": 913,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### The leader-like behaviour is coming from a deterministic template",
+      "capturedAtLine": 932,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### A7 — Take the model call off the broadcast path — DONE (uncommitted)",
+      "capturedAtLine": 955,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 4f. Fifth measurement — T-C1-024, first run with A7 and B9 (2026-09-07)",
+      "capturedAtLine": 990,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### A7 is confirmed, and Gate A is done",
+      "capturedAtLine": 994,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### B9 was not exercised — it remains unverified",
+      "capturedAtLine": 1014,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Cooldown is now the only silence mechanism",
+      "capturedAtLine": 1022,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### The Observer's cost grows with the backlog, again",
+      "capturedAtLine": 1031,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Every Alex message carried a quality defect",
+      "capturedAtLine": 1040,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate B — Observer: read the facts, cheaply and correctly",
+      "capturedAtLine": 1072,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### 4f-bis. Sixth measurement — T-C1-025, first run with D6, B4 and B1 (2026-09-07)",
+      "capturedAtLine": 1086,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### 4i. Seventh measurement — T-C1-027, first full real session (2026-09-07)",
+      "capturedAtLine": 1122,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### 4g. Gate B's premise does not survive the T-C1-024 measurement",
+      "capturedAtLine": 1206,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### 4j. Honest decline and label reservation (2026-09-07)",
+      "capturedAtLine": 1258,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### 4k. The scope the decline refuses from (2026-09-07)",
+      "capturedAtLine": 1309,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### 4h. Observer overlap — design (2026-09-07)",
+      "capturedAtLine": 1386,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "#### What the Observer is actually on the critical path for",
+      "capturedAtLine": 1394,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "#### Option 1 — Split the call: a fast decision observation, a full one behind it",
+      "capturedAtLine": 1408,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "#### Option 2 — Decide the deterministic vetoes before paying for the Observer",
+      "capturedAtLine": 1436,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "#### Option 3 — A faster observer model",
+      "capturedAtLine": 1463,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "#### Recommendation",
+      "capturedAtLine": 1469,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "#### What must not regress",
+      "capturedAtLine": 1477,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "#### How to measure",
+      "capturedAtLine": 1489,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate C — Judge: a goal, not a rubber stamp",
+      "capturedAtLine": 1496,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Gate D — Generator: length as a post-condition, not a request",
+      "capturedAtLine": 1511,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Measurement targets",
+      "capturedAtLine": 1524,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "### Open decisions blocking work",
+      "capturedAtLine": 1540,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 5. How to verify",
+      "capturedAtLine": 1556,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 6. Method note",
+      "capturedAtLine": 1585,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 7. Invariants that must not regress",
+      "capturedAtLine": 1600,
+      "status": "unmoved",
+      "movedTo": null
+    },
+    {
+      "heading": "## 8. Progress log",
+      "capturedAtLine": 1624,
+      "status": "unmoved",
+      "movedTo": null
+    }
+  ]
+}

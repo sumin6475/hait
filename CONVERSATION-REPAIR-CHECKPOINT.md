@@ -82,6 +82,12 @@ and either location can be recovered from the other.
 5. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
    expectation (§4g).
 
+**This document is being restructured.** The work is tracked as its own effort in
+the issue tracker (`.scratch/checkpoint-restructure/`), six tickets in dependency
+order. The first has landed: `npm run docs:check` now fails if a section of this
+file disappears without the migration map saying where it went, and if any `§`
+pointer or relative link stops resolving. Run it alongside the four test suites.
+
 **Waiting on the user.** Nothing. Gate C was approved on 2026-09-07 and the
 condition-blind Judge invariant is retired (§7).
 Note that T-C1-024 makes Gate C more pressing, not less: **every** silence in
