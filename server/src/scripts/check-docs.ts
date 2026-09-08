@@ -56,6 +56,7 @@ const TRACKED_DOCS = [
   "docs/agents/issue-tracker.md",
   "docs/agents/triage-labels.md",
   "docs/agents/domain.md",
+  "docs/measurements.md",
 ];
 
 function trackedDocPaths(): string[] {

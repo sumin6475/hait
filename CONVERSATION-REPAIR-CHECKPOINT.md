@@ -49,7 +49,7 @@ and either location can be recovered from the other.
 | B9 · one "addresses Alex" predicate | **DONE**, still unverified live (§4f) | Gate B table |
 | D6 · deterministic template under the output contract | **DONE** | Gate D table, §4f |
 | B4 · opportunity lifetime | **DONE** | Gate B table |
-| B1 · Observer output schema | **ROLLED BACK** — it destabilized `alexRelevance` | §4i |
+| B1 · Observer output schema | **ROLLED BACK.** The rollback did not fix `alexRelevance`; cause unknown | §4i (corrected), `docs/measurements.md` |
 | B8 · bound the Observer review path | **DONE**, confirmed live (review rate 10% → 2%) | Gate B table, §4i |
 | D2 · silent guard bypass | **DONE** — without it D3/D4 never fired | Gate D table, §4i |
 | D3/D4 · per-turn reveal budget | **DONE**, enforcing only since D2 | Gate D table, §4i |
@@ -104,7 +104,9 @@ that session was `cooldown`, applied by the router after the Judge had already
 decided to contribute (§4f).
 
 **How to know it worked.** The measurement targets table in §4c, against the
-baselines in §2, §4b, §4d and §4e.
+baselines in §2, §4b, §4d and §4e. Every live session is also recorded in one
+shape in `docs/measurements.md`, which is where the trend across runs is legible
+and where the negative results are kept together.
 
 **What is not covered by tests, and why.** This repository has no runtime
 harness for `reserveTurn` / `executeRouteTurn` — `test-intervention-v2.ts` tests
@@ -1161,18 +1163,30 @@ simultaneously judged not relevant, which is incoherent without needing a
 baseline to compare against. The last v10 run of the same opening script was 7 of
 8 `relevant`.
 
-Both stuck fields sit immediately after a field B1 removed, and structured output
-is generated in schema order, so the removed fields were doing work as reasoning
-scaffold rather than only as data. This is not cosmetic: both reach the Judge and
-the generator through `describeConversationSituation`. Against a measured saving
-of 7% of observer output and no latency effect (§4g), there was nothing to trade.
+The explanation recorded here at the time was that both stuck fields sit
+immediately after a field B1 removed, that structured output is generated in
+schema order, and that the removed fields were therefore doing work as reasoning
+scaffold rather than only as data. **CORRECTED 2026-09-08: that explanation is
+wrong.** T-C2-041 ran with the rollback in effect — Observer `v12`,
+`mentionedCandidates` asked for again and populated — and `alexRelevance` came
+back `not_relevant` on **5 of 5** observations, **4 of them alongside
+`alexRelation: "explicit_addressee"`**. The same incoherence, at the same rate,
+on the restored schema. Restoring the fields did not restore the behaviour, so
+the schema cut is not the cause. **The field is stuck for a reason that is still
+unknown, and no live run has yet shown `alexRelevance` varying on this build.**
+
+The rollback itself still stands on its own terms: the fields cost 7% of observer
+output and bought no latency (§4g), so there was nothing to trade either way.
+This is not cosmetic — both fields reach the Judge and the generator through
+`describeConversationSituation`.
 
 `mentionedCandidates` and `activeThread.participants` are asked for again;
 `evidenceSeqs` stays capped, since it is the last field of `activeThread`, nothing
 semantic follows it, and it was the unbounded accumulator. Observer `v11→v12`,
-prompt `v9→v10`. **Method note:** §4g measured the schema as output cost and did
-not consider that a field can carry reasoning value after its own value is
-discarded. Measure the fields you keep, not only the tokens you cut.
+prompt `v9→v10`. **Method note, which survives the correction:** §4g measured the
+schema as output cost and did not consider that a field can carry reasoning value
+after its own value is discarded. Measure the fields you keep, not only the tokens
+you cut. The note was right in general and wrong about this case.
 
 **2. D3/D4 were not actually enforcing — D2 was the reason.** Three messages
 shipped carrying six to eight traits each on turns whose guard was correctly

@@ -60,6 +60,7 @@ docs/*
 # repo. Everything else under docs/ stays local notes, deliberately.
 !docs/agents/
 !docs/adr/
+!docs/measurements.md
 cursor_steps/
 IRB/
 # prompt-management-system (오서링타임 툴 — 산출물 캐시는 지금 제외)

@@ -33,8 +33,9 @@
     {
       "heading": "## 2. Evidence base",
       "capturedAtLine": 151,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "The goal-state arithmetic that the baseline motivated, and the instruction to treat the session as a symptom sample."
     },
     {
       "heading": "## 3. Confirmed root causes",
@@ -117,8 +118,9 @@
     {
       "heading": "## 4b. Second evidence base — T-C1-020 and T-C2-039 (2026-09-07)",
       "capturedAtLine": 583,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "The latency decomposition that ordered the gates, and the pointer into Gate A."
     },
     {
       "heading": "### What the two runs settled",
@@ -153,8 +155,9 @@
     {
       "heading": "## 4d. Third measurement — T-C1-022 (2026-09-07)",
       "capturedAtLine": 799,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "The A6 supersession note, kept because §4e resolves it in place and the pair reads as one correction."
     },
     {
       "heading": "### A6 does not appear to have been in effect in this run — SUPERSEDED by §4e",
@@ -183,8 +186,9 @@
     {
       "heading": "## 4e. Fourth measurement — T-C1-023, restarted server (2026-09-07)",
       "capturedAtLine": 888,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "The A7 write-up, which is a gate outcome rather than a measurement."
     },
     {
       "heading": "### New defect: the ledger and the floor disagree inside one observation",
@@ -207,8 +211,9 @@
     {
       "heading": "## 4f. Fifth measurement — T-C1-024, first run with A7 and B9 (2026-09-07)",
       "capturedAtLine": 990,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "The per-turn latency tables, which are working arithmetic rather than findings."
     },
     {
       "heading": "### A7 is confirmed, and Gate A is done",
@@ -250,20 +255,23 @@
     {
       "heading": "### 4f-bis. Sixth measurement — T-C1-025, first run with D6, B4 and B1 (2026-09-07)",
       "capturedAtLine": 1086,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "Nothing of substance; the heading stays until the checkpoint is rewritten."
     },
     {
       "heading": "### 4i. Seventh measurement — T-C1-027, first full real session (2026-09-07)",
       "capturedAtLine": 1122,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "The B1 rollback's version bumps and the corrected method note, which belong with the gate."
     },
     {
       "heading": "### 4g. Gate B's premise does not survive the T-C1-024 measurement",
       "capturedAtLine": 1206,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": "docs/measurements.md",
+      "remains": "The redirect that reassigned B1/B2/B3/B7 and named the remaining latency levers."
     },
     {
       "heading": "### 4j. Honest decline and label reservation (2026-09-07)",
