@@ -1605,6 +1605,33 @@ assert.deepEqual(decidePreferenceFromKnownCoverage(separatedInformationStats).co
   "C",
   "D",
 ]);
+// [Issue 23] The leak detector must know every token the cues can emit.
+//
+// T-C1-023 seq 23 shipped a rewrite ending "My current read is
+// NO_CURRENT_PREFERENCE." — the model reported the cue's own label as the value
+// it had been told to state. The detector caught that one, and the turn was
+// correctly refused.
+//
+// But the detector's list is hand-maintained and had drifted: it knew the three
+// `CURRENT_*` tokens `formatPreferenceDecision` emits and none of the three
+// `SCOPED_*` ones `formatScopedPreferenceDecision` emits, so half the cues could
+// leak with nothing to catch them. Two lists that must agree, and only one of
+// them updated when the second cue was added.
+for (const token of [
+  "NO_CURRENT_PREFERENCE",
+  "CURRENT_CO_PREFERENCE",
+  "CURRENT_PREFERENCE",
+  "NO_SCOPED_PREFERENCE",
+  "SCOPED_CO_PREFERENCE",
+  "SCOPED_PREFERENCE",
+]) {
+  assert.equal(
+    internalMetadataLeak(`My current read is ${token}.`),
+    "internal_metadata_leak",
+    `${token} reaching a participant is a leak`,
+  );
+}
+
 assert.match(formatPreferenceDecision(separatedInformationStats), /CURRENT_CO_PREFERENCE/i);
 assert.match(formatPreferenceDecision(separatedInformationStats), /own notes.*team.*shared/i);
 

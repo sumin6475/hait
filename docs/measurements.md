@@ -781,15 +781,18 @@ different things, and only one is a fault in the bound:
 - **seq 24** — a ten-trait draft, repaired to five, still over a cap of one. The
   bound doing its job on a turn where nobody asked for a list.
 - **seq 23** — an eight-trait draft, repaired to **one**, then rejected for
-  `internal_metadata_leak`: the rewrite said *"I can share one additional
-  trait"*. The repair met the count and narrated the constraint.
+  `internal_metadata_leak`. The rewrite ended *"My current read is
+  NO_CURRENT_PREFERENCE"*: the model reported the preference cue's own label as
+  the value it had been told to state. → **issue 23**.
 
-**A suspicion, not a finding.** Issue 21 changed the correction to state every
-bound in force rather than only the violated one, and seq 23 is the first
-`internal_metadata_leak` to appear in a repaired draft — T-C1-021 had none. One
-instance, on the first session after the change. If it recurs, the correction is
-telling the model things it then repeats, and the fix is to say them in a form
-that cannot be quoted.
+**A suspicion that was raised here and is now disconfirmed.** This entry first
+recorded that issue 21 — which began stating every bound in the repair
+correction — might have caused that leak, and pointed at the phrase *"I can
+share one additional trait"*. Neither holds. That phrase passes the detector on
+its own; the sentinel is the only thing that fired, and it predates issue 21 by
+the whole life of the prompt. The suspicion was formed from a log line truncated
+at ninety characters, before the detector was run on the text. **Run the checker
+before naming the cause.**
 
 **Not exercised.** Anything aci. The engine-side wiring, as ever. And the
 comparison is only as clean as the script: the two runs share a script closely

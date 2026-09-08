@@ -106,7 +106,15 @@ const INTERNAL_METADATA_PATTERNS = [
   /\bserver[- ]calculated\b/i,
   /\binternal preference cue\b/i,
   /\bpreference decision state\b/i,
+  // [Issue 23] Every token the preference cues can emit. This list and the cue
+  // builders in `routeContext` are two lists that must agree, and they had
+  // already drifted: `formatScopedPreferenceDecision` was added with three
+  // `SCOPED_*` states and none of them reached here, so half the cues could be
+  // repeated back to a participant with nothing to catch it. T-C1-023 seq 23
+  // shipped "My current read is NO_CURRENT_PREFERENCE" — the model reporting the
+  // label as the value — and was caught only because that one was on the list.
   /\b(?:NO_CURRENT_PREFERENCE|CURRENT_CO_PREFERENCE|CURRENT_PREFERENCE)\b/i,
+  /\b(?:NO_SCOPED_PREFERENCE|SCOPED_CO_PREFERENCE|SCOPED_PREFERENCE)\b/i,
   /\bdepth threshold\b/i,
   /\bfocus (?:directive|calculation)\b/i,
   /\bhuman[- ]confirmed (?:trait )?count\b/i,
