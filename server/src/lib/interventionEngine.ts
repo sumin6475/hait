@@ -419,7 +419,7 @@ async function judgeLiveLedgerTurn(input: {
   let judged = await judgeConversationLedgerTurn({
     messages: allTranscript,
     state,
-    messagesSinceAlex: input.messagesSinceAlex,
+    conditionCode: input.runtime.conditionCode,
     cooldownAvailable: input.cooldownAvailable,
     backchannelAvailable: input.backchannelAvailable,
     eligibleTraitIds: input.eligibleTraitIdsForState(state),
@@ -440,7 +440,7 @@ async function judgeLiveLedgerTurn(input: {
       judged = await judgeConversationLedgerTurn({
         messages: allTranscript,
         state,
-        messagesSinceAlex: input.messagesSinceAlex,
+        conditionCode: input.runtime.conditionCode,
         cooldownAvailable: input.cooldownAvailable,
         backchannelAvailable: input.backchannelAvailable,
         eligibleTraitIds: input.eligibleTraitIdsForState(state),

@@ -18,8 +18,11 @@ import {
 import { eligibleTraitIdsForLedgerState } from "../lib/interventionEngine.js";
 import {
   canonicalizeConversationLedgerJudgeDecision,
+  buildLedgerJudgeUserMessage,
   conversationLedgerDecisionProjection,
   deterministicVetoBeforeJudge,
+  ledgerJudgeRoleGoal,
+  ledgerJudgeSchemaFor,
   judgeCapitulatedToSilence,
   judgeCapitulationRuleCodes,
   validateConversationLedgerJudgeDecision,
@@ -1629,6 +1632,138 @@ assert.equal(
   deterministicVetoBeforeJudge(floorHeldNothingTakeable, { cooldownAvailable: false }),
   "human_floor_held",
   "when both vetoes apply the floor is reported, matching the order the router applies them",
+);
+
+// --- Issue 02: the Judge decides which act, and is not shown the clock ------
+//
+// The prompt used to carry "Messages since Alex" and "Ordinary cooldown
+// available". Both are facts about time, on a stage that must not decide when
+// Alex speaks — and combined with a condition-dependent role goal they would
+// have made intervention timing condition-dependent, which the study holds
+// constant. What replaces them says which moves exist this turn.
+const judgeUserMessage = buildLedgerJudgeUserMessage({
+  messages: [
+    { seq: 1, senderRole: "humanY", speaker: "Participant Y", content: "Let's start with Candidate B." },
+    { seq: 2, senderRole: "humanX", speaker: "Participant X", content: "Sounds good to me." },
+  ],
+  state: cooldownBlockedState,
+  cooldownAvailable: false,
+  backchannelAvailable: true,
+  eligibleTraitIds: [],
+});
+assert.doesNotMatch(
+  judgeUserMessage,
+  /messages since alex/i,
+  "the Judge is not told how long it has been; a counter reads as a budget",
+);
+assert.doesNotMatch(
+  judgeUserMessage,
+  /cooldown/i,
+  "the Judge is not told about the cooldown at all, by that or any name",
+);
+assert.match(
+  judgeUserMessage,
+  /Voluntary acts \(contribute, follow\): not available/,
+  "it is told which moves exist this turn, which is a fact about options",
+);
+assert.match(
+  buildLedgerJudgeUserMessage({
+    messages: [
+      { seq: 1, senderRole: "humanY", speaker: "Participant Y", content: "Let's start with Candidate B." },
+    ],
+    state: cooldownBlockedState,
+    cooldownAvailable: true,
+    backchannelAvailable: true,
+    eligibleTraitIds: [],
+  }),
+  /Voluntary acts \(contribute, follow\): available/,
+  "and the same line reports availability the other way",
+);
+
+// The rule the prompt used to ask for in prose, now checked. Both cooldown
+// silences in T-C2-041 were voluntary contributions on turns where the router
+// then discarded them; nothing rejected either one.
+const voluntaryWithoutCooldown = validateConversationLedgerJudgeDecision({
+  decision: {
+    decision: "speak",
+    act: "contribute",
+    selectedOpportunityId: null,
+    evidence: "relevant_unsurfaced_information",
+    selectedTraitId: "A_p1",
+    evidenceSeqs: [2],
+  },
+  state: cooldownBlockedState,
+  eligibleTraitIds: ["A_p1"],
+  transcriptSeqs: new Set([1, 2]),
+  cooldownAvailable: false,
+});
+assert.ok(
+  voluntaryWithoutCooldown.ruleCodes.includes("voluntary_act_unavailable_this_turn"),
+  "a voluntary act on a turn that has none is rejected, not merely discouraged",
+);
+assert.equal(
+  validateConversationLedgerJudgeDecision({
+    decision: {
+      decision: "speak",
+      act: "contribute",
+      selectedOpportunityId: null,
+      evidence: "relevant_unsurfaced_information",
+      selectedTraitId: "A_p1",
+      evidenceSeqs: [2],
+    },
+    state: cooldownBlockedState,
+    eligibleTraitIds: ["A_p1"],
+    transcriptSeqs: new Set([1, 2]),
+    cooldownAvailable: true,
+  }).ok,
+  true,
+  "the same act is fine on a turn that has voluntary acts available",
+);
+
+// Orthogonality lives in the action space, not in a prompt rule.
+assert.equal(
+  (ledgerJudgeSchemaFor("C1").shape.act.unwrap().options as readonly string[]).includes("mediate"),
+  false,
+  "a Member cannot express mediate; the act is unrepresentable, not forbidden",
+);
+assert.equal(
+  (ledgerJudgeSchemaFor("C3").shape.act.unwrap().options as readonly string[]).includes("mediate"),
+  false,
+  "both Member conditions, not just one",
+);
+for (const chair of ["C2", "C4"] as const) {
+  assert.equal(
+    (ledgerJudgeSchemaFor(chair).shape.act.unwrap().options as readonly string[]).includes(
+      "mediate",
+    ),
+    true,
+    `a Chair keeps mediate (${chair})`,
+  );
+}
+
+// The role goal reaches the Judge, and stops short of timing.
+for (const member of ["C1", "C3"] as const) {
+  const goal = ledgerJudgeRoleGoal(member);
+  assert.match(goal, /without directing, managing, or mediating/i, `${member} is a member`);
+  assert.doesNotMatch(goal, /chairs this group/i, `${member} is not told to chair`);
+}
+for (const chair of ["C2", "C4"] as const) {
+  const goal = ledgerJudgeRoleGoal(chair);
+  assert.match(goal, /chairs this group/i, `${chair} chairs`);
+  assert.doesNotMatch(goal, /without directing/i, `${chair} is not told to stand back`);
+}
+for (const condition of ["C1", "C2", "C3", "C4"] as const) {
+  assert.match(
+    ledgerJudgeRoleGoal(condition),
+    /does not decide when Alex speaks/i,
+    `${condition}: the boundary ADR-0001 draws is stated in the prompt itself`,
+  );
+}
+assert.equal(
+  ledgerJudgeRoleGoal("C1") === ledgerJudgeRoleGoal("C3") &&
+    ledgerJudgeRoleGoal("C2") === ledgerJudgeRoleGoal("C4"),
+  true,
+  "the goal varies with status only — the communication strategy is the other axis and is applied elsewhere",
 );
 
 console.log("[conversation-ledger] deterministic reducer tests passed");

@@ -51,6 +51,17 @@ rather than discovered: three routes exist only in the Chair conditions, so
 "identical triggers" holds of the shared routes and not of mediation, summary and
 closing.
 
+**Found while implementing this, and it belongs here rather than in a commit
+message.** Once the role goal reaches the Judge, a Chair and a Member can differ
+on *whether* Alex speaks at all on a given turn — a Chair may find a mediating
+move where a Member finds nothing worth saying. That is not a timing rule reading
+the condition, and no timing rule does: the cooldown, the floor, the route delays
+and the gates are identical arithmetic in every condition. But it does mean the
+claim to defend is the precise one — **no rule about when Alex may speak reads
+the condition** — and not the looser one that Alex speaks on the same turns in
+every condition. The looser claim was never true anyway, because of the three
+Chair-only routes above; it is now false for a second reason, by design.
+
 ## Considered and rejected
 
 Leaving the invariant in place. It keeps the cleanest possible separation, but it

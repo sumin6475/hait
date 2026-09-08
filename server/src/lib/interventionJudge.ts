@@ -3,6 +3,7 @@ import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
 import type { MainJudgeSignal } from "./routeContext.js";
+import type { ConditionCode } from "../types.js";
 import { TRAIT_BY_ID } from "./traitData.js";
 import type {
   ConversationObserverSnapshot,
@@ -18,6 +19,7 @@ import {
   type ConversationLedgerState,
   type OpportunityKind,
 } from "./conversationLedger.js";
+import { isLeaderCondition } from "./routeContext.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 const JUDGE_MODEL = "gpt-4o-mini";
@@ -354,33 +356,62 @@ export function legacyDecisionForAct(
   return "silent";
 }
 
+const LEDGER_JUDGE_EVIDENCE = [
+  "selected_open_opportunity",
+  "relevant_unsurfaced_information",
+  "factual_correction",
+  "conversation_grounded_synthesis",
+  "social_uptake",
+  "human_floor_held",
+  "cooldown",
+  "no_useful_move",
+  "observer_conflict",
+] as const;
+
+/**
+ * Two schemas, because orthogonality belongs in the action space rather than in
+ * a prompt rule. A Member's schema has no `mediate`, so the act is
+ * unrepresentable instead of merely forbidden — a rule the schema enforces
+ * cannot be talked out of, and this repair has watched prose rules fail at this
+ * class of problem repeatedly.
+ *
+ * The wide schema stays the source of the decision type: the legacy Judge still
+ * uses it, and the engine still maps a `mediate` from that path down to
+ * `contribute` for a non-Chair condition.
+ */
 const ConversationLedgerJudgeSchema = z.object({
   decision: z.enum(["speak", "silent", "reobserve"]),
   act: z
     .enum(["answer", "participate", "follow", "contribute", "acknowledge", "mediate"])
     .nullable(),
   selectedOpportunityId: z.string().nullable(),
-  evidence: z.enum([
-    "selected_open_opportunity",
-    "relevant_unsurfaced_information",
-    "factual_correction",
-    "conversation_grounded_synthesis",
-    "social_uptake",
-    "human_floor_held",
-    "cooldown",
-    "no_useful_move",
-    "observer_conflict",
-  ]),
+  evidence: z.enum(LEDGER_JUDGE_EVIDENCE),
   selectedTraitId: z.string().nullable(),
   evidenceSeqs: z.array(z.number().int()).max(12),
 });
 
+const ConversationLedgerMemberJudgeSchema = z.object({
+  decision: z.enum(["speak", "silent", "reobserve"]),
+  act: z.enum(["answer", "participate", "follow", "contribute", "acknowledge"]).nullable(),
+  selectedOpportunityId: z.string().nullable(),
+  evidence: z.enum(LEDGER_JUDGE_EVIDENCE),
+  selectedTraitId: z.string().nullable(),
+  evidenceSeqs: z.array(z.number().int()).max(12),
+});
+
+/** The act set this condition can even express. */
+export function ledgerJudgeSchemaFor(conditionCode: ConditionCode) {
+  return isLeaderCondition(conditionCode)
+    ? ConversationLedgerJudgeSchema
+    : ConversationLedgerMemberJudgeSchema;
+}
+
 export type ConversationLedgerJudgeDecision = z.infer<typeof ConversationLedgerJudgeSchema>;
-export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v4";
+export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v5";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v6";
+  "conversation-ledger-judge-prompt-v7";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
-  "conversation-ledger-judge-schema-v2";
+  "conversation-ledger-judge-schema-v3";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
 export const CONVERSATION_LEDGER_JUDGE_PARAMETERS = Object.freeze({
   temperature: 0,
@@ -415,9 +446,11 @@ export interface ConversationLedgerJudgeCallResult {
   attempts: ConversationLedgerJudgeCallAttempt[];
 }
 
-const LEDGER_JUDGE_SYSTEM = `You are the condition-blind Main Judge for Alex, an AI participant in a small live group discussion.
+const LEDGER_JUDGE_SYSTEM = `You are the Main Judge for Alex, an AI participant in a small live group discussion.
 
-Use the complete transcript as the source of truth and the structured ledger as a correctable projection. Decide one of: select exactly one open response opportunity, choose one useful voluntary act, remain silent, or request re-observation for a material state conflict. Do not write Alex's message. Never infer or use an experimental condition.
+Use the complete transcript as the source of truth and the structured ledger as a correctable projection. Decide one of: select exactly one open response opportunity, choose one useful voluntary act, remain silent, or request re-observation for a material state conflict. Do not write Alex's message.
+
+You are given Alex's role in the group. Use it to choose which act to take and on what grounds. It tells you nothing about how often or how soon Alex should speak: pacing is decided outside you, and each turn tells you which moves are available. Never reason about elapsed time, about how many messages have passed since Alex spoke, or about speaking more or less because of the role. Do not infer anything about this group beyond the role you were given.
 
 Opportunity acts are fixed by identity:
 - direct_question -> answer
@@ -432,12 +465,35 @@ Voluntary acts have no selectedOpportunityId:
 - acknowledge is brief social uptake without a new fact or agenda change.
 - mediate is reserved for an explicit unresolved process blockage.
 
-Opportunity acts may bypass ordinary cooldown but never an explicitly held human floor. Voluntary acts require ordinary cooldown. Choose reobserve only for a material conflict affecting target, opportunity identity/lifecycle, thread assignment, or floor. Low confidence alone is not enough.
+Each turn lists the moves available on it. A move listed as not available is not a choice, and selecting it is invalid. Availability is a fact about this turn's options, never a budget to spend or save. Choose reobserve only for a material conflict affecting target, opportunity identity/lifecycle, thread assignment, or floor. Low confidence alone is not enough.
 When an open required opportunity was opened on the current trigger and no human floor is held, select it. Remaining silent in that state is invalid.
 
-For every selected opportunity, use exactly: decision=speak, the act fixed above for its kind, evidence=selected_open_opportunity, and selectedTraitId=null. A selected invited opportunity does not automatically bypass cooldown. Without ordinary cooldown, only a required opportunity or the current foreground uptake cluster with current-trigger evidence may be selected.
+For every selected opportunity, use exactly: decision=speak, the act fixed above for its kind, evidence=selected_open_opportunity, and selectedTraitId=null. Only an id listed as selectable on this turn may be selected.
 
 For relevant_unsurfaced_information, select exactly one supplied eligible trait id. The eligible list covers every candidate in the thread's scope, ordered by what the group is currently on: the explicit focus candidate first when there is one, then the most recently named candidate. That order is a hint, not a restriction. Pick the id that fits the candidate the humans are actually discussing on this turn, reading the transcript rather than the position in the list; a fact about a candidate the group has moved past is not a useful move. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
+
+/**
+ * Alex's role in the group, as the Judge is told it.
+ *
+ * Until this existed the Judge was condition-blind by construction, so a Chair
+ * and a Member decided identically and only *said* it differently — which
+ * understates the manipulation, because a chair differs in what they decide to
+ * do. See `docs/adr/0001-condition-reaches-the-judge.md`.
+ *
+ * The last paragraph is the boundary that decision draws, written into the
+ * prompt rather than left to the reader: the role may reach *which act on what
+ * grounds*, and must never reach *when*. Intervention triggers and timing are
+ * held constant across conditions, so a role goal that made Alex speak sooner
+ * or more often would break the comparison the study rests on.
+ */
+export function ledgerJudgeRoleGoal(conditionCode: ConditionCode): string {
+  const goal = isLeaderCondition(conditionCode)
+    ? "Alex chairs this group. Actively guide the group toward a well-considered collective decision: structure the conversation, keep it focused and moving, address disagreements, and take responsibility for a clear outcome."
+    : "Alex is an ordinary member of this group. Contribute cooperatively as an equal team member: share relevant information, respond constructively, and help evaluate the options, without directing, managing, or mediating.";
+  return `${goal}
+
+This role decides which act is the right one and on what grounds. It does not decide when Alex speaks. Do not weigh how long it has been since Alex last spoke, and do not aim to speak more or less often because of it.`;
+}
 
 const ACT_FOR_OPPORTUNITY_KIND: Record<OpportunityKind, CommunicativeAct> = {
   direct_question: "answer",
@@ -572,6 +628,17 @@ export function validateConversationLedgerJudgeDecision(input: {
               ? decision.evidence === "conversation_grounded_synthesis"
               : false;
     if (!validVoluntaryEvidence) ruleCodes.push("voluntary_act_evidence_invalid");
+    // The prompt used to ask for this in prose and nothing checked it, so the
+    // model ignored it: 18 of 19 decisions in T-C1-024 were `speak`, and both
+    // cooldown silences in T-C2-041 were voluntary contributions the router
+    // then discarded. The rule was left out originally because a rejection
+    // costs a retry, and on a turn where nothing was takeable that made a
+    // blocked turn slower for nothing. That objection no longer holds: a turn
+    // with no takeable act never reaches the Judge at all now, so every turn
+    // that gets here is one a retry can still win.
+    if (input.cooldownAvailable === false) {
+      ruleCodes.push("voluntary_act_unavailable_this_turn");
+    }
   }
   if (decision.evidence === "relevant_unsurfaced_information") {
     if (
@@ -762,14 +829,36 @@ export function judgeCapitulationRuleCodes(
   ].sort();
 }
 
-export async function judgeConversationLedgerTurn(input: {
+export interface LedgerJudgeCallInput {
   messages: ObserverTranscriptMessage[];
   state: ConversationLedgerState;
-  messagesSinceAlex: number;
+  conditionCode: ConditionCode;
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
   eligibleTraitIds: string[];
-}): Promise<ConversationLedgerJudgeCallResult> {
+}
+
+/**
+ * The Judge's user message.
+ *
+ * Exported because what this text does and does not contain is the substance of
+ * a decision, not an implementation detail. It used to carry `Messages since
+ * Alex` and `Ordinary cooldown available` — two facts about *time*, on a stage
+ * that must not decide when Alex speaks. What replaces them is a list of the
+ * moves available on this turn: a fact about the options, which is the same
+ * shape the opportunity list already had.
+ *
+ * The reason that distinction matters is not stylistic. A counter can be read
+ * as a budget, and a Judge with a condition-dependent role goal plus a budget
+ * decides *when* differently by condition. An availability flag has nothing to
+ * spend.
+ */
+export function buildLedgerJudgeUserMessage(
+  input: Pick<
+    LedgerJudgeCallInput,
+    "messages" | "state" | "cooldownAvailable" | "backchannelAvailable" | "eligibleTraitIds"
+  >,
+): string {
   const decisionState = conversationLedgerDecisionProjection(input.state, {
     cooldownAvailable: input.cooldownAvailable,
   });
@@ -793,7 +882,19 @@ export async function judgeConversationLedgerTurn(input: {
   // ledger first and the judge reported `cachedInputTokens: 0` on every call in
   // both T-C1-020 and T-C2-039 — the system block alone falls under the 1024
   // token minimum, so nothing was cacheable at all.
-  const user = `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nInfrastructure availability:\n- Messages since Alex: ${input.messagesSinceAlex}\n- Ordinary cooldown available: ${input.cooldownAvailable}\n- Backchannel interval available: ${input.backchannelAvailable}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  const availability = (available: boolean) => (available ? "available" : "not available");
+  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+}
+
+export async function judgeConversationLedgerTurn(
+  input: LedgerJudgeCallInput,
+): Promise<ConversationLedgerJudgeCallResult> {
+  const user = buildLedgerJudgeUserMessage(input);
+  // The same projection the prompt was built from, so validation can never
+  // reject a choice the prompt offered.
+  const decisionState = conversationLedgerDecisionProjection(input.state, {
+    cooldownAvailable: input.cooldownAvailable,
+  });
   const attempts: ConversationLedgerJudgeCallAttempt[] = [];
   let priorRuleCodes: string[] = [];
   let priorDecisionJson = "none";
@@ -812,6 +913,10 @@ export async function judgeConversationLedgerTurn(input: {
           max_output_tokens: CONVERSATION_LEDGER_JUDGE_PARAMETERS.maxOutputTokens,
           input: [
             { role: "system", content: LEDGER_JUDGE_SYSTEM },
+            // The role goal is its own message, and sits between the fixed
+            // rules and the turn's facts. It is constant for a session, so it
+            // extends the cacheable prefix rather than perturbing it.
+            { role: "developer", content: ledgerJudgeRoleGoal(input.conditionCode) },
             {
               role: "user",
               content:
@@ -822,7 +927,7 @@ export async function judgeConversationLedgerTurn(input: {
           ],
           text: {
             format: zodTextFormat(
-              ConversationLedgerJudgeSchema,
+              ledgerJudgeSchemaFor(input.conditionCode),
               "conversation_ledger_turn_decision",
             ),
           },

@@ -1,3 +1,4 @@
+import type { ConditionCode } from "../types.js";
 import "dotenv/config";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -338,7 +339,7 @@ for (const { entry, input, gold } of inputs) {
     const judged = await judgeConversationLedgerTurn({
       messages: transcriptThroughAnchor,
       state: previousLedgerState,
-      messagesSinceAlex: sinceAlex,
+      conditionCode: (entry.conditionCode as ConditionCode) ?? "C1",
       cooldownAvailable: sinceAlex >= TRIGGER_CONFIG.COOLDOWN_MIN_MSGS,
       backchannelAvailable: true,
       eligibleTraitIds,
