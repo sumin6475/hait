@@ -167,11 +167,13 @@ abandoned (issue 13); and a count request ignores its own source (issue 14).
    edits, including five deliberate breakages made to check that assertions fail.
    A measurement taken now measures neither build. This has already invalidated
    one run — see T-C1-022 in the measurement log.
-2. **Check the pre-registration and IRB wording** on where the manipulation is
-   applied. Retiring the condition-blind Judge moved the manipulation upstream of
-   generation, and two descriptions of the study need re-examining as a result.
-   `docs/adr/0001-condition-reaches-the-judge.md` says which two. Neither is an
-   implementer's to settle. Code may land first; a session may not run first.
+2. ~~**Check the pre-registration and IRB wording**~~ — **closed by the owner,
+   2026-09-08.** Retiring the condition-blind Judge moved the manipulation
+   upstream of generation, and two descriptions of the study were flagged as
+   needing re-examination. They were raised with the owner, who elected to
+   proceed without revising them and authorised sessions to run. Recorded as an
+   amendment in `docs/adr/0001-condition-reaches-the-judge.md`, which also names
+   the one narrower pre-registration commitment that still stands.
 
 **Waiting on the user.** Two things, neither blocking:
 

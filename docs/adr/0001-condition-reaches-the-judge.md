@@ -38,6 +38,21 @@ ours to settle:
 - "The manipulation affects how the AI communicates" becomes too narrow. It now
   affects candidate evaluation and intervention selection as well.
 
+**Amendment, 2026-09-08 — the owner closed this item.** The two claims above were
+put to the study's owner along with the further move in
+`0007`/`0008`, which puts a decision procedure upstream of generation in the
+leader conditions. The owner elected to proceed without revising the
+pre-registration or IRB wording, and authorised sessions to run. That is recorded
+here rather than dropped, because this section is what a later reader will use to
+learn whether the descriptions were revisited; the answer is that they were
+raised and deliberately left as they stand.
+
+One narrower commitment is **not** covered by that and still stands on its own:
+if the leader's one-per-session defence of the weakest candidate ships, the
+pre-registration must name it as part of the definition of Chair status, because
+it is a debiasing treatment bundled into the status condition. See
+`.scratch/leader-decision-frame/issues/05`.
+
 **One part of the originating gate must not ship as designed.** That gate also
 proposed exposing the cooldown counter to the Judge as a budget it can see and
 spend. Combined with this decision, that would make *when* Alex intervenes depend
