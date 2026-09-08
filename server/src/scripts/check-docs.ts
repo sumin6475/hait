@@ -12,10 +12,10 @@
  *      exists, and a relative markdown link must name a file that exists.
  *   2. Nothing vanishes from the repair checkpoint unaccounted for. The
  *      migration map is a census taken before any content moved; an entry it
- *      marks `unmoved` must still be present, and one it marks `moved` must say
- *      where it went.
+ *      marks `unmoved` or `partial` must still be present, and one it marks
+ *      `moved` or `partial` must say where its content went.
  *
- * While the migration is in progress, sections still marked `unmoved` are
+ * While the migration is in progress, sections not yet fully `moved` are
  * reported rather than failed — otherwise this would be red from the first
  * commit to the last. The ticket that rewrites the checkpoint flips
  * `enforceAllAccounted` in the map, and from then on an unaccounted section is
@@ -35,8 +35,10 @@ const MAP_PATH = join(HERE, "docs-migration-map.json");
 type MigrationEntry = {
   heading: string;
   capturedAtLine: number;
-  status: "unmoved" | "moved";
+  status: "unmoved" | "partial" | "moved";
   movedTo: string | null;
+  /** Required on `partial`: what is still in the source after the move. */
+  remains?: string;
 };
 type MigrationMap = {
   source: string;
@@ -211,27 +213,52 @@ const sourcePath = join(REPO_ROOT, map.source);
 assert.ok(existsSync(sourcePath), `migration map source ${map.source} is missing`);
 const present = new Set(headings(readFileSync(sourcePath, "utf8")).map((h) => h.trim()));
 
-let unmoved = 0;
+// Three states, because two could not describe what the migration actually did.
+// Every section the ADRs and the gate issues draw on gave up part of itself and
+// kept the rest, and calling that `moved` is a lie the checker would have to be
+// told. A `partial` entry must still be present, must say where the moved part
+// went, and must say in prose what is left — so the residue is a claim someone
+// wrote down rather than something a later reader has to reconstruct.
+let unaccounted = 0;
 for (const entry of map.sections) {
-  if (entry.status === "unmoved") {
-    unmoved += 1;
+  const mustBePresent = entry.status === "unmoved" || entry.status === "partial";
+  const mustNameTarget = entry.status === "moved" || entry.status === "partial";
+
+  if (entry.status !== "moved") unaccounted += 1;
+
+  if (mustBePresent) {
     check(
       present.has(entry.heading),
-      `${map.source}: "${entry.heading}" is gone but the migration map still calls it unmoved`,
+      `${map.source}: "${entry.heading}" is gone but the migration map still calls it ${entry.status}`,
     );
-    continue;
   }
-  check(
-    Boolean(entry.movedTo),
-    `migration map: "${entry.heading}" is marked moved but does not say where`,
-  );
-  if (entry.movedTo) {
+
+  if (mustNameTarget) {
     check(
-      existsSync(join(REPO_ROOT, entry.movedTo)),
-      `migration map: "${entry.heading}" moved to ${entry.movedTo}, which does not exist`,
+      Boolean(entry.movedTo),
+      `migration map: "${entry.heading}" is marked ${entry.status} but does not say where its content went`,
+    );
+    if (entry.movedTo) {
+      check(
+        existsSync(join(REPO_ROOT, entry.movedTo)),
+        `migration map: "${entry.heading}" moved to ${entry.movedTo}, which does not exist`,
+      );
+    }
+  }
+
+  if (entry.status === "partial") {
+    check(
+      Boolean(entry.remains?.trim()),
+      `migration map: "${entry.heading}" is partial but does not say what remains in ${map.source}`,
+    );
+  } else {
+    check(
+      entry.remains === undefined,
+      `migration map: "${entry.heading}" is ${entry.status}, so it must not carry a remains note`,
     );
   }
-  if (present.has(entry.heading)) {
+
+  if (entry.status === "moved" && present.has(entry.heading)) {
     notes.push(`"${entry.heading}" is marked moved but is still in ${map.source}`);
   }
 }
@@ -242,9 +269,14 @@ for (const heading of present) {
 }
 
 if (map.enforceAllAccounted) {
-  check(unmoved === 0, `migration map: ${unmoved} section(s) still unmoved`);
-} else if (unmoved > 0) {
-  notes.push(`${unmoved} of ${map.sections.length} sections still unmoved (not enforced yet)`);
+  check(
+    unaccounted === 0,
+    `migration map: ${unaccounted} section(s) still unmoved or partial`,
+  );
+} else if (unaccounted > 0) {
+  notes.push(
+    `${unaccounted} of ${map.sections.length} sections still unmoved or partial (not enforced yet)`,
+  );
 }
 
 // ── Report ───────────────────────────────────────────────────────────────────

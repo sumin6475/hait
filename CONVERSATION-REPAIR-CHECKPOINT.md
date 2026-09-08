@@ -57,10 +57,11 @@ and either location can be recovered from the other.
 | Candidate-label reservation | **DONE** | §4j |
 | Request scope — classifier vocabulary, widening, carry | **DONE** | §4k |
 | Issue tracker / triage labels / domain docs config | **DONE** — `.scratch/`, default labels, single-context | `docs/agents/` |
-| B2, B3, B6, B7 · Observer accuracy | OPEN — **no latency benefit expected** | Gate B table, §4g |
-| Gate C · Judge role goals | **APPROVED 2026-09-07, not started** | Gate C, §7 |
-| Observer overlap | **DECIDED: Option 2, then Option 1** — no code yet | §4h |
-| Gate D · D1–D5 generator length, emptiness, anti-repeat | OPEN | Gate D |
+| B2, B3, B6, B7 · Observer accuracy | OPEN — **no latency benefit expected** | issues 05, 06, 07 |
+| B5 · compact the carried state | **DECLINED** — §4g disconfirmed its premise | issue 08 |
+| Gate C · Judge role goals | **APPROVED 2026-09-07, not started.** C3 rewritten — the Judge is not given the clock | issue 02, ADR-0001 |
+| Observer overlap | **DECIDED: Option 2, then Option 1** — no code yet. Option 2 also skips the Judge | issue 01 |
+| Gate D · D1–D5 generator length, emptiness, anti-repeat | OPEN | issues 03, 04 |
 
 **Do next, in this order.**
 
@@ -72,21 +73,29 @@ and either location can be recovered from the other.
 2. ~~Fix the scope the decline refuses from~~ **DONE — §4k.** Three causes, not
    the two §4i recorded; the third was that the classifier read the request as no
    request at all. Never observed live.
-3. **Observer overlap, Option 2** (§4h) — decided 2026-09-07. Record the cooldown
-   veto before paying for the Observer, gated on the conservative test that no
-   bypass is possible, with the observation still running off the decision path.
-   Then Option 1 once Option 2's measurement confirms the budget.
-4. **Gate C** (§7 invariant retired, approved 2026-09-07). C2 keeps the
-   orthogonality assertions unchanged; check the pre-registration/IRB wording on
-   where the manipulation is applied before the next run.
-5. **D1/D5**, then **B2, B3, B7, B6** as accuracy work with no latency
+3. **Issue 01** — the cooldown veto stops paying for a model call, at both the
+   Observer and the Judge. Decided 2026-09-07 (§4h Option 2); the Judge half was
+   added when ADR-0001 forbade giving the Judge the clock.
+4. **Issue 02** — Gate C (§7 invariant retired, approved 2026-09-07).
+5. **Issues 03 and 04**, then **05, 06 and 07** as accuracy work with no latency
    expectation (§4g).
 
-**This document is being restructured.** The work is tracked as its own effort in
-the issue tracker (`.scratch/checkpoint-restructure/`), six tickets in dependency
-order. The first has landed: `npm run docs:check` now fails if a section of this
-file disappears without the migration map saying where it went, and if any `§`
-pointer or relative link stops resolving. Run it alongside the four test suites.
+Each issue carries its own evidence and constraints; read the issue, not this
+list.
+
+**This document is being restructured**, and part of it has already moved.
+
+- **Open work is no longer tracked here.** Every open gate item is now an issue
+  in `.scratch/conversation-repair/issues/`, written to be read without this
+  file. The gate tables below are kept for their history and their measurements;
+  where they describe work still to do, the issue is authoritative and this file
+  is not.
+- **Settled decisions are in `docs/adr/`** and the project's vocabulary is in
+  `CONTEXT.md`. Neither is repeated here.
+- The restructure itself is tracked at `.scratch/checkpoint-restructure/`, six
+  tickets in dependency order. `npm run docs:check` fails if a section of this
+  file disappears without the migration map saying where it went, and if any `§`
+  pointer or relative link stops resolving. Run it alongside the four test suites.
 
 **Waiting on the user.** Nothing. Gate C was approved on 2026-09-07 and the
 condition-blind Judge invariant is retired (§7).

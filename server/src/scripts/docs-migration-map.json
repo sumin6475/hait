@@ -1,10 +1,10 @@
 {
-  "note": "A census of the repair checkpoint taken before any content was moved. Each entry is a section that existed at capture time. An entry marked unmoved must still be present in the source; an entry marked moved must name where it went. This file is read by check-docs, and it is the only thing standing between 'moved' and 'lost' — update it as part of the move that changes a section, never afterwards from memory.",
+  "note": "A census of the repair checkpoint taken before any content was moved. Each entry is a section that existed at capture time. `unmoved` must still be present in the source. `moved` must name where it went and should no longer be present. `partial` is for a section that gave up part of itself and kept the rest: it must still be present, must name where the moved part went, and must say in `remains` what is left — because a section that is half-moved is the common case here, and calling it either of the other two would be false. This file is read by check-docs, and it is the only thing standing between 'moved' and 'lost' — update it as part of the move that changes a section, never afterwards from memory.",
   "source": "CONVERSATION-REPAIR-CHECKPOINT.md",
   "capturedAt": "2026-09-07",
   "capturedAtSourceLines": 1807,
   "enforceAllAccounted": false,
-  "enforceAllAccountedNote": "Flipped to true by the ticket that rewrites the checkpoint. Until then a remaining unmoved entry is reported, not failed, so the checker passes while the migration is in progress.",
+  "enforceAllAccountedNote": "Flipped to true by the ticket that rewrites the checkpoint. Until then a remaining unmoved or partial entry is reported, not failed, so the checker passes while the migration is in progress.",
   "sections": [
     {
       "heading": "# Conversation System Repair — Checkpoint",
@@ -243,8 +243,9 @@
     {
       "heading": "### Gate B — Observer: read the facts, cheaply and correctly",
       "capturedAtLine": 1072,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": ".scratch/conversation-repair/issues/05-salience-outranks-focus.md",
+      "remains": "B1, B4, B8 and B9 as completed history for the measurement log. Open items B2/B3 went to issue 05, B6 to 06, B7 to 07, B5 declined in 08."
     },
     {
       "heading": "### 4f-bis. Sixth measurement — T-C1-025, first run with D6, B4 and B1 (2026-09-07)",
@@ -297,8 +298,9 @@
     {
       "heading": "#### Option 2 — Decide the deterministic vetoes before paying for the Observer",
       "capturedAtLine": 1436,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": ".scratch/conversation-repair/issues/01-deterministic-vetoes-off-the-model-path.md",
+      "remains": "The measurement that produced the option, and the comparison against Options 1 and 3, which are not being built yet."
     },
     {
       "heading": "#### Option 3 — A faster observer model",
@@ -327,14 +329,16 @@
     {
       "heading": "### Gate C — Judge: a goal, not a rubber stamp",
       "capturedAtLine": 1496,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": ".scratch/conversation-repair/issues/02-the-judge-decides-with-a-role-goal.md",
+      "remains": "Nothing of substance — all four parts are in issue 02, C3 rewritten there and in issue 01 per ADR-0001. The heading stays until the checkpoint is rewritten."
     },
     {
       "heading": "### Gate D — Generator: length as a post-condition, not a request",
       "capturedAtLine": 1511,
-      "status": "unmoved",
-      "movedTo": null
+      "status": "partial",
+      "movedTo": ".scratch/conversation-repair/issues/03-length-is-a-post-condition.md",
+      "remains": "D2, D3 and D6 as completed history for the measurement log. D1/D5 went to issue 03, D4's open half to issue 04."
     },
     {
       "heading": "### Measurement targets",
