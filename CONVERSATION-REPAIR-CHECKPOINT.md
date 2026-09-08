@@ -43,10 +43,15 @@ and the request scope behind it are built but have never been seen in a live
 session.
 
 **What is open.** Nineteen issues in `.scratch/conversation-repair/issues/`.
-Two are open: issue 10 (the Observer split, blocked on a latency measurement)
-and issue 16 (Alex announces a next step and nothing holds it to it). Sixteen
-are done and one records a decision not to act. Start at the lowest-numbered
-issue whose blockers are done.
+Both remaining ones are blocked on a measurement rather than on code: issue 10
+needs a live Observer latency figure, and issue 16 needs a frequency count
+before a guard for it is worth its cost. Sixteen are done and one records a
+decision not to act.
+
+**Guards are now the largest source of lost turns.** Ten in T-C1-021 against the
+cooldown's seven. Before adding another server-side check, read §6's sixth rule
+— the bar is a demonstrated recurrence, and the first move is to fix whatever
+input the guard is reacting to.
 
 **The pooling DV changed on 2026-09-08.** Issue 15 corrected the extractor, which
 means `sharedInfoIds` and `revealStats` from sessions after that date are not
@@ -248,7 +253,7 @@ change against the targets table in [docs/measurements.md](docs/measurements.md)
 
 ## 6. Method note
 
-Five rules, each of which this repair learned by breaking.
+Six rules, each of which this repair learned by breaking.
 
 **Do not treat an existing assertion as evidence of intended design.** Existing
 tests here were written alongside the defects they cover. The ledger suite
@@ -287,6 +292,22 @@ because an extractor's failure was indistinguishable from an empty result. The
 Judge is asked in prose to respect the cooldown on voluntary acts and nothing
 checks it. Each was found late, by hand. **If a prompt asks for something, either
 the code checks it or the record shows whether it happened.**
+
+**Enforcement is not free, and the bar is a demonstrated recurrence.** The rule
+above says a prompt-only rule is not a rule. Its counterweight, learned later and
+more expensively: every server-side check is another way for a turn to die, and
+by 2026-09-08 that had become the **largest** failure mode there is. T-C1-021
+lost ten turns to output guards against seven to the cooldown, and seventeen
+repair calls fired on one violation class alone. A guard that silences a correct
+answer costs more than the behaviour it was aimed at.
+
+So the two rules resolve by evidence, not by preference. Enforce in the server
+when the prompt has **repeatedly and observably** failed: the no-question
+post-condition was built after four separate sessions broke a rule stated in
+every prompt that carries it. Do not enforce on a single observation — issue 16
+is the worked example, and the reasoning is in that file. Prefer, in order: fix
+the input the guard is reacting to (issue 18), then record the behaviour and
+measure how often it recurs, then guard.
 
 **Restart the server before measuring.** A conclusion about overlapping the floor
 was wrong because the process had hot-reloaded across the change and the run
