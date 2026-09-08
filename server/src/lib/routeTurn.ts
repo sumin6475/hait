@@ -33,6 +33,7 @@ import {
 import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
+import { computeCandidateList } from "./candidateList.js";
 import { generateScopedRouteMessage, type OutputRepairAudit } from "./routeScopedGeneration.js";
 import { LEADER_OPENING, PEER_OPENING } from "./prompts.js";
 import { KO_LEADER_OPENING, KO_PEER_OPENING } from "./koPilot.js";
@@ -356,6 +357,12 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     ]),
   ];
   const generationGuard = routeGenerationGuard(input.routeKind, context.outputScopeGuard);
+  // The board Alex reasoned against on this turn, read before Alex's own message
+  // is extracted into it. Written to every record this turn can leave and read
+  // by nothing — see the shadow-only assertion in test-intervention-v2.
+  const candidateListAudit = {
+    candidateList: computeCandidateList((session as any).revealStats),
+  };
   const focusDepthAudit = {
     focusCandidate: context.focusDepthState.candidate ?? undefined,
     focusBasis: context.focusDepthState.basis,
@@ -388,6 +395,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     await AIIntervention.create({
       sessionId: input.sessionId,
       turnIndex: input.anchorSeq,
+      ...candidateListAudit,
       triggerReason: input.source,
       decision: "stay_silent",
       routeKind: input.routeKind,
@@ -522,6 +530,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     await AIIntervention.create({
       sessionId: input.sessionId,
       turnIndex: input.anchorSeq,
+      ...candidateListAudit,
       triggerReason: input.source,
       decision: "stay_silent",
       routeKind: input.routeKind,
@@ -572,6 +581,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       await AIIntervention.create({
         sessionId: input.sessionId,
         turnIndex: input.anchorSeq,
+        ...candidateListAudit,
         triggerReason: input.source,
         decision: "stay_silent",
         routeKind: input.routeKind,
@@ -638,6 +648,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     const intervention = await AIIntervention.create({
       sessionId: input.sessionId,
       turnIndex: input.anchorSeq,
+      ...candidateListAudit,
       triggerReason: input.source,
       cue: input.routeKind,
       decision: "speak",

@@ -70,6 +70,24 @@ What the group has collectively put in view, candidate by candidate. Participant
 say "on the table" and mean this; the word table means a layout everywhere else,
 so prefer board when writing.
 
+**Coverage**:
+How many distinct traits for one candidate are on the board, matches and misses
+together. It says how much of a candidate the group has looked at, never how well
+that candidate is doing.
+
+**Score**:
+Matches minus misses on the board for one candidate. Every trait weighs the same,
+so this is a count and not a verdict, and no participant ever hears one.
+
+**Live list**:
+The candidates the group is still working on, recomputed from the board every
+turn. A candidate leaves the list only by being both well covered and clearly
+trailing, and it returns the moment new information puts it back. Leaving means
+Alex stops steering toward that candidate and stops volunteering information
+about it — Alex still answers questions about it, and it is removed from nobody's
+choice.
+_Avoid_: shortlist, elimination, ranking
+
 ### The conversation
 
 **Thread**:

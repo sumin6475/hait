@@ -61,6 +61,24 @@ const outputGuardSchema = new mongoose.Schema(
   { _id: false },
 );
 
+// The live candidate list as it stood when this turn was taken, and the two
+// counts it is derived from. Shadow only: nothing in routing, cadence or
+// generation reads it, and it is here so that a real session can be read
+// against thresholds that were chosen rather than derived.
+//
+// `coverage` and `score` are kept alongside `live` because the list alone
+// cannot be re-checked against a different threshold afterwards, and the
+// thresholds are the thing under question.
+const candidateListSchema = new mongoose.Schema(
+  {
+    coverage: { A: Number, B: Number, C: Number, D: Number },
+    score: { A: Number, B: Number, C: Number, D: Number },
+    live: { type: [String], default: [] },
+    setAside: { type: [String], default: [] },
+  },
+  { _id: false },
+);
+
 const outputRepairAuditSchema = new mongoose.Schema(
   {
     version: { type: Number, required: true },
@@ -234,6 +252,7 @@ const aiInterventionSchema = new mongoose.Schema(
     outputScopeRepaired: { type: Boolean },
     outputScopeViolation: { type: String },
     outputGuard: { type: outputGuardSchema, default: undefined },
+    candidateList: { type: candidateListSchema, default: undefined },
     // Internal subject-control audit. These fields are never included in the visible message.
     focusCandidate: { type: String, enum: ["A", "B", "C", "D"] },
     focusBasis: { type: String },

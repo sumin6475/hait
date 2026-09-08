@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import type { ConditionCode, RouteKind } from "../types.js";
 import type { RequestIntent } from "../lib/routeContext.js";
@@ -81,6 +84,12 @@ import {
 import { ledgerRouteKindForAct } from "../lib/interventionEngine.js";
 import { validateQuestionUptakeDecision } from "../lib/questionUptakeJudge.js";
 import { TRAIT_BY_ID, TRAIT_DB } from "../lib/traitData.js";
+import {
+  computeCandidateList,
+  LIVE_LIST_COVERAGE_LAG,
+  LIVE_LIST_MIN_COVERAGE,
+  LIVE_LIST_SCORE_LAG,
+} from "../lib/candidateList.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { ConversationObservation } from "../models/ConversationObservation.js";
 import { Session } from "../models/Session.js";
@@ -4559,5 +4568,244 @@ assert.equal(
   "a request a Peer must decline is not one the template may silently fulfil",
 );
 assert.match(peerCollation.userPrompt, /Requested collation \(server-derived\)/);
+
+// ── The live candidate list ─────────────────────────────────────────────────
+// Shadow only (docs/adr/0008). These assertions are about the derivation and
+// about it reaching nothing: the thresholds are chosen rather than derived, and
+// the point of logging the list is to read a real session against them before
+// any of it is allowed to steer speech.
+
+const boardOf = (ids: string[]) => {
+  const byCandidate: any = {
+    A: { revealedIds: [] },
+    B: { revealedIds: [] },
+    C: { revealedIds: [] },
+    D: { revealedIds: [] },
+  };
+  for (const id of ids) {
+    byCandidate[TRAIT_BY_ID.get(id)!.candidate].revealedIds.push(id);
+  }
+  return { byCandidate, aiSurfacedIds: [] as string[] };
+};
+
+const emptyBoard = computeCandidateList(boardOf([]));
+assert.deepEqual(emptyBoard.live, ["A", "B", "C", "D"], "an empty board sets nothing aside");
+assert.deepEqual(emptyBoard.coverage, { A: 0, B: 0, C: 0, D: 0 });
+assert.deepEqual(emptyBoard.score, { A: 0, B: 0, C: 0, D: 0 });
+
+// Alex's unspoken profile is in neither source set, so it cannot move the list.
+// This is the property the whole design rests on: Alex pushes a candidate only
+// by paying for it with a disclosure the pooling measure records.
+assert.deepEqual(
+  computeCandidateList({ byCandidate: {}, aiSurfacedIds: [] }).coverage,
+  { A: 0, B: 0, C: 0, D: 0 },
+  "profile Z is not on the board until Alex says it",
+);
+assert.equal(
+  computeCandidateList({ byCandidate: {}, aiSurfacedIds: ["C_p6"] }).coverage.C,
+  1,
+  "a trait Alex has said is on the board like any other",
+);
+
+// The positive control. Without a turn where the rule actually fires, every
+// assertion below it would pass on a derivation that sets nothing aside ever.
+const wellCoveredAndTrailing = computeCandidateList(
+  boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "B_n1", "B_n2", "B_n3", "B_n4"]),
+);
+assert.deepEqual(
+  wellCoveredAndTrailing.setAside,
+  ["B"],
+  "a candidate that has been looked at and trails badly is set aside",
+);
+assert.equal(wellCoveredAndTrailing.coverage.B, LIVE_LIST_MIN_COVERAGE);
+assert.ok(
+  wellCoveredAndTrailing.score.A - wellCoveredAndTrailing.score.B >= LIVE_LIST_SCORE_LAG,
+);
+
+// Clause 1: too little of a candidate is in view to have an opinion about it.
+const barelySeen = computeCandidateList(
+  boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "B_n1", "B_n2", "B_n3"]),
+);
+assert.deepEqual(
+  barelySeen.live,
+  ["A", "B", "C", "D"],
+  "below the coverage minimum a candidate stays live however badly it scores",
+);
+
+// Clause 2, the load-bearing one: a candidate that has merely been skipped is
+// not the same as a candidate that is weak, and a hidden profile produces the
+// first while looking like the second.
+const skipped = computeCandidateList(
+  boardOf([
+    "A_p1", "A_p2", "A_p3", "A_p4", "A_n1", "A_n2", "A_n3",
+    "B_n1", "B_n2", "B_n3", "B_n4",
+  ]),
+);
+assert.equal(skipped.coverage.A - skipped.coverage.B, 3);
+assert.ok(skipped.coverage.B - skipped.coverage.A < -LIVE_LIST_COVERAGE_LAG);
+assert.deepEqual(
+  skipped.live,
+  ["A", "B", "C", "D"],
+  "a candidate far behind on coverage is being ignored, not being beaten",
+);
+
+// The criterion this issue was written against: high score, low coverage, live.
+const highScoreLowCoverage = computeCandidateList(
+  boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "A_n1", "A_n2", "C_p1", "C_p2"]),
+);
+assert.equal(highScoreLowCoverage.coverage.C, 2);
+assert.equal(highScoreLowCoverage.score.C, 2);
+assert.deepEqual(highScoreLowCoverage.live, ["A", "B", "C", "D"]);
+
+// The list is never empty, so there is never a turn with nothing to work on.
+// The best-scoring candidate trails itself by 0 and cannot be set aside, which
+// is also why one pass and a fixed point agree on the score test.
+for (const ids of [
+  ["A_p1", "A_p2", "A_p3", "A_p4"],
+  ["A_n1", "A_n2", "A_n3", "A_n4", "B_n1", "B_n2", "B_n3", "B_n4"],
+  TRAIT_DB.map((trait) => trait.id),
+]) {
+  const state = computeCandidateList(boardOf(ids));
+  assert.ok(state.live.length >= 1, "the live list is never empty");
+  const best = Math.max(...(["A", "B", "C", "D"] as const).map((c) => state.score[c]));
+  assert.ok(
+    state.live.some((candidate) => state.score[candidate] === best),
+    "a best-scoring candidate is always live",
+  );
+}
+
+// The record it is written to. A turn that never computed one leaves the field
+// absent rather than empty, so an old export and a turn with no list are not
+// confused with a turn whose list was every candidate.
+const listedTurn = new AIIntervention({
+  sessionId: "64b000000000000000000002",
+  turnIndex: 4,
+  triggerReason: "push",
+  decision: "stay_silent",
+  candidateList: wellCoveredAndTrailing,
+});
+assert.equal(listedTurn.validateSync(), undefined);
+const recordedList = listedTurn.toObject().candidateList!;
+assert.deepEqual(recordedList.live, ["A", "C", "D"]);
+assert.deepEqual(recordedList.setAside, ["B"]);
+assert.equal(recordedList.coverage!.B, LIVE_LIST_MIN_COVERAGE);
+assert.equal(recordedList.score!.A, 4);
+assert.equal(ordinaryIntervention.toObject().candidateList, undefined);
+
+// ── Driven from a real transcript ───────────────────────────────────────────
+// The board is rebuilt message by message with the deterministic keyword
+// extractor, not the model one, so the replay is reproducible. It is an
+// approximation of what the live extractor would have recorded; what it is
+// being used for is whether the arithmetic behaves on real conversation.
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SERVER_ROOT = resolve(HERE, "..", "..");
+const pilotSessions: any[] = JSON.parse(
+  readFileSync(join(SERVER_ROOT, "pilot-export.json"), "utf8"),
+);
+
+function replayLiveList(sessionCode: string) {
+  const session = pilotSessions.find((entry) => entry.sessionCode === sessionCode);
+  assert.ok(session, `${sessionCode} is missing from the pilot export`);
+  const human: string[] = [];
+  const ai: string[] = [];
+  const states: { seq: number; live: string[] }[] = [];
+  for (const message of session.messages) {
+    for (const id of extractHumanTraitsFast({ messageText: message.content }).acceptedIds) {
+      const into = message.senderRole === "ai" ? ai : human;
+      if (!into.includes(id)) into.push(id);
+    }
+    const revealStats = boardOf(human);
+    revealStats.aiSurfacedIds = [...ai];
+    states.push({ seq: message.seq, live: computeCandidateList(revealStats).live });
+  }
+  return states;
+}
+
+const converging = replayLiveList("T-C3-007");
+assert.deepEqual(
+  converging.at(-1)!.live,
+  ["C"],
+  "T-C3-007 narrows to the pooled answer as its board fills",
+);
+// Nothing is carried between turns, so a candidate returns the moment new
+// information puts it back. This session does that three times.
+const reEntries = converging.filter(
+  (state, index) =>
+    index > 0 && state.live.some((c) => !converging[index - 1]!.live.includes(c)),
+);
+assert.ok(
+  reEntries.length >= 1,
+  "a candidate re-enters the list when new information arrives, with no reopening path",
+);
+
+// The finding this issue exists to produce. In T-C1-016 the pooled answer is
+// the best-covered candidate on the board and is still set aside, because its
+// shared traits are its misses — the coverage clause protects a candidate that
+// is behind, and C is ahead. Recorded here rather than argued: the thresholds
+// do not survive this session, and issue 03 is what has to answer for it.
+const droppedTheAnswer = replayLiveList("T-C1-016");
+assert.deepEqual(
+  droppedTheAnswer.at(-1)!.live,
+  ["A", "B", "D"],
+  "T-C1-016 sets the pooled answer aside — the case issue 03 must not inherit",
+);
+
+// ── Shadow only ─────────────────────────────────────────────────────────────
+// The derivation must reach the record and nothing else. A behavioural check
+// cannot state that, because the claim is about the absence of a reader, so it
+// is checked where a reader would have to appear: in the imports.
+const ALLOWED_CANDIDATE_LIST_READERS = new Set([
+  "lib/candidateList.ts",
+  "models/AIIntervention.ts",
+  "lib/routeTurn.ts",
+  "lib/interventionEngine.ts",
+  "scripts/test-intervention-v2.ts",
+]);
+
+function sourceFiles(directory: string, prefix = ""): string[] {
+  return readdirSync(directory).flatMap((name) => {
+    const full = join(directory, name);
+    if (statSync(full).isDirectory()) return sourceFiles(full, `${prefix}${name}/`);
+    return name.endsWith(".ts") ? [`${prefix}${name}`] : [];
+  });
+}
+
+const SRC_ROOT = join(SERVER_ROOT, "src");
+for (const relative of sourceFiles(SRC_ROOT)) {
+  const body = readFileSync(join(SRC_ROOT, relative), "utf8");
+  if (!/candidateList|computeCandidateList/.test(body)) continue;
+  assert.ok(
+    ALLOWED_CANDIDATE_LIST_READERS.has(relative),
+    `${relative} reads the live candidate list; it is shadow only until issue 03`,
+  );
+}
+
+// The two files that do read it must only write it. A route, a prompt, a guard
+// or a cadence rule reading the list is the change issue 03 makes, deliberately
+// and by condition — not something that arrives by accident. Listing the lines
+// that may name it is blunt, and blunt is the point: adding a reader means
+// adding it here, where a reviewer has to look at it.
+const RECORD_ONLY_LINES = new Set([
+  'import { computeCandidateList } from "./candidateList.js";',
+  "const candidateListAudit = {",
+  "candidateList: computeCandidateList((session as any).revealStats),",
+  "...candidateListAudit,",
+  "async function candidateListAuditFor(sessionId: string) {",
+  "return { candidateList: computeCandidateList((session as any)?.revealStats) };",
+  "...(await candidateListAuditFor(input.runtime.sessionId)),",
+  "...(await candidateListAuditFor(runtime.sessionId)),",
+]);
+
+for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
+  const lines = readFileSync(join(SRC_ROOT, relative), "utf8").split("\n");
+  for (const [index, line] of lines.entries()) {
+    if (!/candidateList/i.test(line)) continue;
+    if (/^\s*(?:\/\/|\*|\/\*)/.test(line)) continue;
+    assert.ok(
+      RECORD_ONLY_LINES.has(line.trim()),
+      `${relative}:${index + 1} uses the live candidate list for something other than the record`,
+    );
+  }
+}
 
 console.log("intervention-v2 checks passed");

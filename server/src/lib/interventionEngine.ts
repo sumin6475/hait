@@ -86,6 +86,7 @@ import { KO_PEER_CLOSING } from "./koPilot.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { allSurfacedIds, humanConfirmedIds } from "./informationPools.js";
 import { currentTopicCandidate } from "./poolingTally.js";
+import { computeCandidateList } from "./candidateList.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type SummaryStatus = "not_eligible" | "pending" | "generating" | "done";
@@ -637,6 +638,19 @@ function silenceDecisionStage(reason: string): InterventionDecisionStage {
   return "system";
 }
 
+/**
+ * The live candidate list for a turn recorded outside `executeRouteTurn`.
+ *
+ * Shadow only, and off the speaking path: every caller here has already decided
+ * what the turn does, so the extra read costs nothing a participant can see.
+ * It is read rather than carried on the runtime because the board changes on
+ * every human message and a stale copy would be worse than none.
+ */
+async function candidateListAuditFor(sessionId: string) {
+  const session = await Session.findById(sessionId).select("revealStats").lean();
+  return { candidateList: computeCandidateList((session as any)?.revealStats) };
+}
+
 async function recordSilence(input: {
   runtime: RuntimeState;
   anchorSeq: number;
@@ -653,6 +667,7 @@ async function recordSilence(input: {
   await AIIntervention.create({
     sessionId: input.runtime.sessionId,
     turnIndex: input.anchorSeq,
+    ...(await candidateListAuditFor(input.runtime.sessionId)),
     triggerReason: "push",
     decision: "stay_silent",
     source: "push",
@@ -739,6 +754,7 @@ async function cancelReservation(runtime: RuntimeState, reason: string) {
   await AIIntervention.create({
     sessionId: runtime.sessionId,
     turnIndex: reservation.anchorSeq,
+    ...(await candidateListAuditFor(runtime.sessionId)),
     triggerReason: reservation.source,
     decision: "stay_silent",
     routeKind: reservation.routeKind,
@@ -1352,6 +1368,7 @@ async function broadcastClosingFallback(runtime: RuntimeState, reason: "deadline
   await AIIntervention.create({
     sessionId: runtime.sessionId,
     turnIndex: docs.at(-1)?.seq ?? 0,
+    candidateList: computeCandidateList((session as any).revealStats),
     triggerReason: `closing_${reason}_fallback`,
     cue: "closing",
     decision: "speak",
@@ -1394,7 +1411,7 @@ async function broadcastPeerClosing(runtime: RuntimeState, reason: "deadline" | 
   replaceTypingOwners(runtime, owner);
   try {
     const [session, docs] = await Promise.all([
-      Session.findById(runtime.sessionId).select("language").lean(),
+      Session.findById(runtime.sessionId).select("language revealStats").lean(),
       Message.find({ sessionId: runtime.sessionId }).sort({ seq: 1 }).lean(),
     ]);
     if (!session) return;
@@ -1412,6 +1429,7 @@ async function broadcastPeerClosing(runtime: RuntimeState, reason: "deadline" | 
     await AIIntervention.create({
       sessionId: runtime.sessionId,
       turnIndex: docs.at(-1)?.seq ?? 0,
+      candidateList: computeCandidateList((session as any).revealStats),
       triggerReason: `closing_${reason}_peer_static`,
       cue: "closing",
       decision: "speak",
