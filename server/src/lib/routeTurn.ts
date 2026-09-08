@@ -114,7 +114,10 @@ export interface RouteTurnResult {
   error?: string;
 }
 
-export function routeGenerationLimits(routeKind: RouteKind, requestIntent?: RequestIntent) {
+export function routeGenerationLimits(
+  routeKind: RouteKind,
+  requestIntent?: RequestIntent,
+): { maxOutputTokens: number | null; maxContentChars: number | null; timeoutMs: number; verbosity?: "low" } {
   if (routeKind === "summary") {
     return { maxOutputTokens: null, maxContentChars: null, timeoutMs: 60_000 };
   }
@@ -138,19 +141,56 @@ export function routeGenerationLimits(routeKind: RouteKind, requestIntent?: Requ
   // the wider cap only protects the rare legitimately long output.
   // timeoutMs 45s: any turn may now produce ~2_400 chars, which the old 30s
   // budget risked timing out (= lost turn, same contamination as truncation).
-  return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
+  // Every other turn is an ordinary chat reply, and the model's own length
+  // control says so. The three cases above enumerate a whole profile and are
+  // deliberately left at the API default.
+  return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000, verbosity: "low" };
 }
 
 /**
  * Direct answers keep their prompt-level factual scope, but are not rewritten
  * by candidate/trait extraction. Contribution routes retain their hard guard.
+ *
+ * The per-turn reveal budget is the exception, and it had been swallowed by the
+ * rule: `withRouteRevealBudget` computes it *for* address and followup, and this
+ * function then returned undefined for both because its reason is not
+ * `requested_narrowing`. Every assertion on the budget tested the predicate
+ * directly, so it passed its own suite while reaching no live turn — one of the
+ * three possibilities T-C2-041 seq 4 could not be told apart from.
+ *
+ * The budget passes through; the candidate scope still does not. So a direct
+ * answer is not rewritten because it named the wrong candidate, and is still
+ * bounded in how much it may reveal and how long it may run.
  */
 export function routeGenerationGuard(
   routeKind: RouteKind,
   guard: RouteOutputScopeGuard | undefined,
 ): RouteOutputScopeGuard | undefined {
   if (routeKind !== "address" && routeKind !== "followup") return guard;
-  return guard?.reason === "requested_narrowing" ? guard : undefined;
+  if (guard?.reason === "requested_narrowing") return guard;
+  if (!guard?.revealBudget) return undefined;
+  return {
+    candidate: null,
+    maxTraitIds: guard.maxTraitIds,
+    maxRestatedTraitIds: guard.maxRestatedTraitIds,
+    maxSentences: guard.maxSentences,
+    maxWords: guard.maxWords,
+    revealBudget: true,
+    reason: "route_reveal_budget",
+  };
+}
+
+/**
+ * The silence a lost turn is recorded as.
+ *
+ * Exhausted repair is not an API failure and must not be filed as one: the model
+ * answered, the answer broke a bound, and the turn was spent rather than an
+ * oversized message broadcast. Everything else keeps its own reason.
+ */
+export function silenceReasonForGenerationFailure(error: string): string | undefined {
+  if (error.startsWith("output_violation_after_repair")) return "output_violation_after_repair";
+  if (error.startsWith("output_repair_failed")) return "output_repair_failed";
+  return undefined;
 }
 
 export function deterministicGreetingContent(
@@ -302,6 +342,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       decisionStage: input.decisionStage ?? "system",
       routeReason: input.routeReason,
       outcome: "generation_failed",
+      silenceReason: silenceReasonForGenerationFailure(error),
       promptKey: prompt.promptKey,
       promptVersion: prompt.promptVersion,
       promptHash: prompt.promptHash,

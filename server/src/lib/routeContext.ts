@@ -800,6 +800,22 @@ export interface RouteOutputScopeGuard {
   // restated sixteen traits and introduced none. A chat turn refers to a couple
   // of settled points at most, whoever first said them.
   maxRestatedTraitIds?: number;
+  // Length is a post-condition, not a request. Two prompt-only attempts failed
+  // to shorten Alex: T-C1-024 seq 7 ran five sentences against a stated contract
+  // of two and recorded no violation, because nothing checked. These bounds are
+  // separate limits on the same turn as the trait counts — a message can be
+  // within its reveal budget and still be a wall of text.
+  maxSentences?: number;
+  maxWords?: number;
+  /**
+   * Set when the per-turn reveal budget supplied these bounds — that is, when
+   * the turn carried no request of its own. It is what lets `routeGenerationGuard`
+   * keep the budget on a direct-answer route while still dropping the candidate
+   * scope of a guard an explicit request built. Without the mark the two are
+   * indistinguishable: an explicit new-information request also caps traits at
+   * one, and that cap is deliberately not enforced on those routes.
+   */
+  revealBudget?: true;
   // NOTE_CONTRIBUTION may disclose exactly the Judge-selected note and no
   // other trait, including traits that were already on the table.
   allowedTraitIds?: string[];
@@ -835,7 +851,23 @@ export interface RouteOutputScopeGuard {
  * request for a full list is unaffected: that path sets its own, larger budget
  * and is left exactly as it is.
  */
-const ROUTE_REVEAL_BUDGET = { maxTraitIds: 1, maxRestatedTraitIds: 2 } as const;
+/**
+ * What a turn that asked for nothing in particular may spend.
+ *
+ * The length bounds are a ceiling on the failure shape, not a restatement of the
+ * prompt's aim. The prompt asks for two sentences and about forty words; the
+ * guard fails the turn, so it has to sit above output the prompt is already
+ * producing well. T-C1-027's longest message was 68 words across no more than
+ * three sentences and was judged fine; T-C1-024 seq 7 was five sentences and
+ * T-C1-025 averaged 138 words. Both bounds separate those two populations with
+ * room, and neither costs a turn that was already going well.
+ */
+const ROUTE_REVEAL_BUDGET = {
+  maxTraitIds: 1,
+  maxRestatedTraitIds: 2,
+  maxSentences: 3,
+  maxWords: 80,
+} as const;
 
 function withRouteRevealBudget(
   guard: RouteOutputScopeGuard | undefined,
@@ -851,11 +883,16 @@ function withRouteRevealBudget(
   // unbounded: T-C1-025 seq 3 was classified `none` and answered with seventeen
   // traits.
   if (requestIntentKind !== "none") return guard;
-  if (!guard) return { candidate: null, ...ROUTE_REVEAL_BUDGET, reason: "route_reveal_budget" };
+  if (!guard) {
+    return { candidate: null, ...ROUTE_REVEAL_BUDGET, revealBudget: true, reason: "route_reveal_budget" };
+  }
   return {
     ...guard,
     maxTraitIds: guard.maxTraitIds ?? ROUTE_REVEAL_BUDGET.maxTraitIds,
     maxRestatedTraitIds: guard.maxRestatedTraitIds ?? ROUTE_REVEAL_BUDGET.maxRestatedTraitIds,
+    maxSentences: guard.maxSentences ?? ROUTE_REVEAL_BUDGET.maxSentences,
+    maxWords: guard.maxWords ?? ROUTE_REVEAL_BUDGET.maxWords,
+    revealBudget: true,
   };
 }
 

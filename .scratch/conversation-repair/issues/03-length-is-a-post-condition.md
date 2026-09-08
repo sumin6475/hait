@@ -6,7 +6,7 @@ joins the reveal budget behind the output scope guard, which fails closed.
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## The defect, as observed
 
@@ -42,12 +42,96 @@ messages the guard exists to stop.
 - The reveal budget and the length bound are separate limits on the same turn.
   Do not fold one into the other.
 
-- [ ] `verbosity: "low"` is set on the generator call
-- [ ] The output scope guard rejects a message over its sentence or word bound
+- [x] `verbosity: "low"` is set on the generator call
+- [x] The output scope guard rejects a message over its sentence or word bound
       and routes it through the existing repair loop
-- [ ] The exception clause no longer fires on a turn that carried no explicit
-      full-list or comparison request; verify against a turn that previously
-      triggered it
-- [ ] A turn with an explicit whole-board request still answers in full
-- [ ] Exhausted repair costs the turn and records it as such, distinctly from
+- [x] The exception clause no longer fires on a turn that carried no explicit
+      full-list or comparison request; the clause is gone entirely
+- [x] A turn with an explicit whole-board request still answers in full
+- [x] Exhausted repair costs the turn and records it as such, distinctly from
       every other silence reason
+
+## Comments
+
+### The premise was false, and had to be fixed first
+
+"Length joins the reveal budget behind the output scope guard, which fails
+closed" assumes the reveal budget reaches a live turn. **It did not.**
+
+`withRouteRevealBudget` computes the budget *for* `address` and `followup` — and
+only for those two routes, and only when the turn carried no request.
+`routeGenerationGuard` then returned `undefined` for both routes unless the
+guard's reason was `requested_narrowing`, which the budget's is not. So the
+budget was built and thrown away before generation, on every turn it existed for.
+
+It passed its own suite the whole time, because every assertion on it calls
+`outputScopeViolation` directly with the guard object. The predicate was tested;
+the wiring was not. That is the fifth vacuous guard this repair has found, and
+it is **one of the three possibilities T-C2-041 seq 4 could not be told apart
+from** — see issue 09, which exists because the export cannot answer that
+question.
+
+The budget now passes through; the candidate scope still does not, which is what
+the original rule was actually protecting ("direct answers are not rewritten by
+candidate/trait extraction"). The two were indistinguishable because an explicit
+new-information request also caps traits at one, so `withRouteRevealBudget` now
+marks what it supplied with `revealBudget: true` and the passthrough reads the
+mark, not the numbers.
+
+### The numbers, and why not 40 and 2
+
+The prompt asks for two sentences and about forty words. The guard is not that
+aim restated — it fails the turn, so it has to sit above output the prompt is
+already producing well, or it costs turns that were going fine. T-C1-027's
+longest message was 68 words and was judged good; T-C1-024 seq 7 was five
+sentences and T-C1-025 averaged 138 words.
+
+**Three sentences, eighty words.** Both bounds separate those two populations
+with room on each side. They are the tunable part of this change; the mechanism
+is not.
+
+The two bounds are independent, and the regression proves it: the 138-word
+fixture is one sentence, so only the word bound catches it.
+
+### Three exemptions kept, one removed
+
+Greeting, summary and closing keep their exemption — they are separate routes
+with their own lengths, and two of the three are deterministic anyway. The
+removed clause is "an explicitly requested full list or comparison", which asked
+the generator to judge its own turn and then excused it on the strength of that
+judgement. The request-scope machinery already decides when no limit applies, and
+it decides from the participant's words rather than the generator's reading of
+them.
+
+An explicit whole-board request is untouched, in three separate ways: it never
+receives a reveal budget (`requestIntentKind !== "none"`), its route limits leave
+verbosity at the API default so the model is not asked to be terse, and its guard
+carries no length fields at all. There is a regression on each.
+
+Prompt source bumped 1.8.0 → 1.9.0 and recompiled; all 30 registry hashes move,
+which is what a prompt edit is supposed to do.
+
+### Verbosity
+
+`text.verbosity` sat unused beside `reasoning.effort`, which was already set. It
+is now `"low"` on the generator, and left at the default on summary, closing and
+complete-list turns. It is passed only to the reasoning family — the fallback
+models do not take it.
+
+### The silence it costs
+
+Exhausted repair used to be filed as `outcome: generation_failed` with no silence
+reason, indistinguishable from a timeout. It now records
+`output_violation_after_repair`, with `output_repair_failed` kept separate for a
+rewrite that would not parse. An ordinary API failure is not relabelled.
+
+### Verification
+
+Four breaks confirmed the assertions fail: removing the length post-condition,
+dropping the budget before generation again, unsetting verbosity, and filing
+exhausted repair as an ordinary failure. A fifth break — inverting the
+passthrough — does not compile, which is its own answer.
+
+Build, all four suites, `test:pooling-extractor` and `docs:check` green. **Not
+measured live**, and the prompt version bump means the golden set should be
+re-run before a session.

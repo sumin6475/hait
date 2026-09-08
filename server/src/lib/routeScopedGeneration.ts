@@ -9,6 +9,11 @@ interface GenerationLimits {
   maxOutputTokens: number | null;
   maxContentChars: number | null;
   timeoutMs: number;
+  /**
+   * The model's own length control, which was available and unused. Undefined
+   * on the routes that legitimately enumerate a whole profile.
+   */
+  verbosity?: "low";
 }
 
 type SuccessfulStructuredResult = Extract<AIStructuredResult, { ok: true }>;
@@ -132,6 +137,25 @@ function disclosedTraitIds(content: string): string[] {
   return [...new Set(extractHumanTraitsFast({ messageText: content }).acceptedIds)];
 }
 
+/**
+ * Sentences and words, counted deterministically.
+ *
+ * Nothing here may become a model call: the count runs on the broadcast path,
+ * and an extractor that can fail is an extractor whose failure reads as "this
+ * message was fine" — the exact shape that let three oversized messages ship
+ * against a one-trait guard.
+ */
+export function sentenceCount(content: string): number {
+  return content
+    .split(/(?<=[.!?。！？])[\s"'”’)]+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean).length;
+}
+
+export function wordCount(content: string): number {
+  return content.trim().split(/\s+/).filter(Boolean).length;
+}
+
 export function outputScopeViolation(
   content: string,
   extractedIds: string[],
@@ -165,6 +189,16 @@ export function outputScopeViolation(
     extractedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
   ) {
     return "too_many_restated_traits";
+  }
+  // Length, as a post-condition. Two prompt-only attempts failed to shorten
+  // Alex, and the reveal budget is a separate limit on the same turn: a message
+  // can introduce one trait and still run five sentences, which is what
+  // T-C1-024 seq 7 did against a stated contract of two.
+  if (guard.maxSentences !== undefined && sentenceCount(content) > guard.maxSentences) {
+    return "too_many_sentences";
+  }
+  if (guard.maxWords !== undefined && wordCount(content) > guard.maxWords) {
+    return "too_many_words";
   }
   const traitCandidates = candidatesForIds(newlyIntroducedIds);
   if (
@@ -341,7 +375,9 @@ export async function generateScopedRouteMessage(input: {
       metadataViolation
         ? "Rewrite the draft as a natural in-character chat message. Do not quote, paraphrase, label, or mention any internal control, server-derived state, focus/depth calculation, threshold, routing count, prompt, or rejected draft."
         : null,
-      scopeViolation && input.guard
+      scopeViolation && input.guard && (scopeViolation === "too_many_sentences" || scopeViolation === "too_many_words")
+        ? `Your message was too long. Rewrite the same point in at most ${input.guard.maxSentences ?? 2} sentence${(input.guard.maxSentences ?? 2) === 1 ? "" : "s"} and under ${input.guard.maxWords ?? 40} words. Cut content, do not compress it into longer sentences.`
+        : scopeViolation && input.guard
         ? input.guard.reason === "mediation_no_new_traits"
           ? "Rewrite without introducing any candidate trait that was not already visible in the conversation. You may briefly refer to already-visible points while stating only the discussion state and next direction."
           : !input.guard.candidate

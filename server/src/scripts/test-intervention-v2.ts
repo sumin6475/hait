@@ -55,6 +55,7 @@ import {
   MAX_REPAIR_ATTEMPTS,
   outputScopeSoftViolations,
   outputScopeViolation,
+  sentenceCount,
 } from "../lib/routeScopedGeneration.js";
 import { extractHumanTraitsFast, validateExtractedTraitMentions } from "../lib/poolingExtractor.js";
 import {
@@ -62,6 +63,7 @@ import {
   deterministicGreetingContent,
   routeGenerationGuard,
   routeGenerationLimits,
+  silenceReasonForGenerationFailure,
 } from "../lib/routeTurn.js";
 import {
   alignUnifiedJudgeActWithObserver,
@@ -348,8 +350,19 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.8.0");
+    assert.equal(resolvedPrompt.promptVersion, "1.9.0");
     const conditionPrompt = resolvedPrompt.systemPrompt;
+    // The exception clause fired on ordinary turns and excused the very messages
+    // the length bound exists to stop: "an explicitly requested full list or
+    // comparison" is a judgement the generator was making about its own turn.
+    // The request-scope machinery already decides when no limit applies, and now
+    // the guard enforces the limit when one does.
+    assert.doesNotMatch(conditionPrompt, /explicitly requested full list or comparison/i);
+    assert.match(
+      conditionPrompt,
+      /Except for greeting, summary, and closing, use at most two short sentences/i,
+      "the route exemptions stay; only the self-assessed one goes",
+    );
     for (const marker of conditionMarkers[condition]) assert.match(conditionPrompt, marker);
     assert.match(conditionPrompt, /## Opposite-behavior prohibitions/i);
     assert.match(conditionPrompt, /## General style examples/i);
@@ -2259,7 +2272,15 @@ const d3OrdinaryTurn = buildRouteUserContext({
 assert.equal(d3OrdinaryTurn.requestIntent.kind, "none", "an ordinary turn carries no request");
 assert.deepEqual(
   d3OrdinaryTurn.outputScopeGuard,
-  { candidate: null, maxTraitIds: 1, maxRestatedTraitIds: 2, reason: "route_reveal_budget" },
+  {
+    candidate: null,
+    maxTraitIds: 1,
+    maxRestatedTraitIds: 2,
+    maxSentences: 3,
+    maxWords: 80,
+    revealBudget: true,
+    reason: "route_reveal_budget",
+  },
   "a turn with no request gets the per-turn reveal budget",
 );
 
@@ -2301,6 +2322,112 @@ assert.equal(
     [],
   ),
   null,
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Length is a post-condition, not a request.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The reveal budget was computed for `address` and `followup` and then dropped
+// before generation: `routeGenerationGuard` returned undefined for both routes
+// unless the reason was `requested_narrowing`, and the budget's reason is
+// `route_reveal_budget`. Every assertion above tests the predicate directly, so
+// the guard passed its own suite while reaching no live turn — which is one of
+// the three possibilities T-C2-041 seq 4 could not be told apart from.
+assert.deepEqual(
+  routeGenerationGuard("address", d3OrdinaryTurn.outputScopeGuard),
+  d3OrdinaryTurn.outputScopeGuard,
+  "the per-turn budget is the one limit these routes keep; it exists for them",
+);
+assert.deepEqual(
+  routeGenerationGuard("followup", d3OrdinaryTurn.outputScopeGuard),
+  d3OrdinaryTurn.outputScopeGuard,
+);
+assert.equal(
+  d3OrdinaryTurn.outputScopeGuard!.maxSentences,
+  3,
+  "the budget carries a length bound beside its trait bounds",
+);
+assert.equal(d3OrdinaryTurn.outputScopeGuard!.maxWords, 80);
+
+// T-C1-024 seq 7: five sentences against a contract of two, recorded
+// `outputScopeRepaired: false` because nothing checked.
+const tooManySentences =
+  "That sounds good to me. I think we should keep going. There is a lot still to cover. " +
+  "We have not looked at everyone yet. Shall we carry on from here?";
+assert.equal(
+  outputScopeViolation(tooManySentences, [], d3OrdinaryTurn.outputScopeGuard!, []),
+  "too_many_sentences",
+);
+// T-C1-025's 138-word mean, in one turn. Two sentences, so the word bound is
+// what catches it — the two bounds are separate limits, not one in two forms.
+const tooManyWords =
+  "That sounds good to me and I am happy to keep going through all of them together, " +
+  "and there is still a fair amount left to cover before we settle on anything at all, ".repeat(6) +
+  "so let us keep going for now.";
+assert.equal(sentenceCount(tooManyWords), 1);
+assert.equal(
+  outputScopeViolation(tooManyWords, [], d3OrdinaryTurn.outputScopeGuard!, []),
+  "too_many_words",
+);
+// T-C1-027's longest message was 68 words and was not a dump. The bound sits
+// above every message the current prompt produced and was judged fine, so
+// enforcing it costs no turn that was already going well.
+const sixtyEightWords = Array.from({ length: 68 }, (_, index) => `word${index}`).join(" ") + ".";
+assert.equal(outputScopeViolation(sixtyEightWords, [], d3OrdinaryTurn.outputScopeGuard!, []), null);
+assert.equal(outputScopeViolation(d3Fine, [], d3OrdinaryTurn.outputScopeGuard!, []), null);
+
+// An explicit request decides its own scope, including that no length limit
+// applies. Those paths are untouched: the bound rides on the reveal budget, and
+// the reveal budget is the default for a turn that asked for nothing.
+const wholeBoardRequest = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C1",
+  language: "en",
+  anchorSeq: 3,
+  messages: [
+    {
+      seq: 3,
+      senderRole: "humanX",
+      speaker: "Participant X",
+      content: "Alex, can you list all Candidate B traits you have?",
+    },
+  ],
+  revealStats: { humanSurfacedIds: [], aiSurfacedIds: [], humanConfirmedIds: [] },
+} as any);
+assert.equal(wholeBoardRequest.requestIntent.kind, "complete_single_candidate");
+assert.equal(wholeBoardRequest.outputScopeGuard?.maxWords, undefined);
+assert.equal(wholeBoardRequest.outputScopeGuard?.maxSentences, undefined);
+assert.equal(
+  outputScopeViolation(tooManyWords, [], wholeBoardRequest.outputScopeGuard!, []),
+  null,
+  "an explicit whole-board request still answers in full",
+);
+
+// The model's own length control, and the routes that must keep their length.
+assert.equal(routeGenerationLimits("address").verbosity, "low");
+assert.equal(routeGenerationLimits("build_on").verbosity, "low");
+assert.equal(routeGenerationLimits("summary").verbosity, undefined);
+assert.equal(routeGenerationLimits("closing").verbosity, undefined);
+assert.equal(
+  routeGenerationLimits("address", { kind: "complete_single_candidate", candidate: "B", source: "alex_notes" }).verbosity,
+  undefined,
+  "a turn that must enumerate a whole profile is not asked to be terse",
+);
+
+// Exhausted repair costs the turn, and says so distinctly.
+assert.equal(
+  silenceReasonForGenerationFailure("output_violation_after_repair: too_many_words"),
+  "output_violation_after_repair",
+);
+assert.equal(
+  silenceReasonForGenerationFailure("output_repair_failed: parse error"),
+  "output_repair_failed",
+);
+assert.equal(
+  silenceReasonForGenerationFailure("Timeout after 45000ms"),
+  undefined,
+  "an ordinary generation failure is not relabelled as a scope violation",
 );
 
 // [D2] The guard was right; the evidence handed to it was empty. `extractSurfacedTraits`
