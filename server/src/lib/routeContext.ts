@@ -1362,6 +1362,48 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
   return NO_REQUEST_INTENT;
 }
 
+/**
+ * Which of Alex's own notes are not yet on the board, said plainly.
+ *
+ * Alex reads its whole card in the frozen prompt every turn, and until now was
+ * never told which of those notes had already been said. It had to reconstruct
+ * that from the transcript, and it got it wrong in the way that matters most:
+ * in T-C2-047 it twice told the group it had nothing further — once in direct
+ * answer to a request for information the others might not have — while
+ * thirteen of its twenty-four notes were unsaid.
+ *
+ * This is bookkeeping, not an instruction. It says nothing about what Alex
+ * should disclose, and the reveal budget is unchanged; it only means "do I have
+ * anything left" stops being a guess. Deliberately not marked by profile: which
+ * notes only Alex holds is not something a participant can know about their own
+ * card, and this block must not tell Alex either.
+ */
+function formatUnsurfacedOwnNotes(revealStats: any): string {
+  const surfaced = allSurfacedIds(revealStats);
+  const held = ALEX_Z_IDS.map((id) => TRAIT_BY_ID.get(id)).filter(
+    (trait): trait is NonNullable<typeof trait> => Boolean(trait),
+  );
+  const unsaid = held.filter((trait) => !surfaced.has(trait.id));
+  if (!unsaid.length) {
+    return (
+      "Your notes (server-derived): every note on your card has already been said, " +
+      `by you or by someone else. All ${held.length} are on the table. If you are ` +
+      "asked whether you hold anything further, the accurate answer is that you do not."
+    );
+  }
+  const lines = unsaid.map(
+    (trait) => `- ${trait.valence === "pos" ? "MATCH" : "MISS"} for Candidate ${trait.candidate}: ${trait.text}`,
+  );
+  return [
+    `Your notes (server-derived): ${unsaid.length} of the ${held.length} notes on your card ` +
+      "have not been said yet, by you or by anyone else:",
+    ...lines,
+    "This is a record of what is left, not an instruction to share it. Your limit on " +
+      "how much you may reveal this turn is unchanged, and what to do this turn is set " +
+      "by the Turn Metadata above.",
+  ].join("\n");
+}
+
 function formatAlexCandidateNotes(candidate: Cand): string {
   const traits = ALEX_Z_IDS.map((id) => TRAIT_BY_ID.get(id)).filter(
     (trait) => trait?.candidate === candidate,
@@ -2196,6 +2238,12 @@ export function buildRouteUserContext(input: {
     blocks.push(
       "Name (server-derived): a participant used a candidate letter as if it were your name. A, B, C and D identify the candidates only. Say once, briefly, that you are Alex, then answer the substance of their message. Do not accept or agree to be called by a candidate letter.",
     );
+  }
+  // What Alex still holds. Every route that can disclose a trait gets it; a
+  // greeting and a backchannel cannot, and the summary and closing recaps are
+  // assembled deterministically from the board rather than from the card.
+  if (!["greeting", "backchannel", "summary", "closing"].includes(input.routeKind)) {
+    blocks.push(formatUnsurfacedOwnNotes(input.revealStats));
   }
   // [T-C4-019] The frozen "# Your Notes" section teaches Alex the +/− note symbols,
   // while every dynamic block and contract uses the words match/miss — with no rule

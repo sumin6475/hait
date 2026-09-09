@@ -4939,4 +4939,85 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
   assert.deepEqual(restated.extractedIds, ["B_n4"], "a human's trait is still counted when Alex repeats it");
 }
 
+// ── Alex knows what it still holds ──────────────────────────────────────────
+// T-C2-047 seq 36: asked outright whether it held information the others did
+// not, Alex named two traits and said those were the only new facts it had,
+// with thirteen notes unsaid and seven of them held by nobody else. It was not
+// lying about a list it had; it never had the list. Its card is in the frozen
+// prompt every turn, and which of those notes had already been said was left
+// for it to reconstruct from the transcript.
+{
+  const notesContext = (revealStats: any, routeKind: Parameters<typeof getRoutePrompt>[1] = "address") =>
+    buildRouteUserContext({
+      routeKind,
+      conditionCode: "C2",
+      language: "en",
+      anchorSeq: 9,
+      messages: [
+        {
+          seq: 9,
+          senderRole: "humanY",
+          speaker: "Participant Y",
+          content: "Is there information that either of you have that I don't have?",
+        },
+      ],
+      revealStats,
+    } as any).developerPrompt;
+
+  const alexNotes = TRAIT_DB.filter((trait) => trait.profiles.includes("Z"));
+  const emptyBoardNotes = notesContext({ byCandidate: {}, aiSurfacedIds: [] });
+  assert.match(emptyBoardNotes, new RegExp(`${alexNotes.length} of the ${alexNotes.length} notes`));
+  for (const trait of alexNotes) {
+    assert.ok(
+      emptyBoardNotes.includes(trait.text),
+      `${trait.id} is missing from what Alex is told it still holds`,
+    );
+  }
+
+  // A note leaves the list once it is on the board, whoever put it there.
+  const partly = notesContext({
+    byCandidate: { A: { revealedIds: ["A_p1"] } },
+    aiSurfacedIds: ["C_p6"],
+  });
+  assert.match(partly, new RegExp(`${alexNotes.length - 2} of the ${alexNotes.length} notes`));
+  const surfacedText = TRAIT_BY_ID.get("A_p1")!.text;
+  assert.ok(!partly.includes(`Candidate A: ${surfacedText}`), "a surfaced note is not still held");
+  assert.ok(partly.includes(TRAIT_BY_ID.get("C_p7")!.text), "an unsaid note is still listed");
+
+  // The one case where "I have nothing further" is true has to be sayable.
+  const exhausted = notesContext({ byCandidate: {}, aiSurfacedIds: alexNotes.map((t) => t.id) });
+  assert.match(exhausted, /every note on your card has already been said/);
+  assert.match(exhausted, /the accurate answer is that you do not/);
+
+  // Bookkeeping, not an instruction, and it says nothing about who else holds a
+  // note — that is not something a participant knows about their own card.
+  assert.match(emptyBoardNotes, /not an instruction to share it/);
+  assert.doesNotMatch(emptyBoardNotes, /\bunique\b|\bonly you\b|\bnobody else\b|profile [XYZ]\b/i);
+
+  // Routes that cannot disclose a trait do not carry it.
+  for (const routeKind of ["greeting", "backchannel", "summary", "closing"] as const) {
+    assert.doesNotMatch(
+      notesContext({ byCandidate: {}, aiSurfacedIds: [] }, routeKind),
+      /Your notes \(server-derived\)/,
+      `${routeKind} cannot disclose a note and must not be handed the list`,
+    );
+  }
+
+  // Both conditions get the same block: this is Alex's own card, not status.
+  const leaderBlock = notesContext({ byCandidate: {}, aiSurfacedIds: [] });
+  const peerBlock = buildRouteUserContext({
+    routeKind: "address",
+    conditionCode: "C1",
+    language: "en",
+    anchorSeq: 9,
+    messages: [
+      { seq: 9, senderRole: "humanY", speaker: "Participant Y", content: "Anything else?" },
+    ],
+    revealStats: { byCandidate: {}, aiSurfacedIds: [] },
+  } as any).developerPrompt;
+  const notesBlockOf = (prompt: string) =>
+    prompt.split("\n\n").find((part) => part.startsWith("Your notes (server-derived)"));
+  assert.equal(notesBlockOf(leaderBlock), notesBlockOf(peerBlock), "the card is condition-invariant");
+}
+
 console.log("intervention-v2 checks passed");

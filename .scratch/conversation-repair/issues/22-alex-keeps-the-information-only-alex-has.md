@@ -91,7 +91,8 @@ side of the same mechanism.
   instead of disclosure is not an improvement
 
 - [x] Nothing is counted as disclosed on a turn that was never broadcast
-- [ ] A message asserting Alex has nothing further is refused while an unsurfaced trait remains in `ALEX_Z_IDS`
+- [x] Alex is told which of its own notes are still unsaid, so the claim stops being a guess
+- [ ] With the record accurate, a message still asserting Alex has nothing further is refused
 - [ ] The record states the trait ids Alex disclosed from what the turn permitted, not from a keyword pass over its own prose
 - [ ] Per session, on the record: traits held, traits disclosed, and how many of each were unique
 - [ ] Traits per message and message length do not differ by condition after the change
@@ -120,3 +121,40 @@ ledger commit. Moving it back above the emit fails that assertion.
 
 This does not touch what Alex chooses to say or how much. It makes the count
 true, which the remaining items need before their numbers mean anything.
+
+### Landed: Alex is told what it still holds, 2026-09-08
+
+The first plan here was a post-condition — refuse a message claiming exhaustion
+while a note is unsaid. That was the wrong shape. Alex was not misreporting a
+list it had; **it never had the list.** Its card is in the frozen prompt every
+turn, and which of those notes had already been said was left for it to
+reconstruct from a thirty-six message transcript.
+
+`previouslySurfacedTraitIds` existed and went only to the output post-condition.
+The Judge got the same information as `eligibleTraitIds`. The generator, which is
+what actually answers "do you hold anything else", got neither.
+
+Every route that can disclose a trait now carries a plain record: how many of the
+notes on Alex's card have not been said by anyone, and which. On the board as it
+stood at T-C2-047 seq 36 — the turn where Alex said those were the only new facts
+it had — the block reads `13 of the 24 notes on your card have not been said
+yet`, and lists them.
+
+Three things it deliberately does not do. It gives no instruction to share
+anything and says so, because the reveal budget is what governs that and is
+unchanged. It never marks which notes only Alex holds — a participant cannot know
+that about their own card, and `docs/adr/0008`'s reasoning applies to speech as
+much as to the list. And it is identical in every condition: this is Alex's own
+card, not its status.
+
+It also makes the true answer sayable. When every note is on the board the block
+says so outright, which is the one case where "I have nothing further" is correct
+and Alex should be able to say it.
+
+The post-condition is not ruled out, only deferred to where it belongs: if Alex
+still claims exhaustion with an accurate record in front of it, that is a
+behaviour worth guarding. It has not been observed under those conditions,
+because those conditions did not exist until now.
+
+Runtime context only — no route prompt changed, so the prompt version and the
+30-key snapshot are untouched by this.
