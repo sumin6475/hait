@@ -1,77 +1,96 @@
-# 22: Alex keeps the information only Alex has
+# 22: Alex says it has nothing left while holding cards
 
-**What to fix:** Alex disclosed one of the eight traits no human holds, and spent
-seven of its nine disclosures on traits everyone could already see. The measure
-this study exists to take is what each participant contributes to the pool, and
-in T-C2-047 Alex's contribution was one trait.
+**What to fix:** Twice in T-C2-047, once in direct answer to the pooling question
+itself, Alex told the group it had no further information while unsurfaced
+traits were still in its notes. And the record of what Alex disclosed is
+recovered by running a keyword extractor over Alex's own text, so the system
+cannot say accurately what it contributed.
 
 **Status:** needs-triage
 
-## What was observed
+## The two statements
 
-T-C2-047, Chair + explanatory, verified build 1.9.0, 13 Alex messages.
-
-Alex holds 24 traits. Sixteen of them are on every participant's card. **Eight
-are held by nobody else**, and those eight are Alex's entire possible
-contribution to the pool:
-
-| | Alex alone holds | disclosed |
-| --- | --- | --- |
-| A | `A_n5`, `A_n6` — both misses | no |
-| B | `B_n5`, `B_n6` — both misses | no |
-| C | `C_p6`, `C_p7` — both matches | `C_p7` only |
-| D | `D_n5`, `D_n6` — both misses | no |
-
-The group chose B. Alex held both of B's unique misses and said neither. The
-group eliminated C at seq 2 and never revisited it. Alex held one of C's unique
-matches and said neither of the two it had until seq 11, then stopped.
-
-Of the nine traits Alex did surface, seven are shared traits: `B_p1`, `B_n4`,
-`C_p1`, `D_p1`, `A_p2`, `A_p3`, `A_p4`, `B_p3`. Disclosing a shared trait adds
-nothing to the pool by construction — every participant already had it.
-
-## The two statements that close the door
+T-C2-047, Chair + explanatory, verified build 1.9.0.
 
 At seq 15, asked for new insight: *"I have no new facts beyond what's already on
-the table."* Seven unshared traits were in its notes.
+the table."* Sixteen of Alex's twenty-four traits were unsurfaced at that moment.
 
 At seq 36, asked directly whether it held information the others did not:
-*"...they match being very well organized... they match assessing weather
-conditions very well. Those are the only new facts I have."* Both named traits
-are shared, one of them was arguably already on the board, and seven unshared
-traits were still unsaid.
+*"...they match being very well organized. For Candidate B I have one more: they
+match assessing weather conditions very well. Those are the only new facts I
+have."* Thirteen traits were unsurfaced, seven of them held by no other
+participant.
 
-The second is the worst case available in this task: a participant asked the
-pooling question in plain words and was told no.
+The second is the worst case this task can produce: a participant asked the
+pooling question in plain words and was told no by a participant holding the
+answer.
 
-## What is probably causing it, and what must not be done about it
+## What this issue is not, and the count that settles it
 
-Every trait-bearing turn in this session carried `maxTraitIds: 1`. Over thirteen
-messages that is a ceiling of thirteen traits, and the session used far less than
-that because most turns spent their budget on a shared trait or on none.
+The first version of this issue read the session as a **selection** failure —
+seven of Alex's nine disclosures were traits every participant already had, so
+Alex looked like it was systematically spending its turns on shared information.
+That reading does not survive counting.
 
-**Raising the budget is not the fix, and may not be applied as one without
-discussion.** Message length and information volume are covariates in the
-analysis, and the Chair conditions already carry procedural speech the Member
-conditions do not. A budget that differs, or that rises far enough to change
-message length, changes the manipulation.
+At each of Alex's six new disclosures, the share of its unsurfaced notes that
+were unique to it was:
 
-The question this issue has to answer first is *why the model spends its one
-disclosure on a trait everybody already has*, not *how many disclosures it gets*.
-Alex knows which of its traits have been surfaced — `previouslySurfacedTraitIds`
-is built for every turn — but nothing tells it which of its traits **no one else
-can have**. That distinction is available deterministically from the profile
-data and is not currently in front of the model.
+| seq | notes still in hand | of those, unique | unique share | disclosed |
+| ---: | ---: | ---: | ---: | --- |
+| 7 | 22 | 8 | 36% | `C_p1` shared |
+| 11 | 19 | 8 | 42% | `C_p7` **unique** |
+| 21 | 17 | 7 | 41% | `D_p1` shared |
+| 27 | 16 | 7 | 44% | `A_p2` shared |
+| 30 | 14 | 7 | 50% | `A_p3` shared |
+| 36 | 13 | 7 | 54% | `B_p3` shared |
+
+One unique disclosure out of six, against 2.7 expected from the composition of
+the hand. At n=6 that is inside chance, and **no selection bias is demonstrated.**
+
+It is also not clear a participant could do better. Nothing on the board
+distinguishes `A_p2` from `A_n5` for whoever holds both: they are equally "mine,
+and not yet said". What a participant can infer is exactly what the code already
+computes — `ALEX_Z_IDS` minus what is surfaced — and that estimate sharpens on
+its own as others surface the shared traits, which the last column of the table
+shows happening: 36% to 54% over the session.
+
+**So this issue does not change what Alex chooses to disclose.** Adding a
+"prefer unique" ranking would enforce a behaviour whose absence has not been
+demonstrated, against the checkpoint's sixth method rule. The rate is worth
+watching — six new traits from a hand of twenty-four across thirteen messages,
+with `maxTraitIds: 1` on every trait-bearing turn — but the accounting has to be
+trustworthy before that number means anything.
+
+## The two things to fix
+
+**A message may not claim exhaustion while the hand is not empty.** This is
+deterministic and needs no model call: `ALEX_Z_IDS` minus the board is either
+empty or it is not. It belongs beside the existing output post-conditions, which
+already refuse a leader message containing a question and a message leaking
+internal metadata. What replaces the claim is a question for issue 04's wording —
+"that's what I have on the table so far" is true; "those are the only new facts I
+have" is not.
+
+**Alex's own contribution must not be recovered by text extraction.** The turn
+already knows what it permitted: the guard carries `allowedTraitIds` and
+sometimes `requiredTraitId`, and the Judge carries `selectedTraitId`. Generation
+is already structured output, so the model can return the trait ids it disclosed
+as a field, checked against what it was permitted, with keyword extraction kept
+as a cross-check rather than as the source of truth. Today
+`routeScopedGeneration.ts:156` runs the keyword extractor over Alex's own text
+and treats the result as fact — see issue 23 for what that costs on the human
+side of the same mechanism.
 
 ## What must not regress
 
 - No condition may receive a different reveal budget from another
-- Alex may not state or imply which profile a trait came from — that is not
-  something a participant can know about their own card
-- The pooling DV counts first surfacing, so a fix that increases restatement
-  instead of disclosure is not a fix
+- Alex may not state or imply which profile a trait came from — a participant
+  cannot know that about their own card
+- No new model call on the path between generation and broadcast
+- The pooling DV counts first surfacing, so a change that raises restatement
+  instead of disclosure is not an improvement
 
-- [ ] A count, per session, of unshared traits Alex held versus disclosed, on the record
-- [ ] Alex does not assert it has nothing further while holding an unshared trait
-- [ ] A disclosure turn prefers an unshared trait over a shared one, with the preference recorded
-- [ ] Message length and traits-per-message do not differ by condition after the change
+- [ ] A message asserting Alex has nothing further is refused while an unsurfaced trait remains in `ALEX_Z_IDS`
+- [ ] The record states the trait ids Alex disclosed from what the turn permitted, not from a keyword pass over its own prose
+- [ ] Per session, on the record: traits held, traits disclosed, and how many of each were unique
+- [ ] Traits per message and message length do not differ by condition after the change

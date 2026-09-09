@@ -869,15 +869,23 @@ T-C3-003 seq 4 is the same move on a board of zero traits. Two sessions, so the
 coverage shortfall on a narrowing move clears the bar the checkpoint's sixth
 method rule sets.
 
-**Confirmed — Alex withholds almost everything only Alex has.** Alex holds 24
-traits, of which 8 are held by no human. It disclosed **one** of the 8, and seven
-of the nine traits it did surface were traits every participant could already
-see. It never disclosed either of Candidate B's unique misses while the group
-converged on B, and never disclosed Candidate C's unique match while the group
-sat on its seq-2 elimination. At seq 15 it said it had no new facts, and at seq
-36 — answering a direct request for information the others might not have — it
-named two traits and said those were the only new facts it had. Both statements
-were false at the time. Recorded as `.scratch/conversation-repair/issues/22`.
+**Confirmed — Alex claimed exhaustion twice while holding cards.** At seq 15 it
+said it had no new facts, with sixteen of its twenty-four traits unsurfaced. At
+seq 36 — answering a direct request for information the others might not have —
+it named two traits and said those were the only new facts it had, with thirteen
+unsurfaced, seven of them held by no other participant. Both statements were
+false when made. Recorded as `.scratch/conversation-repair/issues/22`.
+
+**Disconfirmed — that Alex selects shared traits over its own.** Alex disclosed
+one unique trait in six new disclosures, which reads as a bias until the hand is
+counted: at those six moments the unique share of Alex's unsurfaced notes ran
+36%, 42%, 41%, 44%, 50%, 54%, so 2.7 unique disclosures were expected by chance.
+One of six at n=6 is inside chance and demonstrates nothing. Nothing on the board
+distinguishes a shared note from a unique one for whoever holds both, and the
+estimate a participant can make — own notes minus the board — is already what the
+code computes and already sharpens on its own as the session runs. The rate is
+the open question, not the selection: six new traits from a hand of twenty-four
+across thirteen messages, under `maxTraitIds: 1` on every trait-bearing turn.
 
 **Confirmed — the reveal budget is checked against a source that misses traits.**
 Turn 35 carried a budget of one trait and a recorded `traitIds` of none, while
