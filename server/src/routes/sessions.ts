@@ -226,6 +226,11 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         createdAt: m.createdAt,
       })),
       interventions: interventions.map((i) => ({
+        // Field list checked against the schema by `test:intervention-v2`. A new
+        // field is either named here or named in that test's not-exported list;
+        // it cannot be added and silently left out of the export, which is how
+        // `owedRequestIds`, `outputGuard` and `candidateList` came to be written
+        // by the server and invisible to every analysis that reads the export.
         turnIndex: i.turnIndex,
         decision: i.decision,
         triggerReason: i.triggerReason,
@@ -288,12 +293,26 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         outputScopeCandidate: i.outputScopeCandidate,
         outputScopeRepaired: i.outputScopeRepaired,
         outputScopeViolation: i.outputScopeViolation,
+        // What the turn was allowed to say, what the guard decided on, and what
+        // the delivered message actually carried. The last two are different
+        // questions with different answers — see `docs/adr/` and issue 25.
+        outputGuard: i.outputGuard,
+        surfacedTraitIds: i.surfacedTraitIds,
+        postBroadcastViolation: i.postBroadcastViolation,
+        // The board this turn was taken against. Shadow only: nothing reads it
+        // at runtime, and it is here so a session can be read against the bar.
+        candidateList: i.candidateList,
+        // [Issue 17] What the group was still waiting for when this turn went
+        // silent. The largest silence class recorded none of it before.
+        owedRequestIds: i.owedRequestIds,
         requestIntentKind: i.requestIntentKind,
         requestIntentSource: i.requestIntentSource,
         repairAudit: i.repairAudit,
         calloutTarget: i.calloutTarget,
         calloutCand: i.calloutCand,
         model: i.model,
+        responseId: i.responseId,
+        systemFingerprint: i.systemFingerprint,
         latencyMs: i.latencyMs,
         inputTokens: i.inputTokens,
         outputTokens: i.outputTokens,

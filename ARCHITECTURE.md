@@ -10,7 +10,7 @@ file is stale.
 
 Read §7 before changing anything that counts traits.
 
-**Audited at** `fc632c8`, 2026-09-08. Prompt snapshot `1.10.0`.
+**Audited at** `07b0728`, 2026-09-09. Prompt snapshot `1.10.0`.
 
 ---
 
@@ -433,7 +433,23 @@ issue 25, and arrived with the same blind spot.
 Both paths now write the same field with the same meaning, after the broadcast.
 A test asserts the write exists on both and that Alex's is behind the emit.
 
-### 7h. `Session.metadata` counters — **open**
+### 7h. The export projection vs. the schema — **locked**
+
+`GET /api/sessions/:code/export` is a hand-written projection of the intervention
+schema, and nothing checked the two against each other. Five recorded fields
+never reached it: `owedRequestIds` (issue 17 added it so the largest silence
+class would say what the group was still waiting for), `outputGuard`,
+`surfacedTraitIds`, `postBroadcastViolation` and `candidateList`. The server
+wrote all five and every analysis that reads the export saw none of them.
+
+All five are exported now. A test compares the projection against the schema:
+a field is either named in the projection or named in the test's not-exported
+list with a reason, and adding one to the schema and neither place fails.
+`routes/sessions.ts` joins the shadow-only allowlist for `candidateList` — it may
+copy the recorded value out, which is what a shadow derivation is written for,
+and a second assertion forbids it computing one.
+
+### 7i. `Session.metadata` counters — **open**
 
 `totalTurns` / `humanTurns` / `aiTurns` / `durationSeconds` exist on the schema
 as cached counters. They are a second copy of what counting `Message` rows
@@ -548,7 +564,7 @@ class of bug in §7:
 - **Nothing since prompt 1.10.0 has been observed in a live session.** The trait
   wording, the closed-question accounting, the unsaid-notes block and the
   record/evidence split are all locked by offline tests only.
-- Seams §7f and §7h above.
+- Seams §7f and §7i above.
 - `.scratch/conversation-repair/issues/` and `.scratch/leader-decision-frame/`
   hold the open work items; `docs/measurements.md` holds what has actually been
   measured.

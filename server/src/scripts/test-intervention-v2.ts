@@ -4887,6 +4887,12 @@ const ALLOWED_CANDIDATE_LIST_READERS = new Set([
   "lib/routeTurn.ts",
   "lib/interventionEngine.ts",
   "scripts/test-intervention-v2.ts",
+  // The export copies the recorded value out for analysis. That is what a
+  // shadow derivation is written for — reading a session against the bar
+  // afterwards — and it is the opposite of the reader issue 03 will add, which
+  // is one that changes what Alex does. The line below keeps that distinction
+  // enforced: this file may name the field, it may not compute the list.
+  "routes/sessions.ts",
 ]);
 
 function sourceFiles(directory: string, prefix = ""): string[] {
@@ -4904,6 +4910,15 @@ for (const relative of sourceFiles(SRC_ROOT)) {
   assert.ok(
     ALLOWED_CANDIDATE_LIST_READERS.has(relative),
     `${relative} reads the live candidate list; it is shadow only until issue 03`,
+  );
+}
+
+// The export may name the recorded field but must never derive the list itself.
+{
+  const exportSource = readFileSync(join(SRC_ROOT, "routes/sessions.ts"), "utf8");
+  assert.ok(
+    !/computeCandidateList/.test(exportSource),
+    "the export reads the recorded candidate list; it must not compute one",
   );
 }
 
@@ -5417,6 +5432,74 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
     TRIGGER_CONFIG.DISCUSSION_DURATION_MS,
     "the client's visible timer and the server's closing deadline must be the same length",
   );
+}
+
+// ── Every recorded field is exported, or deliberately is not ────────────────
+// The session export is a hand-written projection of the intervention schema.
+// Nothing checked the two against each other, so a field could be added to the
+// record and never reach the export — which is what happened to
+// `owedRequestIds` (issue 17 added it so the largest silence class would say
+// what the group was still waiting for), to `outputGuard`, and to
+// `candidateList`. The server wrote all three and every analysis reading the
+// export saw none of them.
+//
+// A field is now either in the projection or named below with a reason. Adding
+// one to the schema and neither place fails here.
+{
+  const NOT_EXPORTED = new Map([
+    ["_id", "mongo id; the export addresses turns by turnIndex"],
+    ["__v", "mongo version key"],
+    ["sessionId", "the export is already scoped to one session"],
+    ["generateMessageId", "mongo id; the message is reachable by seq"],
+    ["prompt", "the prompt is reproducible from promptKey + promptHash"],
+    ["response", "Alex's visible text; it is in `messages`, and rejected drafts are in repairAudit"],
+    ["updatedAt", "write bookkeeping, not an observation"],
+    // Pre-v2 routing fields. Nothing writes them any more; they are kept on the
+    // schema so old sessions still load.
+    ["judgeSpeak", "legacy"],
+    ["judgeReason", "legacy"],
+    ["rerouted", "legacy"],
+    ["rerouteReason", "legacy"],
+    ["exemptReason", "legacy"],
+    ["delayMs", "legacy"],
+    ["scheduledFor", "legacy"],
+  ]);
+
+  const schemaFields = Object.keys((AIIntervention.schema as any).paths).filter(
+    (path) => !path.includes("."),
+  );
+  const exportSource = readFileSync(join(SRC_ROOT, "routes/sessions.ts"), "utf8");
+  const interventionProjection = exportSource.slice(
+    exportSource.indexOf("interventions: interventions.map("),
+    exportSource.indexOf("conversationObservations: conversationObservations.map("),
+  );
+  assert.ok(interventionProjection.length > 0, "the intervention projection moved");
+  const exported = new Set(
+    [...interventionProjection.matchAll(/^\s+([A-Za-z0-9_]+):\s*\(?i\b/gm)].map((m) => m[1]!),
+  );
+
+  for (const field of schemaFields) {
+    assert.ok(
+      exported.has(field) || NOT_EXPORTED.has(field),
+      `AIIntervention.${field} is recorded but neither exported nor listed as deliberately withheld`,
+    );
+  }
+  for (const field of NOT_EXPORTED.keys()) {
+    assert.ok(
+      schemaFields.includes(field),
+      `${field} is listed as deliberately withheld but is no longer on the schema`,
+    );
+  }
+  // The four this issue was about, named so a silent removal is caught too.
+  for (const field of [
+    "outputGuard",
+    "surfacedTraitIds",
+    "postBroadcastViolation",
+    "candidateList",
+    "owedRequestIds",
+  ]) {
+    assert.ok(exported.has(field), `${field} must reach the export`);
+  }
 }
 
 console.log("intervention-v2 checks passed");
