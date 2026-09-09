@@ -84,6 +84,9 @@ Session and participant code issuance, chat + AI-intervention logging, researche
 
 ## 🏗️ Architecture
 
+> For the full engineering map — every pipeline stage, every place the same fact
+> is written twice, and what is unused — see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
+
 The repo is a **three-way split**, with dependencies installed per package (no monorepo workspaces):
 
 ```

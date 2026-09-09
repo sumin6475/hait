@@ -45,8 +45,9 @@ client/.vite
 tshandbook.md
 eval-results/
 
-# Architecture docs (local agent-generated, not tracked)
-ARCHITECTURE.md
+# Architecture docs (local agent-generated, not tracked).
+# The root ARCHITECTURE.md is the exception: it is a deliberate map of the
+# pipeline and the seams, written to be read by the next person on this repo.
 prompt-management-system/ARCHITECTURE.md
 INTERVENTION_LOGIC.md
 MEMORY.md
