@@ -1680,22 +1680,3 @@ export async function waitForConversationObservation(input: {
     degradedMode: (doc as any).degradedMode === true,
   };
 }
-
-export async function recordFollowupObservation(input: {
-  sessionId: string;
-  anchorSeq: number;
-  candidateEligible: boolean;
-  judgeCalled: boolean;
-  judgeResult?: boolean | null;
-  windowMessageCount?: number;
-  windowSpeakerRole?: string;
-}) {
-  await mergeObservation(input.sessionId, input.anchorSeq, {
-    observerVersion: CONVERSATION_OBSERVER_VERSION,
-    followupCandidateEligible: input.candidateEligible,
-    followupJudgeCalled: input.judgeCalled,
-    followupJudgeResult: input.judgeResult ?? undefined,
-    followupWindowMessageCount: input.windowMessageCount,
-    followupWindowSpeakerRole: input.windowSpeakerRole,
-  });
-}

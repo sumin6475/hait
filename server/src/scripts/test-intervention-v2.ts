@@ -56,7 +56,6 @@ import {
   humanSurfacedIds,
   lastHumanDiscussionCandidate,
 } from "../lib/informationPools.js";
-import { countSurfaced, floorMet, surfacedByCandidate } from "../lib/poolingTally.js";
 import { computePoolingDV } from "../lib/poolingDV.js";
 import {
   internalMetadataLeak,
@@ -5209,18 +5208,21 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
 
   // Every reader agrees, including on a trait both a human and Alex have said.
   const shared = board(["A_p1", "B_p1", "C_p1"], ["A_p2", "B_p1", "D_p1"]);
-  assert.equal(countSurfaced(shared), 5, "the union counts B_p1 once");
-  assert.deepEqual(surfacedByCandidate(shared), { A: 2, B: 1, C: 1, D: 1 });
-  assert.deepEqual(coverageByCandidate(shared), surfacedByCandidate(shared));
-  assert.deepEqual(computeCandidateList(shared).coverage, surfacedByCandidate(shared));
-  assert.equal(countSurfaced(shared), allSurfacedIds(shared).size);
+  assert.equal(allSurfacedIds(shared).size, 5, "the union counts B_p1 once");
+  assert.deepEqual(coverageByCandidate(shared), { A: 2, B: 1, C: 1, D: 1 });
+  assert.deepEqual(computeCandidateList(shared).coverage, coverageByCandidate(shared));
+  assert.equal(
+    [...Object.values(coverageByCandidate(shared))].reduce((a, b) => a + b, 0),
+    allSurfacedIds(shared).size,
+    "coverage totals the board exactly once",
+  );
 
   // An id neither set knows, and an empty board, read the same everywhere.
   const empty = board([], []);
-  assert.equal(countSurfaced(empty), 0);
-  assert.deepEqual(surfacedByCandidate(empty), { A: 0, B: 0, C: 0, D: 0 });
-  assert.equal(floorMet(empty), false);
-  assert.equal(countSurfaced(board(["not_a_trait"], ["also_not"])), 0, "unknown ids are not board");
+  assert.equal(allSurfacedIds(empty).size, 0);
+  assert.deepEqual(coverageByCandidate(empty), { A: 0, B: 0, C: 0, D: 0 });
+  assert.deepEqual(computeCandidateList(empty).live, ["A", "B", "C", "D"]);
+  assert.equal(allSurfacedIds(board(["not_a_trait"], ["also_not"])).size, 0, "unknown ids are not board");
 
   // The DV keeps them apart: the same trait said by both counts for both.
   const dv = computePoolingDV(board(["A_p1"], ["A_p1"]));

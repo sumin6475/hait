@@ -106,18 +106,3 @@ export function computePoolingDV(revealStats: any): PoolingDV {
     Z: dvFor("Z", aiSurfacedIds(revealStats)),
   };
 }
-
-// [Step 62] Alex 기여 분해 — 파생 지표. 저장하지 않고 필요할 때 계산한다.
-export function splitAiContribution(rs: any): { firstCount: number; restatedCount: number } {
-  const ai = aiSurfacedIds(rs);
-  const fb = rs?.firstBy instanceof Map ? Object.fromEntries(rs.firstBy) : (rs?.firstBy ?? {});
-  let firstCount = 0;
-  let restatedCount = 0;
-  for (const id of ai) {
-    const e = fb[id];
-    if (!e) continue; // 과거 세션 = 기록 없음
-    if (e.by === "ai") firstCount++;
-    else restatedCount++;
-  }
-  return { firstCount, restatedCount };
-}

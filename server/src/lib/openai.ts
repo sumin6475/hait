@@ -106,10 +106,6 @@ export async function callAI({
   }
 }
 
-export const AIResponseSchema = z.object({
-  content: z.string().max(800),
-});
-
 export type AIResponseParsed = { content: string };
 //structured output 버전결과타입
 export type AIStructuredResult =

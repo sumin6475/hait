@@ -82,8 +82,6 @@ if (TRAIT_KEYWORD_REGISTRY.length !== TRAIT_DB.length || new Set(TRAIT_KEYWORD_R
   throw new Error("Trait keyword registry must contain exactly one entry per TRAIT_DB trait");
 }
 
-export const TRAIT_KEYWORD_BY_ID = new Map(TRAIT_KEYWORD_REGISTRY.map((entry) => [entry.traitId, entry]));
-
 for (const entry of TRAIT_KEYWORD_REGISTRY) {
   const source = TRAIT_DB.find((trait) => trait.id === entry.traitId);
   if (!source || entry.candidate !== source.candidate || entry.valence !== source.valence ||

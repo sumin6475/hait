@@ -70,11 +70,5 @@ export const TRAIT_DB: Trait[] = [
 ];
 
 export const ALEX_Z_IDS = TRAIT_DB.filter((t) => t.profiles.includes("Z")).map((t) => t.id);
-// [Step 36] Alex 고유 패 = Z에만 있는(공유 안 된) trait. Z-drip 모집단 — pos-first 정렬이면
-// 고유 긍정 = C_p6/C_p7 먼저 → 고유 부정 = A/B/D의 n5/n6 = hidden-profile 보정 순서 보장.
-// (shared 긍정은 humans가 깔게 둠 — 그게 안 깔려도 drip이 distractor 쪽으로 새지 않도록 unique-only.)
-export const ALEX_Z_UNIQUE_IDS = TRAIT_DB.filter(
-  (t) => t.profiles.length === 1 && t.profiles[0] === "Z",
-).map((t) => t.id);
 export const TRAIT_BY_ID = new Map(TRAIT_DB.map((t) => [t.id, t]));
 export const OPTIMAL_CANDIDATE: Cand = "C"; // pooled 7:3 정답 (Step 20)

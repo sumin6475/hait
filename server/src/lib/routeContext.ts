@@ -357,14 +357,6 @@ export async function deriveMainJudgeSignal(input: {
   return deriveMainJudgeSignalFromRules(input);
 }
 
-export function formatMainJudgeSignal(signal: MainJudgeSignal): string {
-  return [
-    `focus=${signal.focusCandidate ?? "none"}`,
-    `class=${signal.exchangeClass}`,
-    `private=${signal.privateContributionAvailable ? "available" : "none"}`,
-  ].join(" ");
-}
-
 function formatCoverageFromIds(surfaced: Set<string>, includeUntouched = true): string {
   const blocks: string[] = [];
   const untouched: Cand[] = [];
@@ -525,28 +517,8 @@ export function decidePreferenceFromKnownCoverage(revealStats: any): PreferenceD
   };
 }
 
-/** Backwards-compatible alias retained for existing callers. */
-export function decidePreferenceFromVisibleCoverage(revealStats: any): PreferenceDecision {
-  return decidePreferenceFromKnownCoverage(revealStats);
-}
-
-/** Backwards-compatible alias retained for existing callers. */
-export function decidePreferenceFromConfirmedCoverage(revealStats: any): PreferenceDecision {
-  return decidePreferenceFromKnownCoverage(revealStats);
-}
-
 export function preferredCandidateFromKnownCoverage(revealStats: any): Cand | null {
   return decidePreferenceFromKnownCoverage(revealStats).candidate;
-}
-
-/** Backwards-compatible alias retained for existing callers. */
-export function preferredCandidateFromVisibleCoverage(revealStats: any): Cand | null {
-  return preferredCandidateFromKnownCoverage(revealStats);
-}
-
-/** Backwards-compatible alias retained for existing callers. */
-export function preferredCandidateFromConfirmedCoverage(revealStats: any): Cand | null {
-  return preferredCandidateFromKnownCoverage(revealStats);
 }
 
 function formatCandidateList(candidates: Cand[]): string {
