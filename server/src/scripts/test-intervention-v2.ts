@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
-import type { ConditionCode, RouteKind } from "../types.js";
+import { contributesToBoard, NON_CONTRIBUTING_ROUTES, type ConditionCode, type RouteKind } from "../types.js";
 import type { RequestIntent } from "../lib/routeContext.js";
 import {
   detectDirectAddress,
@@ -4995,7 +4995,7 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
   assert.doesNotMatch(emptyBoardNotes, /\bunique\b|\bonly you\b|\bnobody else\b|profile [XYZ]\b/i);
 
   // Routes that cannot disclose a trait do not carry it.
-  for (const routeKind of ["greeting", "backchannel", "summary", "closing"] as const) {
+  for (const routeKind of NON_CONTRIBUTING_ROUTES) {
     assert.doesNotMatch(
       notesContext({ byCandidate: {}, aiSurfacedIds: [] }, routeKind),
       /Your notes \(server-derived\)/,
@@ -5142,6 +5142,43 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
     ["A_n1"],
     "it is referred rather than dropped, which is the most the matcher can say about it",
   );
+}
+
+// ── One list of the routes that do not move the board ───────────────────────
+// The same four route kinds decide three things: which turns are pooled, which
+// turns are handed Alex's unsaid notes, and which turns count as missing a
+// disclosure record. They were three hand-written copies of one list — the
+// third written an hour after the second, in the same session that was fixing
+// the four-copy trait wording. A literal list of them anywhere in `src` is the
+// failure this catches.
+{
+  assert.deepEqual(
+    [...NON_CONTRIBUTING_ROUTES].sort(),
+    ["backchannel", "closing", "greeting", "summary"],
+    "the routes that do not move the board",
+  );
+  for (const routeKind of NON_CONTRIBUTING_ROUTES) {
+    assert.equal(contributesToBoard(routeKind), false);
+  }
+  for (const routeKind of ["address", "followup", "build_on", "mediation", "long_silence"]) {
+    assert.equal(contributesToBoard(routeKind), true, `${routeKind} can put a trait on the board`);
+  }
+
+  // A list that names all four is this list under another name. A list naming
+  // some of them is a different question — `routeTurn.ts` skips the observer
+  // wait on three of them and a backchannel does wait, which is why this asks
+  // for all four rather than for any of them.
+  for (const relative of sourceFiles(SRC_ROOT)) {
+    if (relative === "types.ts") continue;
+    const body = readFileSync(join(SRC_ROOT, relative), "utf8");
+    for (const list of body.matchAll(/\[([^\]]*?)\]\s*(?:as const\s*)?\.includes/g)) {
+      const named = new Set([...list[1]!.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]!));
+      assert.ok(
+        !NON_CONTRIBUTING_ROUTES.every((routeKind) => named.has(routeKind)),
+        `${relative} tests a hand-written copy of the non-contributing route list; import contributesToBoard instead`,
+      );
+    }
+  }
 }
 
 console.log("intervention-v2 checks passed");

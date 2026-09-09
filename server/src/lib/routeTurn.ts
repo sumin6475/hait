@@ -30,6 +30,7 @@ import {
   verifyHumanTraitCandidates,
 } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
+import { contributesToBoard } from "../types.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
 import { computeCandidateList } from "./candidateList.js";
@@ -801,7 +802,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     }
   };
 
-  if (!["summary", "closing", "greeting", "backchannel"].includes(input.routeKind)) {
+  if (contributesToBoard(input.routeKind)) {
   // What Alex actually put on the board, recorded only once the message is out.
   //
   // A turn becomes real at the broadcast, not at generation. `CONTEXT.md` says a

@@ -1,4 +1,4 @@
-import type { CommunicativeAct, ConditionCode, RouteKind } from "../types.js";
+import { contributesToBoard, type CommunicativeAct, type ConditionCode, type RouteKind } from "../types.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { currentTopicCandidate } from "./poolingTally.js";
@@ -2242,7 +2242,7 @@ export function buildRouteUserContext(input: {
   // What Alex still holds. Every route that can disclose a trait gets it; a
   // greeting and a backchannel cannot, and the summary and closing recaps are
   // assembled deterministically from the board rather than from the card.
-  if (!["greeting", "backchannel", "summary", "closing"].includes(input.routeKind)) {
+  if (contributesToBoard(input.routeKind)) {
     blocks.push(formatUnsurfacedOwnNotes(input.revealStats));
   }
   // [T-C4-019] The frozen "# Your Notes" section teaches Alex the +/− note symbols,

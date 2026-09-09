@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 import { config } from "../config.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { Session } from "../models/Session.js";
+import { contributesToBoard } from "../types.js";
 
 /**
  * [Issue 23] How often a delivered message broke the bound its turn was given,
@@ -36,8 +37,15 @@ interface Tally {
   brokenAfterBroadcast: number;
   /** Turns where the guard's evidence and the delivered message disagree. */
   recordCorrected: number;
-  /** Turns still carrying no `surfacedTraitIds`, i.e. written before this ran. */
+  /**
+   * Turns that can carry a record and do not — written before this record
+   * existed. The four routes that never pool are excluded rather than counted
+   * here: a summary recites the board and is not a contribution, so it has
+   * nothing to record and its absence is not a gap.
+   */
   unrecorded: number;
+  /** Spoken turns on a route that never pools, and so never records. */
+  nonPooling: number;
   byViolation: Record<string, number>;
 }
 
@@ -48,6 +56,7 @@ const emptyTally = (): Tally => ({
   brokenAfterBroadcast: 0,
   recordCorrected: 0,
   unrecorded: 0,
+  nonPooling: 0,
   byViolation: {},
 });
 
@@ -72,7 +81,7 @@ const rows = await AIIntervention.find({
   sessionId: { $in: sessions.map((s) => s._id) },
   decision: "speak",
 })
-  .select("sessionId outcome outputGuard surfacedTraitIds postBroadcastViolation")
+  .select("sessionId outcome routeKind outputGuard surfacedTraitIds postBroadcastViolation")
   .lean();
 
 for (const row of rows) {
@@ -84,6 +93,9 @@ for (const row of rows) {
   const surfaced = (row as any).surfacedTraitIds as string[] | undefined;
   const broken = (row as any).postBroadcastViolation as string | undefined;
   const spoke = row.outcome === "broadcast";
+  // Kept in step with the pooling condition in `routeTurn.ts`. These routes
+  // recite the board rather than contribute to it and are not counted.
+  const pools = contributesToBoard(String((row as any).routeKind));
 
   for (const tally of [
     perSession.get(session.sessionCode) ??
@@ -101,7 +113,8 @@ for (const row of rows) {
       tally.brokenAfterBroadcast += 1;
       tally.byViolation[broken] = (tally.byViolation[broken] ?? 0) + 1;
     }
-    if (spoke && surfaced === undefined) tally.unrecorded += 1;
+    if (spoke && !pools) tally.nonPooling += 1;
+    else if (spoke && surfaced === undefined) tally.unrecorded += 1;
     else if (spoke && !sameIds(surfaced, guard?.traitIds)) tally.recordCorrected += 1;
   }
 }
@@ -115,7 +128,8 @@ function print(title: string, tallies: Map<string, Tally>) {
     console.log(
       `  ${key.padEnd(12)} spoken=${t.spokenTurns} guarded=${t.guardedTurns} ` +
         `blocked=${t.blockedBeforeBroadcast} broken=${t.brokenAfterBroadcast} ` +
-        `corrected=${t.recordCorrected} unrecorded=${t.unrecorded}`,
+        `corrected=${t.recordCorrected} unrecorded=${t.unrecorded} ` +
+        `non-pooling=${t.nonPooling}`,
     );
     const named = REPORTED.filter((name) => t.byViolation[name]);
     const other = Object.keys(t.byViolation).filter(
@@ -134,7 +148,8 @@ console.log(
   "\nblocked   = the guard refused the draft before the broadcast; the turn was spent\n" +
     "broken    = the delivered message broke a bound, found after the fact; recorded only\n" +
     "corrected = the delivered message carried traits the guard's evidence did not name\n" +
-    "unrecorded= turn written before this record existed; not comparable",
+    "unrecorded  = turn that should carry a record and does not; written before this existed\n" +
+    "non-pooling = summary, closing, greeting or backchannel; recites rather than contributes",
 );
 print("Per condition", perCondition);
 print("Per session", perSession);

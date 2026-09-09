@@ -72,6 +72,29 @@ export type RouteKind =
   | "summary"
   | "closing";
 
+/**
+ * The routes that do not move the board.
+ *
+ * A greeting and a backchannel carry no trait; a summary and a closing recite
+ * what is already up rather than contribute to it. Three consequences follow
+ * from the one fact and they must not drift apart: these turns are not pooled,
+ * they are not handed the list of Alex's unsaid notes, and they are not counted
+ * as missing a disclosure record.
+ *
+ * The list had three copies before it had a name, which is the same shape as
+ * the trait wording that cost T-C2-047 turn 9.
+ */
+export const NON_CONTRIBUTING_ROUTES: readonly RouteKind[] = [
+  "greeting",
+  "backchannel",
+  "summary",
+  "closing",
+];
+
+export function contributesToBoard(routeKind: string): boolean {
+  return !NON_CONTRIBUTING_ROUTES.includes(routeKind as RouteKind);
+}
+
 export type TurnOutcome =
   | "reserved"
   | "cancelled"
