@@ -854,12 +854,32 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
               candidates: deterministic.verificationCandidates,
             });
             const extra = verified.ids.filter((id) => !ids.includes(id));
-            if (!extra.length) return await recordSurfaced(ids);
+            // [Issue 23] What the matcher found in Alex's message and the
+            // verifier then declined. The human path has recorded this since
+            // issue 15, after T-C2-045 lost two traits to a silent decline;
+            // Alex's own near matches only started reaching the verifier in
+            // this issue, and arrived with the same blind spot. Same field,
+            // same meaning, pool identifiers only.
+            const declined = [
+              ...new Set(
+                deterministic.verificationCandidates
+                  .map((candidate) => candidate.traitId)
+                  .filter((id) => !verified.ids.includes(id) && !ids.includes(id)),
+              ),
+            ];
+            if (!extra.length && !declined.length) return await recordSurfaced(ids);
             await Promise.all([
-              updateAiSurfaced(input.sessionId, extra, savedMessage.seq),
+              extra.length
+                ? updateAiSurfaced(input.sessionId, extra, savedMessage.seq)
+                : Promise.resolve(),
               Message.updateOne(
                 { _id: savedMessage._id },
-                { $addToSet: { sharedInfoIds: { $each: extra } } },
+                {
+                  ...(extra.length
+                    ? { $addToSet: { sharedInfoIds: { $each: extra } } }
+                    : {}),
+                  ...(declined.length ? { $set: { declinedTraitIds: declined } } : {}),
+                },
               ),
             ]);
             await recordSurfaced([...ids, ...extra]);

@@ -5,6 +5,7 @@
 // 분석에서 "누구든 표면화" union이 필요하면 두 원천 집합으로 언제든 재계산 가능.
 import { Session } from "../models/Session.js";
 import { TRAIT_DB, TRAIT_BY_ID, OPTIMAL_CANDIDATE, type Cand } from "./traitData.js";
+import { aiSurfacedIds, humanSurfacedIds } from "./informationPools.js";
 
 // [Step 62] first-surfacer 기록 — id별로 '더 작은 seq'가 이긴다.
 // ⚠️ '먼저 쓴 쪽이 이김'이면 안 된다: AI 추출은 fire-and-forget이라 seq 7의 기록이
@@ -95,19 +96,20 @@ export function computeDecisionAccuracy(choices: string[]): DecisionAccuracy {
   };
 }
 
-// X·Y = 사람 표면화(byCandidate.revealedIds union) / Z = AI 표면화(aiSurfacedIds)
+// X·Y = 사람 표면화 / Z = AI 표면화. 여기서 둘을 합치지 않는 것이 요점이다 —
+// Alex의 기여율이 종속변인이라 사람 것과 섞이면 안 된다. 각 집합의 정의는
+// informationPools 한 곳에서 읽는다.
 export function computePoolingDV(revealStats: any): PoolingDV {
-  const human = new Set<string>();
-  for (const c of ["A", "B", "C", "D"]) {
-    for (const id of revealStats?.byCandidate?.[c]?.revealedIds ?? []) human.add(id);
-  }
-  const ai = new Set<string>(revealStats?.aiSurfacedIds ?? []);
-  return { X: dvFor("X", human), Y: dvFor("Y", human), Z: dvFor("Z", ai) };
+  return {
+    X: dvFor("X", humanSurfacedIds(revealStats)),
+    Y: dvFor("Y", humanSurfacedIds(revealStats)),
+    Z: dvFor("Z", aiSurfacedIds(revealStats)),
+  };
 }
 
 // [Step 62] Alex 기여 분해 — 파생 지표. 저장하지 않고 필요할 때 계산한다.
 export function splitAiContribution(rs: any): { firstCount: number; restatedCount: number } {
-  const ai: string[] = rs?.aiSurfacedIds ?? [];
+  const ai = aiSurfacedIds(rs);
   const fb = rs?.firstBy instanceof Map ? Object.fromEntries(rs.firstBy) : (rs?.firstBy ?? {});
   let firstCount = 0;
   let restatedCount = 0;

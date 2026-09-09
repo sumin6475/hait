@@ -37,6 +37,25 @@ export function allSurfacedIds(revealStats: any): Set<string> {
   return new Set([...humanSurfacedIds(revealStats), ...aiSurfacedIds(revealStats)]);
 }
 
+/**
+ * Coverage per candidate: how many distinct traits about each are on the board.
+ *
+ * This and `allSurfacedIds` are the only places the board's shape is spelled
+ * out. `poolingTally` used to carry four hand-written copies of the same union
+ * — human `revealedIds` per candidate, plus `aiSurfacedIds` filtered by
+ * candidate — byte-identical to each other and none of them reading this file.
+ * They were not wrong; they were the same drift shape that cost T-C2-047 turn 9,
+ * waiting for someone to edit one of the four.
+ */
+export function coverageByCandidate(revealStats: any): Record<Cand, number> {
+  const coverage = {} as Record<Cand, number>;
+  for (const candidate of CANDIDATES) coverage[candidate] = 0;
+  for (const id of allSurfacedIds(revealStats)) {
+    coverage[TRAIT_BY_ID.get(id)!.candidate] += 1;
+  }
+  return coverage;
+}
+
 export function candidatesForIds(ids: Iterable<string>): Set<Cand> {
   const candidates = new Set<Cand>();
   for (const id of ids) {

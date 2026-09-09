@@ -51,10 +51,13 @@ import { getRoutePrompt, listRoutePromptKeys } from "../lib/routePromptRegistry.
 import {
   aiSurfacedIds,
   allSurfacedIds,
+  coverageByCandidate,
   humanConfirmedIds,
   humanSurfacedIds,
   lastHumanDiscussionCandidate,
 } from "../lib/informationPools.js";
+import { countSurfaced, floorMet, surfacedByCandidate } from "../lib/poolingTally.js";
+import { computePoolingDV } from "../lib/poolingDV.js";
 import {
   internalMetadataLeak,
   internalMetadataSoftViolations,
@@ -5179,6 +5182,92 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
       );
     }
   }
+}
+
+// ── One definition of the board ─────────────────────────────────────────────
+// "The board" is the union of what a human surfaced and what Alex surfaced.
+// `poolingTally` carried four hand-written copies of that union and none of
+// them read `informationPools`, which is where the definition lives. They were
+// not wrong — they were the shape that cost T-C2-047 turn 9, sitting one edit
+// away from being wrong.
+//
+// The one place the two sets are deliberately *not* unioned is the pooling DV:
+// Alex's contribution rate is a dependent variable and mixing it into the
+// humans' would destroy the measure. That file now reads the two sets by name
+// instead of spelling them out, so the separation is explicit rather than
+// incidental.
+{
+  const board = (human: string[], ai: string[]) => ({
+    byCandidate: {
+      A: { revealedIds: human.filter((id) => id.startsWith("A_")) },
+      B: { revealedIds: human.filter((id) => id.startsWith("B_")) },
+      C: { revealedIds: human.filter((id) => id.startsWith("C_")) },
+      D: { revealedIds: human.filter((id) => id.startsWith("D_")) },
+    },
+    aiSurfacedIds: ai,
+  });
+
+  // Every reader agrees, including on a trait both a human and Alex have said.
+  const shared = board(["A_p1", "B_p1", "C_p1"], ["A_p2", "B_p1", "D_p1"]);
+  assert.equal(countSurfaced(shared), 5, "the union counts B_p1 once");
+  assert.deepEqual(surfacedByCandidate(shared), { A: 2, B: 1, C: 1, D: 1 });
+  assert.deepEqual(coverageByCandidate(shared), surfacedByCandidate(shared));
+  assert.deepEqual(computeCandidateList(shared).coverage, surfacedByCandidate(shared));
+  assert.equal(countSurfaced(shared), allSurfacedIds(shared).size);
+
+  // An id neither set knows, and an empty board, read the same everywhere.
+  const empty = board([], []);
+  assert.equal(countSurfaced(empty), 0);
+  assert.deepEqual(surfacedByCandidate(empty), { A: 0, B: 0, C: 0, D: 0 });
+  assert.equal(floorMet(empty), false);
+  assert.equal(countSurfaced(board(["not_a_trait"], ["also_not"])), 0, "unknown ids are not board");
+
+  // The DV keeps them apart: the same trait said by both counts for both.
+  const dv = computePoolingDV(board(["A_p1"], ["A_p1"]));
+  assert.ok(dv.X.sharedRevealed > 0 || dv.X.uniqueRevealed > 0, "the human set reached X");
+  assert.ok(dv.Z.sharedRevealed > 0 || dv.Z.uniqueRevealed > 0, "the AI set reached Z");
+
+  // No file outside `informationPools.ts` may spell the union out again.
+  const rawRead = /(?:\?\.|\.)aiSurfacedIds\s*(?:\?\?|\|\|)/;
+  const rawCandidateRead = /byCandidate\s*\?\.\s*\[/;
+  for (const relative of sourceFiles(SRC_ROOT)) {
+    if (relative === "lib/informationPools.ts") continue;
+    const body = readFileSync(join(SRC_ROOT, relative), "utf8");
+    assert.ok(
+      !rawRead.test(body),
+      `${relative} reads revealStats.aiSurfacedIds directly; use informationPools`,
+    );
+    assert.ok(
+      !rawCandidateRead.test(body),
+      `${relative} reads revealStats.byCandidate directly; use informationPools`,
+    );
+  }
+}
+
+// ── A declined candidate leaves a trace on both paths ───────────────────────
+// The matcher refers a near match to the bounded verifier; when the verifier
+// says no, that used to be silent and terminal on the human path until issue 15
+// gave it `declinedTraitIds`. Alex's own near matches only began reaching the
+// verifier in issue 23 and arrived with the same blind spot. Source-level,
+// because exercising it needs the model call this suite has no network for.
+{
+  const routeTurnSource = readFileSync(join(SRC_ROOT, "lib/routeTurn.ts"), "utf8");
+  const socketSource = readFileSync(join(SRC_ROOT, "sockets/index.ts"), "utf8");
+  for (const [label, body] of [
+    ["Alex's own turn", routeTurnSource],
+    ["a human message", socketSource],
+  ] as const) {
+    assert.match(
+      body,
+      /declinedTraitIds: declined/,
+      `a candidate the verifier declines on ${label} must leave a record`,
+    );
+  }
+  const emit = routeTurnSource.split("\n").findIndex((line) => line.includes('emit("new-message"'));
+  const declineWrite = routeTurnSource
+    .split("\n")
+    .findIndex((line) => line.includes("declinedTraitIds: declined"));
+  assert.ok(declineWrite > emit, "the decline is recorded after the broadcast, like every other write");
 }
 
 console.log("intervention-v2 checks passed");

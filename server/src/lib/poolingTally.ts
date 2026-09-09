@@ -4,6 +4,11 @@ import { Session } from "../models/Session.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js"; // [Step 39] DEPTH_LOOKBACK_MSGS
 import { recordFirstSurfacer } from "./poolingDV.js";
+import {
+  allSurfacedIds,
+  coverageByCandidate,
+  humanSurfacedIds,
+} from "./informationPools.js";
 
 // (a) 갱신: 원자적 $addToSet — 동시 async 추출에 안전, dedup 자동.
 // 카운트는 저장하지 않고 읽을 때 revealedIds에서 파생한다 (read-modify-write 레이스 회피).
@@ -18,8 +23,7 @@ export async function updateRevealStats(
   if (!valid.length) return 0;
   const sess = await Session.findById(sessionId).select("revealStats").lean();
   const rs = (sess as any)?.revealStats;
-  const already = new Set<string>();
-  for (const c of CANDS) for (const id of rs?.byCandidate?.[c]?.revealedIds ?? []) already.add(id);
+  const already = humanSurfacedIds(rs);
   const newIds = new Set(valid.filter((id) => !already.has(id)));
   const add: Record<string, { $each: string[] }> = {};
   for (const id of valid) {
@@ -61,8 +65,8 @@ const CANDS: Cand[] = ["A", "B", "C", "D"];
 
 export function computeTally(revealStats: any): Tally {
   const rows = {} as Tally["rows"];
+  const revealed = humanSurfacedIds(revealStats);
   for (const c of CANDS) {
-    const revealed: string[] = revealStats?.byCandidate?.[c]?.revealedIds ?? [];
     const ids = new Set(
       [...ALEX_Z_IDS, ...revealed].filter((id) => TRAIT_BY_ID.get(id)?.candidate === c),
     );
@@ -92,26 +96,16 @@ export function computeTally(revealStats: any): Tally {
   return { rows, leader };
 }
 
-// 표면화된 distinct trait 총수 (사람 revealedIds ∪ AI aiSurfacedIds) — summary 게이트 가드① (Step 22)
+// 표면화된 distinct trait 총수 — summary 게이트 가드① (Step 22).
+// 보드의 정의는 informationPools 한 곳에만 있다.
 export function countSurfaced(revealStats: any): number {
-  const ids = new Set<string>();
-  for (const c of CANDS) {
-    for (const id of revealStats?.byCandidate?.[c]?.revealedIds ?? []) ids.add(id);
-  }
-  for (const id of revealStats?.aiSurfacedIds ?? []) ids.add(id);
-  return ids.size;
+  return allSurfacedIds(revealStats).size;
 }
 
 // [Step 30] 후보별 깔린 정보 수(사람 revealedIds ∪ AI aiSurfaced 중 해당 후보) 최소 후보.
 // 동률 → tally 비율 낮은 쪽(덜 검증된 쪽) → 그래도 동률이면 알파벳. (C4 callout 지정 후보용, 순수 함수)
 export function leastCoveredCandidate(revealStats: any): Cand {
-  const counts = {} as Record<Cand, number>;
-  const ai: string[] = revealStats?.aiSurfacedIds ?? [];
-  for (const c of CANDS) {
-    const ids = new Set<string>(revealStats?.byCandidate?.[c]?.revealedIds ?? []);
-    for (const id of ai) if (TRAIT_BY_ID.get(id)?.candidate === c) ids.add(id);
-    counts[c] = ids.size;
-  }
+  const counts = coverageByCandidate(revealStats);
   const t = computeTally(revealStats);
   return [...CANDS].sort(
     (a, b) =>
@@ -124,34 +118,21 @@ export function leastCoveredCandidate(revealStats: any): Cand {
 // [Step 37] Depth 데이터 훅 — 후보별 distinct 표면화 수 (사람 revealedIds ∪ AI aiSurfaced 중 해당 후보).
 // Alex 미발화 Z 패는 revealedIds·aiSurfacedIds 어디에도 없어 자동 제외 = "테이블에 올라온 것"만 카운트.
 export function surfacedByCandidate(revealStats: any): Record<Cand, number> {
-  const out: Record<Cand, number> = { A: 0, B: 0, C: 0, D: 0 };
-  const ai: string[] = revealStats?.aiSurfacedIds ?? [];
-  for (const c of CANDS) {
-    const set = new Set<string>(revealStats?.byCandidate?.[c]?.revealedIds ?? []);
-    for (const id of ai) if (TRAIT_BY_ID.get(id)?.candidate === c) set.add(id);
-    out[c] = set.size;
-  }
-  return out;
+  return coverageByCandidate(revealStats);
 }
 
 // [Step 45] 양면 floor — 네 후보 각각 surfaced에 pos≥1 ∧ neg≥1 표면화됐나 (수렴 마무리 게이트용).
 // surfacedByCandidate와 동일 소스(사람 revealedIds ∪ AI aiSurfaced) — Alex 미발화 Z는 자동 제외.
 // 소진 총개수는 countSurfaced(rs) 재사용 (별도 totalSurfaced 불필요 — 동일 정의).
 export function floorMet(revealStats: any): boolean {
-  const ai: string[] = revealStats?.aiSurfacedIds ?? [];
-  for (const c of CANDS) {
-    const set = new Set<string>(revealStats?.byCandidate?.[c]?.revealedIds ?? []);
-    for (const id of ai) if (TRAIT_BY_ID.get(id)?.candidate === c) set.add(id);
-    let pos = false;
-    let neg = false;
-    for (const id of set) {
-      const v = TRAIT_BY_ID.get(id)?.valence;
-      if (v === "pos") pos = true;
-      else if (v === "neg") neg = true;
-    }
-    if (!pos || !neg) return false; // 이 후보가 한쪽 면이라도 비면 floor 미달
+  const sides = {} as Record<Cand, { pos: boolean; neg: boolean }>;
+  for (const c of CANDS) sides[c] = { pos: false, neg: false };
+  for (const id of allSurfacedIds(revealStats)) {
+    const trait = TRAIT_BY_ID.get(id)!;
+    sides[trait.candidate][trait.valence] = true;
   }
-  return true;
+  // 한 후보라도 한쪽 면이 비면 floor 미달
+  return CANDS.every((c) => sides[c].pos && sides[c].neg);
 }
 
 // [Step 37] 도입(≥1)됐지만 얕은(<threshold) 후보 = 조기 이탈 방지 대상.
