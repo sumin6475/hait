@@ -90,7 +90,33 @@ side of the same mechanism.
 - The pooling DV counts first surfacing, so a change that raises restatement
   instead of disclosure is not an improvement
 
+- [x] Nothing is counted as disclosed on a turn that was never broadcast
 - [ ] A message asserting Alex has nothing further is refused while an unsurfaced trait remains in `ALEX_Z_IDS`
 - [ ] The record states the trait ids Alex disclosed from what the turn permitted, not from a keyword pass over its own prose
 - [ ] Per session, on the record: traits held, traits disclosed, and how many of each were unique
 - [ ] Traits per message and message length do not differ by condition after the change
+
+## Comments
+
+### Landed: a turn is counted where it becomes real, 2026-09-08
+
+`updateAiSurfaced` ran between `Message.create` and the socket emit, so a
+broadcast that threw left the traits recorded as surfaced — on the board, in the
+message's `sharedInfoIds`, and in the pooling DV — for a message nobody saw.
+Nothing rolled them back. The ledger already had this right: it consumes an
+opportunity in `onBroadcastSuccess`, after the emit, which is what `CONTEXT.md`
+says a successful broadcast is for. Pooling now settles in the same place, and
+before the ledger.
+
+The other lost-turn paths were already safe and stay untouched: a guard death, a
+supersession and a lifecycle cancel all return before the message is created, so
+they never reached the write. T-C2-047 turn 9 is the worked example — a turn lost
+to `selected_trait_missing` that correctly recorded no disclosure.
+
+There is no runtime harness for `executeRouteTurn`, so the invariant is asserted
+on the order of the file itself in `test-intervention-v2`: the pooling write must
+appear after the emit and after the `broadcast_failed` return, and before the
+ledger commit. Moving it back above the emit fails that assertion.
+
+This does not touch what Alex chooses to say or how much. It makes the count
+true, which the remaining items need before their numbers mean anything.

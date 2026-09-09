@@ -4804,4 +4804,35 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
   }
 }
 
+// ── A turn is counted where it becomes real ─────────────────────────────────
+// `CONTEXT.md` makes the broadcast the moment a turn counts: a failed
+// generation, a blocked floor or a cancelled turn all leave an opportunity
+// open. Pooling has to obey the same rule, or a turn nobody saw is recorded as
+// information Alex put on the board — and nothing rolls that back.
+//
+// There is no runtime harness for `executeRouteTurn`, so this is asserted where
+// the invariant actually lives: in the order of the file. Crude, and it fails
+// the moment someone moves the write back above the emit, which is the failure
+// this is here to catch.
+{
+  const routeTurnSource = readFileSync(join(SRC_ROOT, "lib/routeTurn.ts"), "utf8").split("\n");
+  const lineOf = (needle: string) => {
+    const index = routeTurnSource.findIndex((line) => line.includes(needle));
+    assert.ok(index >= 0, `routeTurn.ts no longer contains ${needle}`);
+    return index;
+  };
+  const emit = lineOf('emit("new-message"');
+  const broadcastFailed = lineOf('return { ok: false, error: "broadcast_failed" }');
+  const firstPoolingWrite = lineOf("updateAiSurfaced(input.sessionId");
+  assert.ok(
+    emit < broadcastFailed && broadcastFailed < firstPoolingWrite,
+    "Alex's disclosures must be recorded after the broadcast succeeds, not before it is attempted",
+  );
+  const ledgerCommit = lineOf("let ledgerCommit:");
+  assert.ok(
+    firstPoolingWrite < ledgerCommit,
+    "pooling and the ledger both settle after the broadcast, in that order",
+  );
+}
+
 console.log("intervention-v2 checks passed");

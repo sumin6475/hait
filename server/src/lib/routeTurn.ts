@@ -712,22 +712,47 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     log.error("[route-turn] intervention log failed after message save:", error);
   }
 
+  try {
+    input.io.to(input.sessionCode).emit("new-message", {
+      seq: savedMessage.seq,
+      sender: savedMessage.sender,
+      senderRole: savedMessage.senderRole,
+      content: savedMessage.content,
+      createdAt: (savedMessage as any).createdAt.toISOString(),
+    });
+  } catch (error: any) {
+    if (interventionId) {
+      await AIIntervention.updateOne(
+        { _id: interventionId },
+        {
+          $set: {
+            outcome: "broadcast_failed",
+            broadcastSucceeded: false,
+            error: error?.message ?? String(error),
+          },
+        },
+      );
+    }
+    return { ok: false, error: "broadcast_failed" };
+  }
+
   if (!["summary", "closing", "greeting", "backchannel"].includes(input.routeKind)) {
-    // The ledger still settles before the broadcast — but with the deterministic
-    // closed-pool matcher, not a model call.
-    //
-    // This block used to `await extractSurfacedTraits(...)`, an LLM round trip
-    // sitting between `Message.create` and the socket emit. T-C1-023 measured it
-    // at 2.5-3.5 s on every spoken turn; at anchor 14 the message itself was
-    // deterministic (0 ms generation) and 3.5 s of that turn was this call
-    // alone. Alex's own text quotes trait wording closely — the output contract
-    // requires it ("preserve the key wording of a trait") — so the matcher that
-    // already serves the human path is a better fit here than it is there, and
-    // it cannot time out or fail open.
-    //
-    // Bounded model verification still runs, in the background, as the same
-    // late correction the human path uses. What it adds lands a beat after the
-    // broadcast instead of delaying it.
+  // What Alex actually put on the board, recorded only once the message is out.
+  //
+  // A turn becomes real at the broadcast, not at generation. `CONTEXT.md` says a
+  // successful broadcast is the only thing that consumes an opportunity, and
+  // that a failed generation, a blocked floor or a cancelled turn all leave it
+  // open. The ledger obeyed that and pooling did not: this ran before the emit,
+  // so a broadcast that threw left the traits counted as surfaced with nothing
+  // to roll them back. The other lost-turn paths were always safe — a guard
+  // death, a supersession and a lifecycle cancel all return before the message
+  // is created at all.
+  //
+  // The matcher stays deterministic and network-free. This block used to
+  // `await extractSurfacedTraits(...)`, an LLM round trip on the broadcast path
+  // that T-C1-023 measured at 2.5-3.5 s of every spoken turn. Bounded model
+  // verification still runs in the background, as the same late correction the
+  // human path uses.
     try {
       const deterministic =
         input.routeKind === "build_on" &&
@@ -769,30 +794,6 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     } catch (error) {
       log.error("[pooling] AI update error:", error);
     }
-  }
-
-  try {
-    input.io.to(input.sessionCode).emit("new-message", {
-      seq: savedMessage.seq,
-      sender: savedMessage.sender,
-      senderRole: savedMessage.senderRole,
-      content: savedMessage.content,
-      createdAt: (savedMessage as any).createdAt.toISOString(),
-    });
-  } catch (error: any) {
-    if (interventionId) {
-      await AIIntervention.updateOne(
-        { _id: interventionId },
-        {
-          $set: {
-            outcome: "broadcast_failed",
-            broadcastSucceeded: false,
-            error: error?.message ?? String(error),
-          },
-        },
-      );
-    }
-    return { ok: false, error: "broadcast_failed" };
   }
 
   let ledgerCommit:
