@@ -15,7 +15,9 @@ export const TRIGGER_CONFIG = {
   // [Step 37] 단일 빈도 가드 — AI 발화 후 사람 메시지가 N개 오기 전엔 침묵 (호명 제외). 2 = messagesSinceLastAI<2면 침묵.
   COOLDOWN_MIN_MSGS: 2,
 
-  // 토론 총 길이 — 클라이언트 sessionConfig.ts DISCUSSION_DURATION_MINUTES(현재 30)와 반드시 일치. (단일소스화 추후)
+  // 토론 총 길이. 클라이언트 sessionConfig.ts DISCUSSION_DURATION_MINUTES와 반드시 일치하며,
+  // test:intervention-v2가 두 파일을 읽어 검사한다 — 어긋나면 화면의 타이머와 Alex가 닫는
+  // 시점이 달라지고, 그건 참가자에게 보인다. (별도 패키지라 import로 묶을 수 없음)
   DISCUSSION_DURATION_MS: 30 * 60 * 1000,
   // [Step 37] Depth 게이트 — 후보당 distinct 표면화 임계. 이 미만이면 "얕은 후보"로 보고 조기 이탈 차단. (튜너블)
   DEPTH_MIN_PER_CAND: 3,

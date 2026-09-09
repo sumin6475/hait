@@ -5272,4 +5272,26 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
   assert.ok(declineWrite > emit, "the decline is recorded after the broadcast, like every other write");
 }
 
+// ── The discussion is one length ────────────────────────────────────────────
+// The server closes the session on `DISCUSSION_DURATION_MS` and the client
+// counts down on `DISCUSSION_DURATION_MINUTES`. Both files carried a comment
+// saying they must match and nothing checked it. They are in separate npm
+// installs with no shared package, so neither can import the other — which is
+// why this is a test and not a derivation, the same way the trait wording is
+// locked against the participants' cards.
+//
+// Divergence is visible to the participants: the timer on screen would stop
+// agreeing with the turn Alex closes on.
+{
+  const REPO_ROOT = resolve(SERVER_ROOT, "..");
+  const clientConfig = readFileSync(join(REPO_ROOT, "client/src/lib/sessionConfig.ts"), "utf8");
+  const declared = clientConfig.match(/DISCUSSION_DURATION_MINUTES\s*=\s*(\d+)/);
+  assert.ok(declared, "client/src/lib/sessionConfig.ts no longer declares DISCUSSION_DURATION_MINUTES");
+  assert.equal(
+    Number(declared[1]) * 60_000,
+    TRIGGER_CONFIG.DISCUSSION_DURATION_MS,
+    "the client's visible timer and the server's closing deadline must be the same length",
+  );
+}
+
 console.log("intervention-v2 checks passed");
