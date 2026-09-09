@@ -42,12 +42,17 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
-**What is open.** Twenty-five issues in `.scratch/conversation-repair/issues/`.
+**What is open.** Twenty-six issues in `.scratch/conversation-repair/issues/`.
 Nothing is blocked on code. The three that remain are blocked on a measurement:
 issue 10 needs a live Observer latency figure, issue 16 needs a frequency count
 before a guard for it is worth its cost, and issue 23 needs a second leak before
 renaming thirty live prompts is worth an unmeasured version bump. Twenty-one are
 done and one records a decision not to act.
+
+Issue 26 is the one to read first: the Chair summary route is armed on every
+live session and structurally cannot fire, so a Chair export records a state
+nothing consumes. It needs a decision — is the recap part of the leader
+manipulation or an artefact — before there is code to write.
 
 Issues 24 and 25 came out of T-C2-047 on a parallel branch and were renumbered
 on merge — 22 and 23 were taken. 25 is done. **24 is the one still open on

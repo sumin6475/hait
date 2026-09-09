@@ -1,114 +1,99 @@
+%% HAIT — Alex 턴 파이프라인
+%% CONVERSATION_CONTROLLER_MODE=ledger_active (config.ts 기본값) 기준.
+%% legacy / ledger_shadow 는 롤백·비교 모드이며 아래 점선 경로로만 표시한다.
+%% 근거 파일: sockets/index.ts · lib/interventionEngine.ts · lib/conversationObserver.ts
+%%           lib/interventionJudge.ts · lib/routeTurn.ts · lib/routeContext.ts
+%%           lib/routeScopedGeneration.ts · lib/routePromptRegistry.ts
+
 flowchart TD
-  A[Human sends message] --> B[Save Message]
-  B --> C[Fire-and-forget trait extraction]
-  B --> D["maybeAITurn(source=push)"]
 
-  P["Pull timer (5s interval)"] --> Q["maybeAITurn(source=pull)"]
+  %% ══ 진입점 ══════════════════════════════════════════════
+  H["사람이 메시지 전송<br/>sockets/index.ts send-message"]
+  T1["long-silence 타이머<br/>evaluateLongSilenceGate<br/>횟수·간격·마지막 발화자"]
+  T2["세션 시작<br/>initializeRuntime → greeting"]
+  T3["종료 시각 도달 · 어드민 수동<br/>triggerClosing"]
 
-  D --> G
-  Q --> G
+  H --> SAVE["allocHumanSeq → Message.create<br/>→ new-message 브로드캐스트"]
 
-  G{"closingDone has session?"} -->|yes| Z["Return (AI 영구 침묵)"]
-  G -->|no| LG{"Leader(C2/C4) & within CLOSING_LEAD_MS?"}
+  %% ══ 저장 직후 세 갈래가 동시에 출발 ═══════════════════════
+  SAVE --> EXF["병렬 ① 특성 추출<br/>extractHumanTraitsFast 결정론 매칭<br/>→ verifyHumanTraitCandidates LLM<br/>→ revealStats 갱신 (턴을 막지 않음)"]
+  SAVE --> OBS["병렬 ② Observer LLM · gpt-4o-mini<br/>system = conversationObserver.ts:628<br/>user = 로스터 + 전사 + 이전 상태 + 이전 ledger + anchor<br/>신뢰도 낮거나 모순이면 재관측 1회"]
+  SAVE --> ON["병렬 ③ onHumanMessage<br/>선점 검사: busy면 미뤄두기 · 예약 중이면 종료<br/>latestPushSeq 가 밀렸으면 superseded"]
 
-  LG -->|yes| LG1["closingDone latch"]
-  LG1 --> LG2["handleAITurn(closing)"]
-  LG2 --> Z
+  OBS --> RED["reducer · reduceConversationStateAfter<br/>→ ConversationLedgerState<br/>thread · opportunity · floor"]
+  ON --> WAIT["waitForConversationObservation<br/>관측이 끝날 때까지 대기 → 다시 supersession 검사<br/>updateMediationState · armSummaryIfEligible"]
+  RED --> WAIT
 
-  LG -->|no| CTX["buildSessionContext"]
+  WAIT --> DRIFT{"task_standard_drift &<br/>리더 & human floor 아님?"}
+  DRIFT -->|yes| RES
+  DRIFT -->|no| OBSOK{"ledgerStateAfter 있음?<br/>없으면 재관측 1회"}
 
-  CTX --> EX{"Exemption 판단"}
-  EX -->|"last msg addresses Alex"| EX1["exempt=address, floor=7s"]
-  EX -->|"followup gate ON & msgsSinceAI=1 & push/deferred"| EX2["mini followup judge"]
-  EX2 -->|true| EX3["exempt=followup, floor=13s"]
-  EX2 -->|"false/null"| EX4["exempt=none"]
-  EX -->|"pull & msgsSinceAI≥1 & silence≥45s"| EX5["exempt=long_silence, floor=0"]
-  EX -->|none| EX4
+  OBSOK -->|"끝내 없음"| SIL1["recordSilence<br/>ledger_observer_unavailable"]
+  OBSOK -->|있음| VETO{"reconcileRuntimeBroadcasts 후<br/>deterministicVetoBeforeJudge<br/>= Judge 부르기 전 결정론 검사"}
+  VETO -->|"human floor 점유"| SIL2["recordSilence<br/>ledger_router_human_floor_held"]
+  VETO -->|"cooldown 미충족"| SIL3["recordSilence · cooldown"]
+  VETO -->|통과| JDG
 
-  EX1 --> FL
-  EX3 --> FL
-  EX5 --> CD
-  EX4 --> CD
+  %% ══ Main Judge ════════════════════════════════════════
+  JDG["<b>Main Judge</b> LLM · gpt-4o-mini · temp 0<br/>system = interventionJudge.ts:451 LEDGER_JUDGE_SYSTEM<br/>developer = ledgerJudgeRoleGoal · chair(C2·C4) / member(C1·C3)<br/>user = buildLedgerJudgeUserMessage<br/>전사 → ledger 서술 → 이번 턴 가능한 move → eligible trait"]
+  JDG --> VAL{"validateConversationLedgerJudgeDecision<br/>위반 rule code 붙여 1회 재시도 · maxAttempts 2"}
+  VAL -->|"2회 모두 실패"| SIL4["recordSilence<br/>ledger_judge_failure"]
+  VAL -->|reobserve| ROB2["재관측 후 재판단 1회"]
+  ROB2 --> JDG
+  VAL -->|silent| SIL5["recordSilence<br/>직전 시도가 speak였으면<br/>ledger_judge_capitulated_after_rejection<br/>아니면 ledger_judge_silent · human_floor · cooldown"]
+  VAL -->|speak| POST{"사후 게이트<br/>human floor · cooldown 우회 가능?<br/>acknowledge면 backchannel gap"}
+  POST -->|막힘| SIL6["recordSilence + 사유"]
+  POST -->|통과| ACT["ledgerRouteKindForAct<br/>answer·participate → address · follow → followup<br/>acknowledge → backchannel · contribute → build_on<br/>mediate → mediation (peer는 build_on 으로 강등)"]
 
-  CD{"exempt=none & messagesSinceLastAI < COOLDOWN_MIN_MSGS?"}
-  CD -->|yes| Z
-  CD -->|no| FL{"floor > 0 & source ≠ deferred?"}
+  ACT --> RES["reserveTurn<br/>floorMs = address 7s / followup 13s / 그 외 기본"]
+  T1 -->|eligible| RES
+  T2 --> RES
+  RES --> RUN["runReservation → executeRouteTurn<br/>타이핑 표시 ON · floor 대기와 생성은 동시 진행<br/>직전 발화자가 Alex면 anti-double-post 로 중단"]
 
-  FL -->|yes| FL1["setTimeout(floorMs) → deferred 재평가"]
-  FL1 --> Z
-  FL -->|no| SCD{"summaryCooldownActive & exempt ≠ address/long_silence?"}
-  SCD -->|yes| Z
-  SCD -->|no| CVG
+  %% ══ 프롬프트 조립 ═══════════════════════════════════════
+  RUN --> PSYS["<b>system</b> ← getRoutePrompt(condition, routeKind)<br/>prompts/route-prompts.snapshot.v1.json · 동결<br/>키 30개지만 조건당 해시는 1개 · 기동 시 SHA-256 검증"]
+  RUN --> PDEV["<b>developer</b> ← buildRouteUserContext().developerPrompt<br/>routeContext.ts:1896-2210 블록 조립<br/>Runtime Contract · Situation · Act · Opportunity · Turn Metadata"]
+  RUN --> PUSR["<b>user</b> ← transcriptPrompt<br/>대화 전문만 · 사람 텍스트와 서버 지시를 분리"]
 
-  CVG{"Leader & exhausted(new trait 0 for K turns) & floorMet?"}
-  CVG -->|yes| CVG1["closingDone latch"]
-  CVG1 --> CVG2["handleAITurn(summary)"]
-  CVG2 --> CVG3["handleAITurn(closing, bypassDoublePost)"]
-  CVG3 --> Z
+  PSYS --> DET{"결정론 응답으로 끝나는 턴인가?<br/>greeting · summary · 완전 목록 · known-count"}
+  PDEV --> DET
+  PUSR --> DET
+  DET -->|yes| SKIP["LLM 호출 없이 고정·계산된 문장 사용"]
+  DET -->|no| GEN["<b>Generator</b> LLM · gpt-5-mini<br/>callAIStructured(openai.ts:186) · 3-role 그대로 전달"]
 
-  CVG -->|no| LS{"Leader? → maybeLeaderSummary"}
-  LS -->|fired| Z
-  LS -->|not fired| SRC{"source?"}
+  GEN --> GUARD{"호출 성공 & evaluateDraft 출력 guard<br/>범위 밖 후보 · trait 개수 초과<br/>내부 메타데이터 누출 · 금지된 질문"}
+  GUARD -->|"guard 위반"| REPAIR["걸려 있는 모든 bound를 알려주고<br/>developer 뒤에 교정문 붙여 재작성 1회"]
+  REPAIR --> GUARD2{"다시 검사"}
+  GUARD2 -->|"또 위반 · 호출 실패"| GERR["generation_failed 기록<br/>+ 그때 Alex가 빚진 owedRequestIds"]
+  GUARD -->|"호출 실패"| GERR
+  GUARD2 -->|통과| FLOOR
+  GUARD -->|통과| FLOOR["floorGate 대기<br/>대화 floor 시간이 지날 때까지 발화 보류"]
+  SKIP --> FLOOR
 
-  SRC -->|"pull"| LSIL{"secondsSinceLastMessage ≥ LONG_SILENCE_SECONDS?"}
-  LSIL -->|yes| LSIL1["computeCue"]
-  LSIL1 --> LSIL2["maybeCalloutOverlay(leader-only)"]
-  LSIL2 --> LSIL3["handleAITurn(long-silence)"]
-  LSIL3 --> Z
-  LSIL -->|no| Z
+  %% ══ 커밋 · 브로드캐스트 ═══════════════════════════════════
+  FLOOR --> COMMIT{"commitGuard · lifecycle 재확인<br/>생성 중에 뒤집히지 않았는가?"}
+  COMMIT -->|"superseded · 세션 종료"| CANC["cancelled 기록<br/>생성은 성공, 브로드캐스트는 안 함"]
+  COMMIT -->|ok| WRITE["allocSeq → Message.create(ai)<br/>→ AIIntervention.create(speak)<br/>→ new-message 브로드캐스트"]
+  WRITE --> AFTER["onBroadcastSuccess: 선택한 opportunity를 consumed 로<br/>+ updateAiSurfaced (풀링 DV)"]
 
-  SRC -->|"push"| JDG["judgeIntervention(window, msgsSinceAI)"]
+  %% ══ closing ═══════════════════════════════════════════
+  T3 --> CLOSE{"리더 조건인가?"}
+  CLOSE -->|"리더 C2·C4"| CLR["executeRouteTurn(closing)<br/>실패하면 하드코딩 fallback 문장"]
+  CLOSE -->|"피어 C1·C3"| CLP["broadcastPeerClosing<br/>PEER_CLOSING 하드코딩 · LLM 없음"]
+  CLR --> MUTE["lifecycle = muted"]
+  CLP --> MUTE
 
-  JDG --> JDGR{"judge result"}
-  JDGR -->|"null (API 실패)"| FB["evaluateTriggers fallback"]
-  FB -->|"trigger fired"| FB1["handleAITurn(fallback trigger)"]
-  FB1 --> Z
-  FB -->|"no trigger"| Z
+  %% ══ legacy 전용 (기본 모드에서는 타지 않음) ═══════════════
+  OBSOK -.->|"Observer 불가 & legacy/shadow"| LEG["runLegacyObserverFallback<br/>signalJudge · followupJudge · resolveRoute<br/>summary 라우트도 이 경로에만 남아 있음"]
+  LEG -.-> RES
 
-  JDGR -->|"speak=false"| NR{"EXP_NATURAL_DIRECTED?"}
-  NR -->|true| NR1["backchannel gap ≥ BACKCHANNEL_GAP_MS?"]
-  NR1 -->|yes| NR2["reroute → speak=true, reason=backchannel, natural=true"]
-  NR1 -->|no| SL["logSilence → stay_silent"]
-  SL --> Z
-  NR -->|false| SL
-  NR2 --> PM
+  %% ══ 스타일 ═════════════════════════════════════════════
+  classDef llm fill:#d7ebee,stroke:#10646f,stroke-width:2px,color:#0d2226;
+  classDef halt fill:#f2e0d6,stroke:#9a4520,color:#2b1409;
+  classDef det fill:#eef3f4,stroke:#7d8f95,color:#131a1d;
+  classDef legacy fill:#ffffff,stroke:#9aa7ad,stroke-dasharray:4 3,color:#4a575c;
 
-  JDGR -->|"speak=true"| PM{"peer(C1/C3) & reason=mediation?"}
-  PM -->|yes| PM1["reroute → reason=backchannel, natural=true"]
-  PM1 --> CO
-  PM -->|no| CO
-
-  CO["maybeCalloutOverlay(leader-only)"] --> HA["handleAITurn(judge)"]
-
-  HA --> HA1["Anti-double-post guard (last msg = AI?)"]
-  HA1 -->|skip| Z
-  HA1 -->|pass| HA2["Build transcript (label mapping)"]
-  HA2 --> HA3["Compute cue / Determine routeKind"]
-
-  HA3 --> RK{"routeKind"}
-  RK -->|closing| RP1["buildClosingPrompt"]
-  RK -->|summary| RP2["buildSummaryPrompt"]
-  RK -->|natural| RP3["buildNaturalPrompt"]
-  RK -->|task| RP4["buildSystemPromptForTask(cue + tally + depth)"]
-
-  RP1 --> MP
-  RP2 --> MP
-  RP3 --> MP
-  RP4 --> MP
-
-  MP["Appendices: recentSummaryLeader consistency / callout tail / maybeKoLang"]
-  MP --> CALL["callAIStructured"]
-
-  CALL -->|fail| CF{"closing?"}
-  CF -->|yes| CF1["fallback text 저장 + broadcast"]
-  CF1 --> Z
-  CF -->|no| CF2["log stay_silent with error"]
-  CF2 --> Z
-
-  CALL -->|ok| OK1["allocSeq → Message.create(AI)"]
-  OK1 --> OK2["AIIntervention.create(speak)"]
-  OK2 --> OK3["broadcast new-message"]
-  OK3 --> OK4{"summary/closing?"}
-  OK4 -->|no| OK5["extractSurfacedTraits → updateAiSurfaced (fire-and-forget)"]
-  OK4 -->|yes| Z
-  OK5 --> Z
+  class OBS,JDG,GEN,REPAIR llm;
+  class SIL1,SIL2,SIL3,SIL4,SIL5,SIL6,GERR,CANC halt;
+  class SKIP,CLP,RED,EXF det;
+  class LEG legacy;
