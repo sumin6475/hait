@@ -65,7 +65,14 @@ export const TRAIT_KEYWORD_REGISTRY: readonly TraitKeywordEntry[] = TRAIT_DB.map
     candidate: trait.candidate,
     valence: trait.valence,
     profiles: trait.profiles,
-    corePhrases: extra.core ?? [trait.text],
+    // A trait's own wording is always matchable. It is the sentence a
+    // participant reads off their card and the sentence Alex is shown in its
+    // notes, so quoting it verbatim is the most likely way for it to reach the
+    // board — and until now it could be absent from the phrase list entirely.
+    // T-C2-047 turn 9 died that way: Alex stated C_p6 twice in its card's words
+    // and the matcher, holding a shorter phrase and a variant with the wrong
+    // pronoun, found nothing.
+    corePhrases: [...new Set([trait.text, ...(extra.core ?? [])])],
     acceptedVariants: extra.variants ?? [],
     fuzzyPolicy: "verify_lexical_near_match" as const,
   };

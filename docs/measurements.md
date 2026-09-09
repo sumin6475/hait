@@ -854,8 +854,14 @@ first criterion is only half met.
 in T-C3-003, and not one of thirteen leader messages asked a question. The two
 output properties that cost the most turns earlier are now cheap.
 
-**Confirmed — the output guards have stopped eating turns.** One guard death in
-24 records (`selected_trait_missing` at turn 9), against eight in T-C1-021.
+**Confirmed — the output guards have stopped eating turns, and the one death was
+not the guard's fault.** One guard death in 24 records
+(`selected_trait_missing` at turn 9), against eight in T-C1-021. Turn 9 was
+later traced: Alex stated the required trait twice, in the wording of its own
+card, and the matcher held a different wording for the same trait. Four copies of
+the trait text had drifted apart on 11 of 40 traits. See
+`.scratch/conversation-repair/issues/23`; the fix bumps the prompt version to
+1.10.0, so this session's figures are the last on 1.9.0.
 `answered_with_a_question` was raised three times and repaired successfully every
 time. `maxRestatedTraitIds` was in force on four turns and was never violated:
 it still fires as a bound and did not bite, which answers the question issue 01

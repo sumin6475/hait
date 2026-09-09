@@ -447,7 +447,11 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   for (const key of keys.filter((candidate) => candidate.startsWith(`${condition}.`))) {
     const routeKind = key.split(".")[1]! as Parameters<typeof getRoutePrompt>[1];
     const resolvedPrompt = getRoutePrompt(condition, routeKind);
-    assert.equal(resolvedPrompt.promptVersion, "1.9.0");
+    // 1.10.0 makes Alex's card read the same sentences the participants' cards
+    // do, byte for byte. Sessions before it are on a different card and are not
+    // directly comparable — the measurement log names the version for that
+    // reason. Bump this deliberately, in the commit that recompiles the snapshot.
+    assert.equal(resolvedPrompt.promptVersion, "1.10.0");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     // The exemption is no longer the generator's own judgement about its own
     // turn: "an explicitly requested full list or comparison" fired on ordinary
@@ -3296,7 +3300,7 @@ assert.deepEqual(splitPeerCompleteC1.requestIntent, {
   source: "visible_board",
 });
 assert.match(splitPeerCompleteC1.deterministicResponse!, /Candidate B/);
-assert.match(splitPeerCompleteC1.deterministicResponse!, /keeps a cool head/);
+assert.match(splitPeerCompleteC1.deterministicResponse!, /keeps a cool head/i);
 assert.match(splitPeerCompleteC1.deterministicResponse!, /considered arrogant/);
 assert.doesNotMatch(splitPeerCompleteC1.deterministicResponse!, /sometimes abusive in tone/);
 assert.equal((splitPeerCompleteC1.deterministicResponse!.match(/\?/g) ?? []).length, 0);
@@ -4833,6 +4837,106 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
     firstPoolingWrite < ledgerCommit,
     "pooling and the ledger both settle after the broadcast, in that order",
   );
+}
+
+// ── One trait, one wording ──────────────────────────────────────────────────
+// The same sentence lives in three places a participant or Alex can read it
+// from: the cards the humans are shown, the card in Alex's system prompt, and
+// `TRAIT_DB`, which everything else is matched and counted against. They drifted
+// on 11 of 40 traits and it cost a turn: in T-C2-047 turn 9 Alex was told to
+// contribute `C_p6`, wrote its own card's wording twice, and the matcher — built
+// from the shorter wording here — found nothing, so the turn died as
+// `selected_trait_missing`. Alex's only unique note about the pooled answer.
+//
+// The display string is now one string. Matching phrases stay separate and
+// explicit in the keyword registry; this says nothing about those.
+{
+  const REPO_ROOT = resolve(SERVER_ROOT, "..");
+  const traitSource = readFileSync(join(SRC_ROOT, "lib/traitData.ts"), "utf8");
+  const declared = new Map(
+    [...traitSource.matchAll(/\{ id: "([A-D]_[pn]\d)".*?text: "([^"]*)"/g)].map(
+      (match) => [match[1]!, match[2]!] as const,
+    ),
+  );
+  assert.equal(declared.size, TRAIT_DB.length, "every trait must declare its text literally");
+  for (const trait of TRAIT_DB) {
+    assert.equal(declared.get(trait.id), trait.text, `${trait.id} text is not read literally`);
+  }
+
+  // The cards the humans read.
+  const mockSource = readFileSync(join(REPO_ROOT, "client/src/lib/mockData.ts"), "utf8");
+  const participantCards = new Map(
+    [...mockSource.matchAll(/id:\s*"([A-D])_([pn])_(\d\d)"[\s\S]*?attribute:\s*"([^"]*)"/g)].map(
+      (match) => [`${match[1]}_${match[2]}${Number(match[3])}` as string, match[4]!] as const,
+    ),
+  );
+  assert.equal(participantCards.size, TRAIT_DB.length, "the participant cards must cover the pool");
+  for (const trait of TRAIT_DB) {
+    assert.equal(
+      participantCards.get(trait.id),
+      trait.text,
+      `${trait.id}: the card a participant reads differs from the text everything is matched against`,
+    );
+  }
+
+  // The card Alex reads, taken from the prompt the runtime actually serves.
+  const served = getRoutePrompt("C1", "address").systemPrompt;
+  const notes = served.slice(served.indexOf("# Your Notes"), served.indexOf("# Calling Model"));
+  const alexCard = notes
+    .split("\n")
+    .filter((line) => line.startsWith("+ ") || line.startsWith("− "))
+    .map((line) => line.slice(2).trim());
+  const alexTraits = TRAIT_DB.filter((trait) => trait.profiles.includes("Z"));
+  assert.equal(alexCard.length, alexTraits.length, "Alex's card must hold exactly profile Z");
+  for (const text of alexCard) {
+    assert.ok(
+      alexTraits.some((trait) => trait.text === text),
+      `Alex's card reads "${text}", which is not any trait's text`,
+    );
+  }
+  for (const trait of alexTraits) {
+    assert.ok(alexCard.includes(trait.text), `${trait.id} is missing from Alex's card`);
+  }
+}
+
+// ── Alex's own message is a closed question ─────────────────────────────────
+// T-C2-047 turn 9: Alex was told to contribute C_p6, said it twice in the words
+// of its own card, and the turn died as `selected_trait_missing`. Both drafts
+// reached the matcher as verification candidates — near matches the human path
+// refers to a bounded verifier, because a participant's sentence could be about
+// any trait or none. Alex's could not: the turn named what it was allowed to
+// say. These are the two drafts, verbatim.
+{
+  const lostTurnDrafts = [
+    "I have an additional note for Candidate C: they match putting the safety of people in their care above everything, which directly addresses concerns about prioritizing safety despite reluctance for training.",
+    "Candidate C also matches the trait that he puts the safety of people in their care above everything.",
+    // And the same note quoted straight off the card, which must be the easy case.
+    "I have an additional note for Candidate C: they match putting the safety of people in his/her care above everything else.",
+  ];
+  const noteGuard = {
+    candidate: "C",
+    maxTraitIds: 1,
+    allowedTraitIds: ["C_p6"],
+    requiredTraitId: "C_p6",
+    reason: "selected_note_contribution",
+  } as const;
+
+  for (const draft of lostTurnDrafts) {
+    assert.deepEqual(
+      evaluateDraft({ content: draft, guard: noteGuard as never }).extractedIds,
+      ["C_p6"],
+      "a permitted trait stated in the card's own words is disclosed, not a near miss",
+    );
+  }
+
+  // The open pass is untouched: a trait outside what the turn permitted is
+  // still judged the way a human's sentence is, and a restatement of a human's
+  // own trait — outside Alex's notes by definition — still counts.
+  const restated = evaluateDraft({
+    content: "Gossips about his/her coworkers is a real concern for Candidate B.",
+    guard: { candidate: "B", maxTraitIds: 1, reason: "route_reveal_budget" } as never,
+  });
+  assert.deepEqual(restated.extractedIds, ["B_n4"], "a human's trait is still counted when Alex repeats it");
 }
 
 console.log("intervention-v2 checks passed");

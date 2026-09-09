@@ -23,6 +23,18 @@
 # The `.draft` in the filename is now historical; it is kept so the references to
 # this path do not break.
 #
+#
+# Re-approved 2026-09-08: every entry's `core_phrases` now begins with its own
+# `canonical_text`. A trait's own wording — the sentence a participant reads off
+# their card and the sentence in Alex's notes — was not necessarily matchable at
+# all, because an entry with explicit core phrases dropped the trait text
+# entirely. T-C2-047 turn 9 died on exactly that: Alex was told to contribute
+# C_p6, said it twice in the card's words, and the matcher held only a shorter
+# paraphrase and a variant with the wrong pronoun. No phrase was removed.
+#
+# Corrected the same day: the trait text in this file, in the participants'
+# cards, and in Alex's prompt card had drifted apart on 11 of 40 traits. They are
+# now one string, checked by `test-intervention-v2`.
 # The matching contract, as approved:
 # - Only traits eligible for the speaker's assigned profile may be considered.
 # - Candidate resolution priority is explicit candidate name, then a profile-unique
@@ -60,8 +72,8 @@ traits:
     candidate: A
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "has a very good sense for recognizing dangerous situations"
-    core_phrases: ["recognizing dangerous situations"]
+    canonical_text: "Has a very good sense for recognizing dangerous situations"
+    core_phrases: ["Has a very good sense for recognizing dangerous situations", "recognizing dangerous situations"]
     accepted_variants: ["recognize dangerous situations", "recognises dangerous situations", "recognising dangerous situations", "recognizing the dangerous situations"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Avoid generic 'danger' or 'dangerous' alone."
@@ -71,8 +83,8 @@ traits:
     candidate: A
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "has a good overview of complex contexts"
-    core_phrases: ["good overview of complex contexts"]
+    canonical_text: "Has a good overview of complex contexts"
+    core_phrases: ["Has a good overview of complex contexts", "good overview of complex contexts"]
     accepted_variants: ["good overview of complex situations", "overview of complex contexts", "good overview of complex context", "good overview of the complex contexts"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Do not match generic references to complexity or context."
@@ -82,8 +94,8 @@ traits:
     candidate: A
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "has excellent spatial awareness"
-    core_phrases: ["excellent spatial awareness", "spatial awareness"]
+    canonical_text: "Has excellent spatial awareness"
+    core_phrases: ["Has excellent spatial awareness", "excellent spatial awareness", "spatial awareness"]
     accepted_variants: ["very good spatial awareness"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "The shorter phrase is distinctive in the current trait set."
@@ -93,8 +105,8 @@ traits:
     candidate: A
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "is very well organized"
-    core_phrases: ["very well organized", "well organized"]
+    canonical_text: "Is very well organized"
+    core_phrases: ["Is very well organized", "very well organized", "well organized"]
     accepted_variants: ["very well organised", "well organised", "very organized", "very organised"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Avoid 'organized' alone when it describes the discussion or notes."
@@ -104,8 +116,8 @@ traits:
     candidate: A
     valence: neg
     profiles: [X]
-    canonical_text: "does not tolerate criticism"
-    core_phrases: ["does not tolerate criticism", "not tolerate criticism"]
+    canonical_text: "Sometimes does not tolerate criticism"
+    core_phrases: ["Sometimes does not tolerate criticism", "does not tolerate criticism", "not tolerate criticism"]
     accepted_variants: ["doesn't tolerate criticism", "doesnt tolerate criticism", "cannot tolerate criticism", "can't tolerate criticism", "cannot take criticism", "not tolerant on criticism", "not tolerating criticism"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Do not treat a speaker's criticism of A as this trait."
@@ -115,8 +127,8 @@ traits:
     candidate: A
     valence: neg
     profiles: [X]
-    canonical_text: "is sometimes a bit hectic"
-    core_phrases: ["sometimes a bit hectic", "a bit hectic"]
+    canonical_text: "Is sometimes a bit hectic"
+    core_phrases: ["Is sometimes a bit hectic", "sometimes a bit hectic", "a bit hectic"]
     accepted_variants: ["sometimes hectic", "sometimes bit hectic"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Require hectic to describe the candidate, not the situation."
@@ -126,8 +138,8 @@ traits:
     candidate: A
     valence: neg
     profiles: [Y]
-    canonical_text: "is a show-off"
-    core_phrases: ["show-off"]
+    canonical_text: "Is considered a show-off"
+    core_phrases: ["Is considered a show-off", "show-off"]
     accepted_variants: ["show off", "showoff"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Do not match the phrasal verb 'show off' unless it describes the candidate as a disposition."
@@ -137,8 +149,8 @@ traits:
     candidate: A
     valence: neg
     profiles: [Y]
-    canonical_text: "is not open to new ideas"
-    core_phrases: ["not open to new ideas"]
+    canonical_text: "Is not open to new ideas"
+    core_phrases: ["Is not open to new ideas", "not open to new ideas"]
     accepted_variants: ["isn't open to new ideas", "not very open to new ideas", "not being open to new ideas"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Positive 'open to new ideas' is not this negative trait."
@@ -148,8 +160,8 @@ traits:
     candidate: A
     valence: neg
     profiles: [Z]
-    canonical_text: "is unfriendly"
-    core_phrases: ["unfriendly"]
+    canonical_text: "Is unfriendly"
+    core_phrases: ["Is unfriendly", "unfriendly"]
     accepted_variants: ["not friendly", "isn't friendly"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Require a candidate assertion; do not match an unfriendly message or tone."
@@ -159,8 +171,8 @@ traits:
     candidate: A
     valence: neg
     profiles: [Z]
-    canonical_text: "transmits restlessness"
-    core_phrases: ["transmits restlessness"]
+    canonical_text: "Transmits restlessness"
+    core_phrases: ["Transmits restlessness", "transmits restlessness"]
     accepted_variants: ["transmit restlessness", "transmitting restlessness", "gives off restlessness"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Avoid generic 'restless' unless the intended wording is explicitly approved."
@@ -170,8 +182,8 @@ traits:
     candidate: B
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "keeps a cool head in crisis situations"
-    core_phrases: ["keeps a cool head in crisis situations", "cool head in crisis situations"]
+    canonical_text: "Keeps a cool head in crisis situations"
+    core_phrases: ["Keeps a cool head in crisis situations", "keeps a cool head in crisis situations", "cool head in crisis situations"]
     accepted_variants: ["keep a cool head in a crisis", "keeps a cool head in crises", "cool head", "keeping a cool head in crisis situations", "keeping a cool head"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "'Cool head' is accepted only with explicit Candidate B attribution and a crisis/operational context; do not match the idiom generically."
@@ -181,8 +193,8 @@ traits:
     candidate: B
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "you can rely on 100%"
-    core_phrases: ["rely on 100%", "100% reliable"]
+    canonical_text: "You can rely on him/her 100%"
+    core_phrases: ["You can rely on him/her 100%", "rely on 100%", "100% reliable"]
     accepted_variants: ["can be relied on 100%", "100 percent reliable", "rely on completely", "reliability", "rely on him/her 100%", "rely on him 100%", "rely on them 100%", "rely on b 100%", "relying on him/her 100%"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "'Reliability' is accepted only with explicit Candidate B attribution; generic agreement such as 'I rely on that' is not a candidate trait."
@@ -192,8 +204,8 @@ traits:
     candidate: B
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "can assess weather conditions very well"
-    core_phrases: ["assess weather conditions very well", "assess weather conditions"]
+    canonical_text: "Can assess weather conditions very well"
+    core_phrases: ["Can assess weather conditions very well", "assess weather conditions very well", "assess weather conditions"]
     accepted_variants: ["assesses weather conditions very well", "good at assessing weather conditions", "assess weather very well", "assess the weather conditions very well", "assess the weather condition"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Require assessment ability, not a factual comment about the weather."
@@ -203,8 +215,8 @@ traits:
     candidate: B
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "is good at multitasking"
-    core_phrases: ["good at multitasking"]
+    canonical_text: "Is good at multitasking"
+    core_phrases: ["Is good at multitasking", "good at multitasking"]
     accepted_variants: ["good multitasker", "can multitask well", "can multitask", "multitasks"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "'Multitasking' alone may state a job criterion rather than a candidate trait."
@@ -214,8 +226,8 @@ traits:
     candidate: B
     valence: neg
     profiles: [X]
-    canonical_text: "is considered nagging"
-    core_phrases: ["considered nagging"]
+    canonical_text: "Is considered to be nagging"
+    core_phrases: ["Is considered to be nagging", "considered nagging"]
     accepted_variants: ["is nagging", "can be nagging", "considered to be nagging", "being a nagging person", "are nagging", "nagging"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A request or reminder by the candidate is not automatically this disposition."
@@ -225,8 +237,8 @@ traits:
     candidate: B
     valence: neg
     profiles: [X]
-    canonical_text: "is not very cooperative"
-    core_phrases: ["not very cooperative"]
+    canonical_text: "Is not considered very cooperative"
+    core_phrases: ["Is not considered very cooperative", "not very cooperative"]
     accepted_variants: ["isn't very cooperative", "not cooperative", "not so cooperative", "uncooperative", "not being cooperative", "not considered very cooperative", "bad at being cooperative"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Positive 'cooperative' is not this negative trait."
@@ -236,8 +248,8 @@ traits:
     candidate: B
     valence: neg
     profiles: [Y]
-    canonical_text: "has a below-average memory for numbers"
-    core_phrases: ["below-average memory for numbers", "memory for numbers"]
+    canonical_text: "Has a below-average memory for numbers"
+    core_phrases: ["Has a below-average memory for numbers", "below-average memory for numbers", "memory for numbers"]
     accepted_variants: ["below average memory for numbers", "poor memory for numbers", "weak memory for numbers", "below-average on numbers memory"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "The short phrase needs negative ability wording in the complete assertion."
@@ -247,8 +259,8 @@ traits:
     candidate: B
     valence: neg
     profiles: [Y]
-    canonical_text: "gossips about coworkers"
-    core_phrases: ["gossips about coworkers"]
+    canonical_text: "Gossips about his/her coworkers"
+    core_phrases: ["Gossips about his/her coworkers", "gossips about coworkers"]
     accepted_variants: ["gossips about co-workers", "gossiping about coworkers", "gossips about colleagues", "gossiping about co-workers", "gossips about his coworkers", "gossips about his co-workers", "gossips about his/her coworker", "gossips about his/her coworkers", "gossip about his coworkers"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A quoted piece of gossip is not itself enough to assert this trait."
@@ -258,8 +270,8 @@ traits:
     candidate: B
     valence: neg
     profiles: [Z]
-    canonical_text: "is considered arrogant"
-    core_phrases: ["considered arrogant", "is arrogant"]
+    canonical_text: "Is considered arrogant"
+    core_phrases: ["Is considered arrogant", "considered arrogant", "is arrogant"]
     accepted_variants: ["seems arrogant", "comes across as arrogant"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Same wording as D_n1; candidate resolution is mandatory."
@@ -269,8 +281,8 @@ traits:
     candidate: B
     valence: neg
     profiles: [Z]
-    canonical_text: "is sometimes abusive in tone"
-    core_phrases: ["abusive in tone", "abusive tone"]
+    canonical_text: "Is sometimes abusive in tone"
+    core_phrases: ["Is sometimes abusive in tone", "abusive in tone", "abusive tone"]
     accepted_variants: ["sometimes abusive in tone", "can be abusive in tone"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Require the candidate's habitual tone, not an abusive quote in the chat."
@@ -280,8 +292,8 @@ traits:
     candidate: C
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "can make the right decisions very quickly"
-    core_phrases: ["make the right decisions very quickly", "right decisions very quickly"]
+    canonical_text: "Can make the right decisions very quickly"
+    core_phrases: ["Can make the right decisions very quickly", "make the right decisions very quickly", "right decisions very quickly"]
     accepted_variants: ["makes the right decisions very quickly", "can make correct decisions very quickly", "make the right decision very quickly", "make right decisions quickly", "right decisions quickly", "making the right decisions very quickly"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Generic quick decision-making without correctness may be broader than the source trait."
@@ -291,8 +303,8 @@ traits:
     candidate: C
     valence: pos
     profiles: [X]
-    canonical_text: "is stress resistant"
-    core_phrases: ["stress resistant"]
+    canonical_text: "Is stress resistant"
+    core_phrases: ["Is stress resistant", "stress resistant"]
     accepted_variants: ["stress-resistant", "resistant to stress", "handles stress well"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Do not confuse with D_p3 'very resilient' without a stress reference."
@@ -302,8 +314,8 @@ traits:
     candidate: C
     valence: pos
     profiles: [X]
-    canonical_text: "promotes a good atmosphere within the crew"
-    core_phrases: ["good atmosphere within the crew", "promotes a good atmosphere"]
+    canonical_text: "Promotes a good atmosphere within the crew"
+    core_phrases: ["Promotes a good atmosphere within the crew", "good atmosphere within the crew", "promotes a good atmosphere"]
     accepted_variants: ["creates a good atmosphere within the crew", "promotes a good crew atmosphere", "keeps the crew atmosphere good", "promotes good atmosphere with the crew", "promoting a good atmosphere within the crew"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A good atmosphere in the current chat is not the candidate trait."
@@ -313,8 +325,8 @@ traits:
     candidate: C
     valence: pos
     profiles: [Y]
-    canonical_text: "is very conscientious"
-    core_phrases: ["very conscientious"]
+    canonical_text: "Is very conscientious"
+    core_phrases: ["Is very conscientious", "very conscientious"]
     accepted_variants: ["is conscientious"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Keep distinct from D_p4 'very responsible'."
@@ -324,8 +336,8 @@ traits:
     candidate: C
     valence: pos
     profiles: [Y]
-    canonical_text: "is skilled in dealing with complicated technology"
-    core_phrases: ["dealing with complicated technology", "complicated technology"]
+    canonical_text: "Is very skilled in dealing with complicated technology"
+    core_phrases: ["Is very skilled in dealing with complicated technology", "dealing with complicated technology", "complicated technology"]
     accepted_variants: ["skilled with complicated technology", "skilled with complicated tech", "good at dealing with complicated technology"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Do not use generic 'skill' or 'skillful'; profile Y also owns C_n1."
@@ -335,8 +347,8 @@ traits:
     candidate: C
     valence: pos
     profiles: [Z]
-    canonical_text: "puts the safety of people above everything"
-    core_phrases: ["safety of people above everything", "puts people's safety above everything"]
+    canonical_text: "Puts the safety of people in his/her care above everything else"
+    core_phrases: ["Puts the safety of people in his/her care above everything else", "safety of people above everything", "puts people's safety above everything"]
     accepted_variants: ["puts the safety of people in their care above everything else", "puts people's safety first", "putting people's safety above everything", "putting people's safety first"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Generic statements that safety is important are job criteria, not candidate disclosures."
@@ -346,8 +358,8 @@ traits:
     candidate: C
     valence: pos
     profiles: [Z]
-    canonical_text: "performs very well in sustained attention"
-    core_phrases: ["very well in sustained attention", "sustained attention"]
+    canonical_text: "Performs very well in terms of sustained attention"
+    core_phrases: ["Performs very well in terms of sustained attention", "very well in sustained attention", "sustained attention"]
     accepted_variants: ["performs very well in terms of sustained attention", "has very good sustained attention"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Keep distinct from D_p2 concentration unless sustained attention is stated."
@@ -357,8 +369,8 @@ traits:
     candidate: C
     valence: neg
     profiles: [X, Y, Z]
-    canonical_text: "is not verbally skillful"
-    core_phrases: ["verbally skillful"]
+    canonical_text: "Is not verbally skillful"
+    core_phrases: ["Is not verbally skillful", "verbally skillful"]
     accepted_variants: ["verbally skilful", "verbally skillfull", "not verbally skillful", "isn't verbally skillful", "misses being verbally skillful"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Core phrase is sufficient lexical evidence; do not require a fixed negative marker. Candidate assertion semantics still require direct-disclosure validation."
@@ -368,8 +380,8 @@ traits:
     candidate: C
     valence: neg
     profiles: [X, Y, Z]
-    canonical_text: "is considered egocentric"
-    core_phrases: ["considered egocentric", "is egocentric"]
+    canonical_text: "Is considered egocentric"
+    core_phrases: ["Is considered egocentric", "considered egocentric", "is egocentric"]
     accepted_variants: ["seems egocentric", "comes across as egocentric", "egocentric"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Generic self-focus or first-person phrasing is not enough."
@@ -379,8 +391,8 @@ traits:
     candidate: C
     valence: neg
     profiles: [X, Y, Z]
-    canonical_text: "is reluctant to take part in training"
-    core_phrases: ["reluctant to take part in training", "reluctant to train"]
+    canonical_text: "Is reluctant to take part in training"
+    core_phrases: ["Is reluctant to take part in training", "reluctant to take part in training", "reluctant to train"]
     accepted_variants: ["doesn't want to take part in training", "unwilling to take part in training", "reluctant about training", "reluctant to take parts in training"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A scheduling problem or one declined course is not necessarily the disposition."
@@ -390,8 +402,8 @@ traits:
     candidate: D
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "can react adequately to unforeseen events"
-    core_phrases: ["react adequately to unforeseen events", "unforeseen events"]
+    canonical_text: "Can react adequately to unforeseen events"
+    core_phrases: ["Can react adequately to unforeseen events", "react adequately to unforeseen events", "unforeseen events"]
     accepted_variants: ["reacts adequately to unforeseen events", "handles unforeseen events adequately", "reacting adequately to unforeseen events"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "The short phrase needs reaction/handling ability in the assertion."
@@ -401,8 +413,8 @@ traits:
     candidate: D
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "can concentrate very well"
-    core_phrases: ["concentrate very well"]
+    canonical_text: "Can concentrate very well"
+    core_phrases: ["Can concentrate very well", "concentrate very well"]
     accepted_variants: ["concentrates very well", "very good concentration", "concentrating very well"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Keep distinct from C_p7 sustained attention."
@@ -412,8 +424,8 @@ traits:
     candidate: D
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "is very resilient"
-    core_phrases: ["very resilient"]
+    canonical_text: "Is very resilient"
+    core_phrases: ["Is very resilient", "very resilient"]
     accepted_variants: ["is resilient"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Keep distinct from C_p2 stress resistance unless resilience is stated."
@@ -423,8 +435,8 @@ traits:
     candidate: D
     valence: pos
     profiles: [X, Y, Z]
-    canonical_text: "is very responsible"
-    core_phrases: ["very responsible"]
+    canonical_text: "Is very responsible"
+    core_phrases: ["Is very responsible", "very responsible"]
     accepted_variants: ["is responsible"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Reject situational duty phrases such as 'responsible for passengers/people'."
@@ -434,8 +446,8 @@ traits:
     candidate: D
     valence: neg
     profiles: [X]
-    canonical_text: "is considered arrogant"
-    core_phrases: ["considered arrogant", "is arrogant"]
+    canonical_text: "Is considered arrogant"
+    core_phrases: ["Is considered arrogant", "considered arrogant", "is arrogant"]
     accepted_variants: ["seems arrogant", "comes across as arrogant"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Same wording as B_n5; candidate resolution is mandatory."
@@ -445,8 +457,8 @@ traits:
     candidate: D
     valence: neg
     profiles: [X]
-    canonical_text: "is not well suited for leading a team"
-    core_phrases: ["not well suited for leading a team"]
+    canonical_text: "Is not very well suited for leading a team"
+    core_phrases: ["Is not very well suited for leading a team", "not well suited for leading a team"]
     accepted_variants: ["isn't well suited to lead a team", "isnt well suited to lead a team", "not suited for team leadership", "not a good team leader", "not great at leading a team", "not very well suited for leading a team", "not suited to lead a team", "not fit to lead", "not fit for leading team"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A preference for a non-leadership role is not automatically this trait."
@@ -456,8 +468,8 @@ traits:
     candidate: D
     valence: neg
     profiles: [Y]
-    canonical_text: "is considered a know-all"
-    core_phrases: ["considered a know-all", "is a know-all"]
+    canonical_text: "Is considered to be a know-all"
+    core_phrases: ["Is considered to be a know-all", "considered a know-all", "is a know-all"]
     accepted_variants: ["know-all", "know it all", "know-it-all", "considered to be a know-all", "know all"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "Statements that the candidate knows something are not this disposition."
@@ -467,8 +479,8 @@ traits:
     candidate: D
     valence: neg
     profiles: [Y]
-    canonical_text: "is quick-tempered"
-    core_phrases: ["quick-tempered"]
+    canonical_text: "Is quick-tempered"
+    core_phrases: ["Is quick-tempered", "quick-tempered"]
     accepted_variants: ["quick tempered", "has a quick temper", "loses their temper quickly"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A single described disagreement is not automatically a stable trait."
@@ -478,8 +490,8 @@ traits:
     candidate: D
     valence: neg
     profiles: [Z]
-    canonical_text: "is considered moody"
-    core_phrases: ["considered moody", "is moody"]
+    canonical_text: "Is considered moody"
+    core_phrases: ["Is considered moody", "considered moody", "is moody"]
     accepted_variants: ["seems moody", "can be moody"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "The speaker's mood or discussion mood is not the candidate trait."
@@ -489,8 +501,8 @@ traits:
     candidate: D
     valence: neg
     profiles: [Z]
-    canonical_text: "has strong prejudices"
-    core_phrases: ["strong prejudices"]
+    canonical_text: "Has strong prejudices"
+    core_phrases: ["Has strong prejudices", "strong prejudices"]
     accepted_variants: ["strongly prejudiced", "has a lot of prejudice"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A participant's prior preference or pre-judgment is not this candidate trait."

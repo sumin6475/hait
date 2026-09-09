@@ -60,6 +60,53 @@ out.
 - No new model call on the path between generation and broadcast
 - A guard that fires must still cost the turn rather than broadcast oversized
 
+- [x] A trait's own wording is matchable at all
+- [x] Alex's own message is read as the closed question it is
 - [ ] The record of a turn states the traits the message actually carried, not the fast extractor's guess
 - [ ] Budget violations are counted per session and per condition
 - [ ] `A_n1` at T-C2-047 seq 31, or an equivalent plain statement, reaches the board
+
+## Comments
+
+### The cause was upstream of both extractors, 2026-09-08
+
+Reading T-C2-047 turn 9 found something worse than a guess that disagreed with a
+verifier. Alex was told to contribute `C_p6` — its only unique note about the
+pooled answer — wrote its own card's wording twice, and the turn died as
+`selected_trait_missing` both times.
+
+**The same sentence lived in four places and had drifted in three of them.** The
+cards the participants read, the card in Alex's system prompt, `TRAIT_DB` (what
+everything is matched and counted against), and this directory's approval record
+disagreed on 11 of 40 traits. `C_p6` was one: participants and Alex read *"Puts
+the safety of people in his/her care above everything else"*, while the matcher
+held *"puts the safety of people above everything"*. Alex quoted its card and the
+matcher was looking for a sentence nobody had ever been shown.
+
+The four are now one string, generated from `TRAIT_DB` and locked by tests: the
+participants' cards and Alex's card are compared to it entry by entry, and the
+approval record already had its own check. The prompt snapshot was recompiled and
+the prompt version is **1.10.0**, so sessions before and after are on different
+cards and are not directly comparable.
+
+**And a trait's own wording was not necessarily matchable.** An entry with
+explicit core phrases dropped the trait text entirely, so quoting the card
+verbatim — the most likely way a trait reaches the board — could match nothing.
+Every entry's phrase list now begins with its own canonical text. No phrase was
+removed.
+
+**Alex's own message is a closed question.** Even matchable, `C_p6` came back as
+a verification candidate: a near match the human path refers to the bounded
+verifier, because a participant's sentence could be about any trait or none.
+Alex's could not — the turn named what it was permitted to say, so a near match
+on one of those ids has no rival reading. Those now count as disclosed. The open
+pass is untouched, and still counts a restatement of a human's trait, which is
+outside Alex's notes by definition.
+
+The two lost drafts from turn 9 are in `test-intervention-v2` verbatim, and both
+now resolve to `C_p6`.
+
+What is still open is the disagreement this issue was opened for: the guard reads
+the fast extractor before broadcast and the board is written by the verified one
+afterwards, so the record of what a message carried can still be wrong in the
+other direction.

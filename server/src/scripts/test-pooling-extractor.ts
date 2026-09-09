@@ -112,7 +112,10 @@ assert.deepEqual(
     messageText: "Candidate D can react adequately to unforseen events.",
     assignedProfile: "Y",
   }).verificationCandidates,
-  [{ traitId: "D_p1", evidenceQuote: "react adequately to unforseen events", reason: "lexical_near_match" }],
+  // The quote now spans the trait's own wording rather than a fragment of it:
+  // a trait's canonical text is always in its phrase list, so the longest
+  // matching phrase is normally the sentence the participant read off the card.
+  [{ traitId: "D_p1", evidenceQuote: "can react adequately to unforseen events", reason: "lexical_near_match" }],
 );
 assert.deepEqual(
   extractHumanTraitsFast({ messageText: "Candidate B is arogant.", assignedProfile: "X" }),

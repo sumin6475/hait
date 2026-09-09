@@ -153,8 +153,35 @@ export function internalMetadataSoftViolations(content: string): string[] {
  *
  * It also takes one or two synchronous model calls off the generation path.
  */
-function disclosedTraitIds(content: string): string[] {
-  return [...new Set(extractHumanTraitsFast({ messageText: content }).acceptedIds)];
+function disclosedTraitIds(content: string, guard?: RouteOutputScopeGuard): string[] {
+  const extraction = extractHumanTraitsFast({ messageText: content });
+  const disclosed = new Set(extraction.acceptedIds);
+  // Alex's own message asks a closed question, and the human path asks an open
+  // one. A participant's sentence could be about any of the forty traits or
+  // about none, so a near match is referred to the bounded verifier. Alex was
+  // *told* what it may disclose, so a near match on one of those ids is that id
+  // and nothing else — there is no rival reading for the verifier to settle.
+  //
+  // T-C2-047 turn 9 is what this costs otherwise. Alex was told to contribute
+  // C_p6, stated it twice in its card's own words, and both drafts came back as
+  // verification candidates rather than accepted ids. The guard saw none, the
+  // turn died as `selected_trait_missing`, and Alex's only unique note about
+  // the pooled answer never reached the board.
+  //
+  // Deliberately not filtered to profile Z: the open pass is also what counts
+  // restatements of a human's trait, which are outside Alex's notes by
+  // definition.
+  const permitted = new Set(
+    [...(guard?.allowedTraitIds ?? []), guard?.requiredTraitId].filter(
+      (id): id is string => typeof id === "string",
+    ),
+  );
+  if (permitted.size) {
+    for (const candidate of extraction.verificationCandidates) {
+      if (permitted.has(candidate.traitId)) disclosed.add(candidate.traitId);
+    }
+  }
+  return [...disclosed];
 }
 
 /**
@@ -351,7 +378,7 @@ export function evaluateDraft(input: {
   previouslySurfacedTraitIds?: readonly string[];
   forbidQuestion?: boolean;
 }): DraftEvaluation {
-  const extractedIds = input.guard ? disclosedTraitIds(input.content) : undefined;
+  const extractedIds = input.guard ? disclosedTraitIds(input.content, input.guard) : undefined;
   const metadata = internalMetadataLeak(input.content);
   const question =
     input.forbidQuestion && outputAsksAQuestion(input.content)

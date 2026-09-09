@@ -103,10 +103,10 @@ side of the same mechanism.
 `updateAiSurfaced` ran between `Message.create` and the socket emit, so a
 broadcast that threw left the traits recorded as surfaced — on the board, in the
 message's `sharedInfoIds`, and in the pooling DV — for a message nobody saw.
-Nothing rolled them back. The ledger already had this right: it consumes an
-opportunity in `onBroadcastSuccess`, after the emit, which is what `CONTEXT.md`
-says a successful broadcast is for. Pooling now settles in the same place, and
-before the ledger.
+Nothing rolled them back. An opportunity already had this right: it is consumed
+in `onBroadcastSuccess`, after the emit, which is what `CONTEXT.md` says a
+successful broadcast is for. Pooling now settles in the same place, just before
+the opportunity does.
 
 The other lost-turn paths were already safe and stay untouched: a guard death, a
 supersession and a lifecycle cancel all return before the message is created, so
