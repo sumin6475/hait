@@ -28,13 +28,16 @@ import { transcriptLabel } from "./labels.js";
 import {
   extractHumanTraitsFast,
   verifyHumanTraitCandidates,
-  type FastTraitCandidate,
 } from "./poolingExtractor.js";
 import { updateAiSurfaced } from "./poolingDV.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
 import { computeCandidateList } from "./candidateList.js";
-import { generateScopedRouteMessage, type OutputRepairAudit } from "./routeScopedGeneration.js";
+import {
+  generateScopedRouteMessage,
+  outputScopeViolation,
+  type OutputRepairAudit,
+} from "./routeScopedGeneration.js";
 import { LEADER_OPENING, PEER_OPENING } from "./prompts.js";
 import { KO_LEADER_OPENING, KO_PEER_OPENING } from "./koPilot.js";
 import {
@@ -628,7 +631,17 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   // evidence costs no extra pass and — because the matcher is deterministic and
   // network-free — puts no model call back on the broadcast path.
   const broadcastExtraction = extractedAiIds
-    ? { acceptedIds: extractedAiIds, verificationCandidates: [] as FastTraitCandidate[] }
+    ? {
+        acceptedIds: extractedAiIds,
+        // [Issue 23] These used to be dropped. A guarded turn reused the
+        // guard's id list and threw the near matches away, so the one class of
+        // turn on which Alex actually discloses was the one class the bounded
+        // verifier never saw. The guard still decides on the ids alone — a near
+        // match may not cost a turn, and settling it is a model call that may
+        // not sit before the broadcast — but the board now gets the same late
+        // correction the unguarded and human paths already had.
+        verificationCandidates: generated.unresolvedCandidates ?? [],
+      }
     : extractHumanTraitsFast({ messageText: result.parsed.content });
   const broadcastTraitIds = [...new Set(broadcastExtraction.acceptedIds)];
 
@@ -736,6 +749,58 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     return { ok: false, error: "broadcast_failed" };
   }
 
+  /**
+   * [Issue 23] What the message actually carried, written onto the turn's own
+   * record once it is settled.
+   *
+   * `outputGuard.traitIds` is the evidence the guard decided on, and it has to
+   * be: the decision happens before the broadcast, where only the network-free
+   * matcher may run. It was also the only trait list the turn left behind, so
+   * the guard's guess was being read as the record of the message — and on the
+   * two of them that disagree, the analysis was reading the guess.
+   *
+   * These are two different questions and they now have two different fields.
+   * `surfacedTraitIds` answers the second one, after the bounded verifier has
+   * had its say, and re-runs the same bounds against it. A bound broken here is
+   * recorded and nothing more: the message is already out, blocking it is not
+   * on offer, and buying it back would cost a model call on the broadcast path
+   * that T-C1-024 took off it. What the record must not do is stay silent —
+   * the reveal budget is what keeps Alex's disclosure rate comparable across
+   * conditions, and a budget whose breaches are invisible is not measurable.
+   */
+  const recordSurfaced = async (ids: string[]) => {
+    if (!interventionId) return;
+    const surfacedTraitIds = [...new Set(ids)];
+    const postBroadcastViolation = generationGuard
+      ? outputScopeViolation(
+          result.parsed.content,
+          surfacedTraitIds,
+          generationGuard,
+          previouslySurfacedTraitIds,
+        )
+      : null;
+    try {
+      await AIIntervention.updateOne(
+        { _id: interventionId },
+        {
+          $set: {
+            surfacedTraitIds,
+            ...(postBroadcastViolation ? { postBroadcastViolation } : {}),
+          },
+        },
+      );
+    } catch (error) {
+      log.error("[route-turn] surfaced-trait record failed after broadcast:", error);
+    }
+    if (postBroadcastViolation) {
+      log.warn(
+        `[route-turn] delivered message broke ${postBroadcastViolation} ` +
+          `guard=${generationGuard?.reason ?? "none"} surfaced=${surfacedTraitIds.length} ` +
+          `guardSaw=${broadcastTraitIds.length} session=${input.sessionCode} seq=${savedMessage.seq}`,
+      );
+    }
+  };
+
   if (!["summary", "closing", "greeting", "backchannel"].includes(input.routeKind)) {
   // What Alex actually put on the board, recorded only once the message is out.
   //
@@ -758,7 +823,17 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         input.routeKind === "build_on" &&
         input.judgeEvidence === "relevant_unsurfaced_information" &&
         input.selectedTraitId
-          ? { acceptedIds: [input.selectedTraitId], verificationCandidates: [] }
+          ? {
+              // The selected note is guaranteed onto the board whatever the
+              // matcher made of the wording — that is what this branch is for.
+              // Whatever else the matcher plainly accepted is kept rather than
+              // replaced: dropping it was how a second trait in the same
+              // message left no trace.
+              acceptedIds: [
+                ...new Set([input.selectedTraitId, ...broadcastExtraction.acceptedIds]),
+              ],
+              verificationCandidates: broadcastExtraction.verificationCandidates,
+            }
           : broadcastExtraction;
       const ids = deterministic.acceptedIds;
       await Promise.all([
@@ -778,7 +853,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
               candidates: deterministic.verificationCandidates,
             });
             const extra = verified.ids.filter((id) => !ids.includes(id));
-            if (!extra.length) return;
+            if (!extra.length) return await recordSurfaced(ids);
             await Promise.all([
               updateAiSurfaced(input.sessionId, extra, savedMessage.seq),
               Message.updateOne(
@@ -786,10 +861,14 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
                 { $addToSet: { sharedInfoIds: { $each: extra } } },
               ),
             ]);
+            await recordSurfaced([...ids, ...extra]);
           } catch (error) {
             log.error("[pooling] AI late verification error:", error);
+            await recordSurfaced(ids);
           }
         })();
+      } else {
+        await recordSurfaced(ids);
       }
     } catch (error) {
       log.error("[pooling] AI update error:", error);

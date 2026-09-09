@@ -1,5 +1,5 @@
 import { callAIStructured, type AIStructuredResult } from "./openai.js";
-import { extractHumanTraitsFast } from "./poolingExtractor.js";
+import { extractHumanTraitsFast, type FastTraitCandidate } from "./poolingExtractor.js";
 import { candidatesForIds } from "./informationPools.js";
 import type { RouteOutputScopeGuard } from "./routeContext.js";
 import { log } from "./log.js";
@@ -153,7 +153,10 @@ export function internalMetadataSoftViolations(content: string): string[] {
  *
  * It also takes one or two synchronous model calls off the generation path.
  */
-function disclosedTraitIds(content: string, guard?: RouteOutputScopeGuard): string[] {
+function disclosedTraitIds(
+  content: string,
+  guard?: RouteOutputScopeGuard,
+): { ids: string[]; unresolvedCandidates: FastTraitCandidate[] } {
   const extraction = extractHumanTraitsFast({ messageText: content });
   const disclosed = new Set(extraction.acceptedIds);
   // Alex's own message asks a closed question, and the human path asks an open
@@ -181,7 +184,24 @@ function disclosedTraitIds(content: string, guard?: RouteOutputScopeGuard): stri
       if (permitted.has(candidate.traitId)) disclosed.add(candidate.traitId);
     }
   }
-  return [...disclosed];
+  // What is left is a near match on an id this turn was *not* permitted to
+  // say. The guard cannot act on it — a near match is not evidence enough to
+  // cost a turn, and settling it is a model call that may not sit on the
+  // broadcast path. But it must not be thrown away either: it used to be, and
+  // the board lost every one of them on guarded turns.
+  //
+  // T-C2-047 turn 35 is the shape. Alex named `A_p4` in the pool's own words
+  // and `B_p3` in near ones. That turn happened to carry no guard, so the
+  // ordinary late verification ran and the board got both. Under a reveal
+  // budget the same message would have passed a budget of one while carrying
+  // two, and the board would have recorded one — the guard's guess, silently,
+  // with nothing left to correct it.
+  return {
+    ids: [...disclosed],
+    unresolvedCandidates: extraction.verificationCandidates.filter(
+      (candidate) => !disclosed.has(candidate.traitId),
+    ),
+  };
 }
 
 /**
@@ -354,6 +374,13 @@ export function outputVerdict(input: {
 
 export interface DraftEvaluation {
   extractedIds?: string[];
+  /**
+   * Near matches on ids this turn was not permitted to say, left for the same
+   * bounded verifier the human path uses. They are settled after the broadcast
+   * and never before it, so they cost the turn no latency and can only correct
+   * the record — never block a message.
+   */
+  unresolvedCandidates?: FastTraitCandidate[];
   metadata: string | null;
   question: string | null;
   scope: string | null;
@@ -378,7 +405,8 @@ export function evaluateDraft(input: {
   previouslySurfacedTraitIds?: readonly string[];
   forbidQuestion?: boolean;
 }): DraftEvaluation {
-  const extractedIds = input.guard ? disclosedTraitIds(input.content, input.guard) : undefined;
+  const disclosed = input.guard ? disclosedTraitIds(input.content, input.guard) : undefined;
+  const extractedIds = disclosed?.ids;
   const metadata = internalMetadataLeak(input.content);
   const question =
     input.forbidQuestion && outputAsksAQuestion(input.content)
@@ -395,6 +423,7 @@ export function evaluateDraft(input: {
   const verdict = outputVerdict({ metadata, question, scope });
   return {
     extractedIds,
+    unresolvedCandidates: disclosed?.unresolvedCandidates,
     metadata,
     question,
     scope,
@@ -503,6 +532,8 @@ export async function generateScopedRouteMessage(input: {
 }): Promise<{
   result: AIStructuredResult;
   extractedIds?: string[];
+  /** Near matches the guard could not settle, for the post-broadcast verifier. */
+  unresolvedCandidates?: FastTraitCandidate[];
   scopeRepair?: { violation: string; candidate?: string };
   internalMetadataRepair?: { violation: string };
   repairAudit?: OutputRepairAudit;
@@ -524,16 +555,20 @@ export async function generateScopedRouteMessage(input: {
     });
   const initial = evaluate(result.parsed.content);
   let extractedIds = initial.extractedIds;
+  // Always the evaluation of the draft that is actually returned, so a repaired
+  // message never carries the initial draft's leftovers.
+  let unresolvedCandidates = initial.unresolvedCandidates;
   const metadataViolation = initial.metadata;
   const questionViolation = initial.question;
   const scopeViolation = initial.scope;
   let softViolations = initial.softViolations;
   const verdict = initial;
   if (!verdict.needsRepair) {
-    if (!softViolations.length) return { result, extractedIds };
+    if (!softViolations.length) return { result, extractedIds, unresolvedCandidates };
     return {
       result,
       extractedIds,
+      unresolvedCandidates,
       repairAudit: {
         version: 1,
         guard: auditedGuard(input.guard),
@@ -619,6 +654,7 @@ export async function generateScopedRouteMessage(input: {
 
     const repairedDraft = evaluate(repaired.parsed.content);
     extractedIds = repairedDraft.extractedIds;
+    unresolvedCandidates = repairedDraft.unresolvedCandidates;
     softViolations = repairedDraft.softViolations;
     const repairedViolations = repairedDraft.violations;
     repairAudit.attempts.push(
@@ -636,6 +672,7 @@ export async function generateScopedRouteMessage(input: {
       return {
         result,
         extractedIds,
+        unresolvedCandidates,
         scopeRepair:
           scopeViolation && input.guard
             ? {

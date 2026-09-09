@@ -28,6 +28,7 @@
     "prompts:compile": "node scripts/compile-route-prompts.mjs",
     "test:intervention-v2": "npm run build --silent && node dist/scripts/test-intervention-v2.js",
     "docs:check": "tsx src/scripts/check-docs.ts",
+    "report:budget": "tsx src/scripts/report-reveal-budget.ts",
     "build:id": "node scripts/build-id.mjs"
   },
   "dependencies": {

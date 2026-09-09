@@ -5020,4 +5020,128 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
   assert.equal(notesBlockOf(leaderBlock), notesBlockOf(peerBlock), "the card is condition-invariant");
 }
 
+// ── The guard's evidence and the delivered message are two different things ──
+// [Issue 23] The guard has to decide before the broadcast, where only the
+// network-free matcher may run, so its evidence is the matcher's accepted ids
+// and can never be more than that. The board is written afterwards, once the
+// bounded verifier has settled the near matches. Those two answers disagree
+// whenever a near match turns out to be real — and the guarded turns, the one
+// class of turn on which Alex actually discloses, used to throw the near
+// matches away entirely, so on them nothing could ever disagree and the guess
+// stood as the record unchallenged.
+{
+  // T-C2-047 seq 36. `A_p4` in the pool's own words, `B_p3` in near ones.
+  const turn35 =
+    "From what I hold, I have one additional trait for Candidate A: they match " +
+    "being very well organized. For Candidate B I have one more: they match " +
+    "assessing weather conditions very well. Those are the only new facts I have.";
+  const revealBudget = {
+    reason: "route_reveal_budget",
+    revealBudget: true,
+    maxTraitIds: 1,
+    maxRestatedTraitIds: 2,
+    maxSentences: 3,
+    maxWords: 80,
+  } as any;
+
+  const guarded = evaluateDraft({ content: turn35, guard: revealBudget });
+  assert.deepEqual(
+    guarded.extractedIds,
+    ["A_p4"],
+    "the matcher accepts A_p4 outright and refers B_p3; the guard sees only the first",
+  );
+  assert.equal(
+    guarded.scope,
+    null,
+    "one accepted id under a budget of one: the guard passes, which is why the turn went out",
+  );
+  assert.deepEqual(
+    guarded.unresolvedCandidates?.map((candidate) => candidate.traitId),
+    ["B_p3"],
+    "the near match survives the guard instead of being dropped — it is what the verifier is for",
+  );
+
+  // Once the verifier confirms it, the same bounds against the same message
+  // give the answer the record should have carried all along.
+  assert.equal(
+    outputScopeViolation(turn35, ["A_p4", "B_p3"], revealBudget),
+    "too_many_traits",
+    "two traits under a budget of one is a violation; it was invisible because only one was counted",
+  );
+
+  // A permitted near match is still settled by the turn's own closed question
+  // and never reaches the verifier: the turn named what it could say.
+  const selectedNote = evaluateDraft({
+    content: "Adding one more: Candidate B matches assessing weather conditions very well.",
+    guard: { reason: "selected_note_contribution", candidate: "B", maxTraitIds: 1, allowedTraitIds: ["B_p3"], requiredTraitId: "B_p3" } as any,
+  });
+  assert.deepEqual(selectedNote.extractedIds, ["B_p3"], "a permitted near match is accepted, not referred");
+  assert.deepEqual(selectedNote.unresolvedCandidates, [], "nothing is left for the verifier to settle");
+
+  // An unguarded draft has no extraction at all, and therefore nothing to carry.
+  const unguarded = evaluateDraft({ content: turn35 });
+  assert.equal(unguarded.extractedIds, undefined);
+  assert.equal(unguarded.unresolvedCandidates, undefined);
+}
+
+// The record is written after the broadcast, from the settled set, and no model
+// call moved onto the path in front of the broadcast to get it. Source order
+// again: the invariant is about when these lines run, and the file is where it
+// is visible.
+{
+  const routeTurnSource = readFileSync(join(SRC_ROOT, "lib/routeTurn.ts"), "utf8").split("\n");
+  const linesOf = (needle: string) => {
+    const found = routeTurnSource.flatMap((line, index) => (line.includes(needle) ? [index] : []));
+    assert.ok(found.length > 0, `routeTurn.ts no longer contains ${needle}`);
+    return found;
+  };
+  const emit = linesOf('emit("new-message"')[0]!;
+  for (const verify of linesOf("verifyHumanTraitCandidates({")) {
+    assert.ok(
+      verify > emit,
+      "the bounded verifier must stay behind the broadcast; T-C1-024 took 2.5-3.5 s off that path",
+    );
+  }
+  for (const write of linesOf("surfacedTraitIds,")) {
+    assert.ok(write > emit, "what the message carried is recorded only once it has been sent");
+  }
+  const recordSurfacedDefinition = linesOf("const recordSurfaced = async")[0]!;
+  assert.ok(
+    recordSurfacedDefinition > emit,
+    "the post-broadcast record belongs after the broadcast, not folded into the create",
+  );
+  // Every exit from the pooling block settles the record, including the two
+  // failure exits — a verifier that errors or returns nothing still leaves a
+  // turn whose delivered traits are known.
+  assert.equal(
+    linesOf("recordSurfaced(").length,
+    4,
+    "four call sites: no candidates, verified-nothing-extra, verified-extra, verifier-failed",
+  );
+}
+
+// A plain statement of a trait reaches the board. T-C2-047 seq 31 stated `A_n1`
+// inside a conditional — "if A does X and he does not tolerate criticism, what
+// happens?" — which the matcher refers and the verifier declined, and declining
+// a premise inside an "if" is the behaviour the ambiguity check is for. The
+// same trait asserted plainly is accepted outright, which it was not before the
+// canonical wording became matchable.
+{
+  const plain = extractHumanTraitsFast({ messageText: "Candidate A does not tolerate criticism." });
+  assert.deepEqual(plain.acceptedIds, ["A_n1"], "a plain statement of A_n1 is accepted, not referred");
+  assert.deepEqual(plain.verificationCandidates, []);
+
+  const conditional = extractHumanTraitsFast({
+    messageText:
+      "Also, if A does a technical mistake and the co-worker remined him and he " +
+      "does not tolerate criticism?! what's gonna happen?",
+  });
+  assert.deepEqual(conditional.acceptedIds, [], "a premise inside a conditional is not asserted");
+  assert.deepEqual(
+    conditional.verificationCandidates.map((candidate) => candidate.traitId),
+    ["A_n1"],
+    "it is referred rather than dropped, which is the most the matcher can say about it",
+  );
+}
+
 console.log("intervention-v2 checks passed");

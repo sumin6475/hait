@@ -253,6 +253,16 @@ const aiInterventionSchema = new mongoose.Schema(
     outputScopeRepaired: { type: Boolean },
     outputScopeViolation: { type: String },
     outputGuard: { type: outputGuardSchema, default: undefined },
+    // [Issue 23] What the delivered message actually put on the board, written
+    // after the bounded verifier has settled the near matches. `outputGuard
+    // .traitIds` is the pre-broadcast evidence the guard decided on and cannot
+    // be more than that; these two disagree whenever a near match turns out to
+    // be real, and until now only the first was recorded.
+    surfacedTraitIds: { type: [String], default: undefined },
+    // The bound the delivered message broke, measured against `surfacedTraitIds`
+    // and recorded only. A pre-broadcast `outputGuard.violation` cost the turn;
+    // this one did not, because the message was already out.
+    postBroadcastViolation: { type: String },
     candidateList: { type: candidateListSchema, default: undefined },
     // Internal subject-control audit. These fields are never included in the visible message.
     focusCandidate: { type: String, enum: ["A", "B", "C", "D"] },
