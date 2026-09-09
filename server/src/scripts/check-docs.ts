@@ -53,6 +53,7 @@ type MigrationMap = {
  *  this list can name artifacts that later tickets create. */
 const TRACKED_DOCS = [
   "CONVERSATION-REPAIR-CHECKPOINT.md",
+  "ARCHITECTURE.md",
   "CONTEXT.md",
   "CLAUDE.md",
   "README.md",
