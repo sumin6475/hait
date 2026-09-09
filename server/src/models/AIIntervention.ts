@@ -253,7 +253,7 @@ const aiInterventionSchema = new mongoose.Schema(
     outputScopeRepaired: { type: Boolean },
     outputScopeViolation: { type: String },
     outputGuard: { type: outputGuardSchema, default: undefined },
-    // [Issue 23] What the delivered message actually put on the board, written
+    // [Issue 25] What the delivered message actually put on the board, written
     // after the bounded verifier has settled the near matches. `outputGuard
     // .traitIds` is the pre-broadcast evidence the guard decided on and cannot
     // be more than that; these two disagree whenever a near match turns out to

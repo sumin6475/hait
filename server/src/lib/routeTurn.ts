@@ -515,6 +515,12 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         limits: routeGenerationLimits(input.routeKind, context.requestIntent),
         guard: generationGuard,
         previouslySurfacedTraitIds,
+        // [Issue 22] The human turn this one is answering. Traits Alex repeats
+        // back from it are uptake, not disclosure, and the prompts ask for that
+        // uptake by name.
+        repliedToContent: messages.find(
+          (message) => message.seq === input.anchorSeq && message.senderRole !== "ai",
+        )?.content,
         // [T-C2-046] Not folded into `generationGuard`: two of the three turns
         // that broke this rule had no guard at all, so a question check hung
         // off the guard would have missed them.
@@ -634,7 +640,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   const broadcastExtraction = extractedAiIds
     ? {
         acceptedIds: extractedAiIds,
-        // [Issue 23] These used to be dropped. A guarded turn reused the
+        // [Issue 25] These used to be dropped. A guarded turn reused the
         // guard's id list and threw the near matches away, so the one class of
         // turn on which Alex actually discloses was the one class the bounded
         // verifier never saw. The guard still decides on the ids alone — a near
@@ -751,7 +757,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   }
 
   /**
-   * [Issue 23] What the message actually carried, written onto the turn's own
+   * [Issue 25] What the message actually carried, written onto the turn's own
    * record once it is settled.
    *
    * `outputGuard.traitIds` is the evidence the guard decided on, and it has to
@@ -778,6 +784,12 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
           surfacedTraitIds,
           generationGuard,
           previouslySurfacedTraitIds,
+          // [Issue 22 x 25] The same echo set the guard decided on. Recomputing
+          // it here, or omitting it, would make the post-broadcast record
+          // disagree with the pre-broadcast decision by construction — a turn
+          // that correctly took up a participant's own words would be filed as
+          // having broken its budget.
+          generated.echoedTraitIds ?? [],
         )
       : null;
     try {
@@ -854,7 +866,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
               candidates: deterministic.verificationCandidates,
             });
             const extra = verified.ids.filter((id) => !ids.includes(id));
-            // [Issue 23] What the matcher found in Alex's message and the
+            // [Issue 25] What the matcher found in Alex's message and the
             // verifier then declined. The human path has recorded this since
             // issue 15, after T-C2-045 lost two traits to a silent decline;
             // Alex's own near matches only started reaching the verifier in

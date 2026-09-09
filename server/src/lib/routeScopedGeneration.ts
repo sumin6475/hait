@@ -106,7 +106,15 @@ const INTERNAL_METADATA_PATTERNS = [
   /\bserver[- ]calculated\b/i,
   /\binternal preference cue\b/i,
   /\bpreference decision state\b/i,
+  // [Issue 23] Every token the preference cues can emit. This list and the cue
+  // builders in `routeContext` are two lists that must agree, and they had
+  // already drifted: `formatScopedPreferenceDecision` was added with three
+  // `SCOPED_*` states and none of them reached here, so half the cues could be
+  // repeated back to a participant with nothing to catch it. T-C1-023 seq 23
+  // shipped "My current read is NO_CURRENT_PREFERENCE" — the model reporting the
+  // label as the value — and was caught only because that one was on the list.
   /\b(?:NO_CURRENT_PREFERENCE|CURRENT_CO_PREFERENCE|CURRENT_PREFERENCE)\b/i,
+  /\b(?:NO_SCOPED_PREFERENCE|SCOPED_CO_PREFERENCE|SCOPED_PREFERENCE)\b/i,
   /\bdepth threshold\b/i,
   /\bfocus (?:directive|calculation)\b/i,
   /\bhuman[- ]confirmed (?:trait )?count\b/i,
@@ -233,9 +241,28 @@ export function outputScopeViolation(
   extractedIds: string[],
   guard: RouteOutputScopeGuard,
   previouslySurfacedTraitIds: readonly string[] = [],
+  /**
+   * [Issue 22] The traits already present in the message Alex is replying to.
+   *
+   * A trait the other person just said, repeated in the reply to them, is
+   * neither a disclosure nor a recital — it is uptake, which every route prompt
+   * explicitly asks for ("briefly takes up the latest human point"). Counting
+   * it made the bound penalise the behaviour the prompt requires: T-C1-023 seq
+   * 22 was dropped twice for naming four traits when two of them were the
+   * participant's own words and Alex had put two on the table.
+   *
+   * Excluded from both counts, not just the restated one. If the participant
+   * introduced it, Alex echoing it is not Alex introducing it.
+   */
+  echoedTraitIds: readonly string[] = [],
 ): string | null {
   const previouslySurfaced = new Set(previouslySurfacedTraitIds);
-  const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
+  const echoed = new Set(echoedTraitIds);
+  // What this turn actually put on the table, as opposed to what it repeated
+  // back. Measured with the same extractor on both sides, so the comparison
+  // cannot drift.
+  const contributedIds = extractedIds.filter((id) => !echoed.has(id));
+  const newlyIntroducedIds = contributedIds.filter((id) => !previouslySurfaced.has(id));
   // Hard scope checks are factual only. Already-visible human traits may be
   // referenced naturally; only facts newly introduced by this Alex turn are
   // constrained.
@@ -268,7 +295,7 @@ export function outputScopeViolation(
   // that gate D2 was built to refuse.
   if (
     guard.maxRestatedTraitIds !== undefined &&
-    extractedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
+    contributedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
   ) {
     return "too_many_restated_traits";
   }
@@ -375,6 +402,13 @@ export function outputVerdict(input: {
 export interface DraftEvaluation {
   extractedIds?: string[];
   /**
+   * The traits already present in the message being replied to, as this
+   * evaluation read them. Returned rather than recomputed downstream so the
+   * post-broadcast record measures the delivered message against the same echo
+   * set the guard decided on — the two used to disagree by construction.
+   */
+  echoedTraitIds?: string[];
+  /**
    * Near matches on ids this turn was not permitted to say, left for the same
    * bounded verifier the human path uses. They are settled after the broadcast
    * and never before it, so they cost the turn no latency and can only correct
@@ -403,10 +437,23 @@ export function evaluateDraft(input: {
   content: string;
   guard?: RouteOutputScopeGuard;
   previouslySurfacedTraitIds?: readonly string[];
+  /**
+   * [Issue 22] The text Alex is replying to. The echo set is derived from it
+   * here, with the same extractor the draft is measured by, so the two sides of
+   * the comparison cannot drift apart.
+   */
+  repliedToContent?: string;
   forbidQuestion?: boolean;
 }): DraftEvaluation {
   const disclosed = input.guard ? disclosedTraitIds(input.content, input.guard) : undefined;
   const extractedIds = disclosed?.ids;
+  // The echo set is read with no guard, deliberately. Alex's own draft is a
+  // closed question — the turn named what it was permitted to say — but the
+  // message being replied to is a participant's, and a participant's sentence
+  // could be about any of the forty traits or none. That is the open rule, and
+  // it is the same rule the human path applies to the same text.
+  const echoedTraitIds =
+    input.guard && input.repliedToContent ? disclosedTraitIds(input.repliedToContent).ids : [];
   const metadata = internalMetadataLeak(input.content);
   const question =
     input.forbidQuestion && outputAsksAQuestion(input.content)
@@ -418,11 +465,13 @@ export function evaluateDraft(input: {
         extractedIds ?? [],
         input.guard,
         input.previouslySurfacedTraitIds,
+        echoedTraitIds,
       )
     : null;
   const verdict = outputVerdict({ metadata, question, scope });
   return {
     extractedIds,
+    echoedTraitIds: input.guard ? echoedTraitIds : undefined,
     unresolvedCandidates: disclosed?.unresolvedCandidates,
     metadata,
     question,
@@ -522,6 +571,8 @@ export async function generateScopedRouteMessage(input: {
   limits: GenerationLimits;
   guard?: RouteOutputScopeGuard;
   previouslySurfacedTraitIds?: string[];
+  /** [Issue 22] The message this turn is replying to, for the echo exemption. */
+  repliedToContent?: string;
   /**
    * [T-C2-046] Set for the explanatory conditions. Checked outside `guard`
    * because it must hold on every turn, and the turns that broke it had no
@@ -534,6 +585,8 @@ export async function generateScopedRouteMessage(input: {
   extractedIds?: string[];
   /** Near matches the guard could not settle, for the post-broadcast verifier. */
   unresolvedCandidates?: FastTraitCandidate[];
+  /** The echo set the guard used, so the post-broadcast record can reuse it. */
+  echoedTraitIds?: string[];
   scopeRepair?: { violation: string; candidate?: string };
   internalMetadataRepair?: { violation: string };
   repairAudit?: OutputRepairAudit;
@@ -551,6 +604,7 @@ export async function generateScopedRouteMessage(input: {
       content,
       guard: input.guard,
       previouslySurfacedTraitIds: input.previouslySurfacedTraitIds,
+      repliedToContent: input.repliedToContent,
       forbidQuestion: input.forbidQuestion,
     });
   const initial = evaluate(result.parsed.content);
@@ -558,17 +612,22 @@ export async function generateScopedRouteMessage(input: {
   // Always the evaluation of the draft that is actually returned, so a repaired
   // message never carries the initial draft's leftovers.
   let unresolvedCandidates = initial.unresolvedCandidates;
+  // The message being replied to does not change between drafts, so this is
+  // constant across the repair loop; carried anyway so every return path has it.
+  const echoedTraitIds = initial.echoedTraitIds;
   const metadataViolation = initial.metadata;
   const questionViolation = initial.question;
   const scopeViolation = initial.scope;
   let softViolations = initial.softViolations;
   const verdict = initial;
   if (!verdict.needsRepair) {
-    if (!softViolations.length) return { result, extractedIds, unresolvedCandidates };
+    if (!softViolations.length)
+      return { result, extractedIds, unresolvedCandidates, echoedTraitIds };
     return {
       result,
       extractedIds,
       unresolvedCandidates,
+      echoedTraitIds,
       repairAudit: {
         version: 1,
         guard: auditedGuard(input.guard),
@@ -673,6 +732,7 @@ export async function generateScopedRouteMessage(input: {
         result,
         extractedIds,
         unresolvedCandidates,
+        echoedTraitIds,
         scopeRepair:
           scopeViolation && input.guard
             ? {

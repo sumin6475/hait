@@ -428,7 +428,7 @@ not be read as evidence about the live system.
 On the human path a candidate the verifier declines has been written to
 `Message.declinedTraitIds` since issue 15, after T-C2-045 lost two traits to a
 silent decline. Alex's own near matches only began reaching the verifier in
-issue 23, and arrived with the same blind spot.
+issue 25, and arrived with the same blind spot.
 
 Both paths now write the same field with the same meaning, after the broadcast.
 A test asserts the write exists on both and that Alex's is behind the emit.

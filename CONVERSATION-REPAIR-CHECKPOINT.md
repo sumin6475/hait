@@ -42,11 +42,27 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
-**What is open.** Twenty-one issues in `.scratch/conversation-repair/issues/`.
-Nothing is blocked on code. The two that remain are blocked on a measurement:
-issue 10 needs a live Observer latency figure, and issue 16 needs a frequency
-count before a guard for it is worth its cost. Eighteen are done and one records
-a decision not to act.
+**What is open.** Twenty-five issues in `.scratch/conversation-repair/issues/`.
+Nothing is blocked on code. The three that remain are blocked on a measurement:
+issue 10 needs a live Observer latency figure, issue 16 needs a frequency count
+before a guard for it is worth its cost, and issue 23 needs a second leak before
+renaming thirty live prompts is worth an unmeasured version bump. Twenty-one are
+done and one records a decision not to act.
+
+Issues 24 and 25 came out of T-C2-047 on a parallel branch and were renumbered
+on merge — 22 and 23 were taken. 25 is done. **24 is the one still open on
+behaviour rather than on a measurement**: Alex is now told which of its own
+notes are unsaid, but the post-condition that refuses a message still claiming
+otherwise is deliberately not built, because with an accurate record in front of
+it no session has yet produced the claim.
+
+**T-C1-023 measured the guard fixes on a near-identical script: guard deaths
+10 → 3, repair success 23% → 57%, and both questions that cost T-C1-021 its
+endgame were answered.** One of the three remaining deaths was issue 22 (taking
+up a participant's own words counted as reciting) and is fixed. One is the bound
+working. One was a preference-cue label the model repeated back as a value
+(issue 23); the detector caught it, and the suspicion recorded at the time that
+issue 21 had caused it is disconfirmed — see the measurement log.
 
 **Issues 20 and 21 close the guard audit.** 20 removed eight of T-C1-021's ten
 guard deaths, verified by replaying all ten through the built context with the

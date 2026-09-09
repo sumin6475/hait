@@ -750,6 +750,59 @@ sessions, for want of an engine harness. And whether the Judge would choose
 silence if the cooldown stopped filtering for it, which is unanswerable while
 the branch stays at 0/30.
 
+## T-C1-023 (2026-09-08) — the guard fixes, against a near-identical script
+
+Member/xai, 45 messages, on the build carrying issues 13B, 14, 15, 18, 19, 20 and
+21. The human script closely follows the 2026-09-08 `T-C1-021` run, which makes
+this the cleanest A/B the repair has had since T-C2-043 → T-C2-045.
+
+| | T-C1-021 | T-C1-023 |
+| --- | ---: | ---: |
+| Broadcast | 15 | 16 |
+| **Silent — output guard** | **10** | **3** |
+| Silent — cooldown | 7 | 8 |
+| Silent — other | 1 | 1 |
+| Repair attempts that saved the turn | 3 of 13 | **4 of 7** |
+| Alex words, mean / max | 32.6 / 58 | 34.1 / 67 |
+| Observer latency, median / max | 7.7 s / 13.3 s | 7.5 s / 13.5 s |
+
+**Confirmed — issues 18 and 20.** The two questions that cost T-C1-021 its whole
+endgame were both answered here: "What misses do others have for Candidate C?"
+(seq 33) and "What misses do we have for Candidate A?" (seq 38) each produced a
+broadcast. In T-C1-021 the first of those was re-attempted and dropped on six
+separate turns.
+
+**Confirmed — guard cost fell by 70%** on the same script, and the repair's
+success rate went from 23% to 57%.
+
+**Disconfirmed — that the remaining deaths are the same defect.** They are three
+different things, and only one is a fault in the bound:
+
+- **seq 22** — Alex took up a participant's two D misses and added its own two.
+  Four counted against a cap of two, and the rewrite repeated it. Two of the four
+  were the participant's own words. → **issue 22**, fixed; both drafts now pass,
+  the initial one without a repair call.
+- **seq 24** — a ten-trait draft, repaired to five, still over a cap of one. The
+  bound doing its job on a turn where nobody asked for a list.
+- **seq 23** — an eight-trait draft, repaired to **one**, then rejected for
+  `internal_metadata_leak`. The rewrite ended *"My current read is
+  NO_CURRENT_PREFERENCE"*: the model reported the preference cue's own label as
+  the value it had been told to state. → **issue 23**.
+
+**A suspicion that was raised here and is now disconfirmed.** This entry first
+recorded that issue 21 — which began stating every bound in the repair
+correction — might have caused that leak, and pointed at the phrase *"I can
+share one additional trait"*. Neither holds. That phrase passes the detector on
+its own; the sentinel is the only thing that fired, and it predates issue 21 by
+the whole life of the prompt. The suspicion was formed from a log line truncated
+at ninety characters, before the detector was run on the text. **Run the checker
+before naming the cause.**
+
+**Not exercised.** Anything aci. The engine-side wiring, as ever. And the
+comparison is only as clean as the script: the two runs share a script closely
+but not exactly, so treat single-turn differences as illustrative and the totals
+as the result.
+
 ---
 
 ## T-C3-003 — the first aci session in this record

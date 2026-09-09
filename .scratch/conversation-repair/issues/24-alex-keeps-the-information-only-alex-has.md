@@ -1,4 +1,4 @@
-# 22: Alex says it has nothing left while holding cards
+# 24: Alex says it has nothing left while holding cards
 
 **What to fix:** Twice in T-C2-047, once in direct answer to the pooling question
 itself, Alex told the group it had no further information while unsurfaced
@@ -78,7 +78,7 @@ is already structured output, so the model can return the trait ids it disclosed
 as a field, checked against what it was permitted, with keyword extraction kept
 as a cross-check rather than as the source of truth. Today
 `routeScopedGeneration.ts:156` runs the keyword extractor over Alex's own text
-and treats the result as fact — see issue 23 for what that costs on the human
+and treats the result as fact — see issue 25 for what that costs on the human
 side of the same mechanism.
 
 ## What must not regress

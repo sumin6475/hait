@@ -6,7 +6,7 @@ import { Session } from "../models/Session.js";
 import { contributesToBoard } from "../types.js";
 
 /**
- * [Issue 23] How often a delivered message broke the bound its turn was given,
+ * [Issue 25] How often a delivered message broke the bound its turn was given,
  * per session and per condition.
  *
  * The reveal budget is what keeps Alex's disclosure rate comparable across

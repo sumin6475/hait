@@ -1,4 +1,4 @@
-# 23: The reveal budget and the board are read from different extractors
+# 25: The reveal budget and the board are read from different extractors
 
 **What to fix:** The output guard is checked against the fast keyword extractor
 at broadcast time, while the board is written by the verified extractor
@@ -41,7 +41,7 @@ inside a conditional — "if A does X and he does not tolerate criticism, what
 happens?" — and declining a premise inside an "if" is what the ambiguity check is
 for, not a failure of it. The same trait stated plainly is now accepted outright
 by the matcher, which it was not before the canonical wording became matchable
-(issue 22). Both readings are locked in `test-intervention-v2`.
+(issue 24). Both readings are locked in `test-intervention-v2`.
 
 ## Why this matters beyond tidiness
 
