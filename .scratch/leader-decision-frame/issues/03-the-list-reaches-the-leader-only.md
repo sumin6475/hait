@@ -5,7 +5,32 @@ input to the decision, and to the peer conditions not at all.
 
 **Blocked by:** 01, 02.
 
-**Status:** needs-triage
+**Status:** ready-for-human — the Judge half is built (2026-09-10); the generator
+half and issue 04's other two moves are not.
+
+## What was built
+
+`leaderCoverageNote` in `server/src/lib/interventionJudge.ts` turns the list into
+one sentence and puts it in the Judge's per-turn facts, beside the other moves
+available now. C2 and C4 receive it; **C1 and C3 receive `null`**, and both
+directions are pinned in `test:conversation-ledger`. No number reaches the Judge:
+it is handed the reading, not the arithmetic, because the brief rules forbid a
+count reaching the writer and a Judge given integers can leak one.
+
+Only issue 04's first move — naming a candidate the group has not covered — is
+served. The list still says nothing about what the team has pooled, and raises no
+shortfall at the close.
+
+**Why the Judge and not the generator.** The leader's generator already receives
+the whole board and the "Still to cover" line. The Judge did not, so it wrote the
+turn's purpose blind to coverage: in T-C4-024, on a turn where A and D had
+nothing on them, it told the writer to "propose a clear criterion to decide" and
+Alex invented a rule that weighted trait categories. This moves an input one
+stage earlier rather than adding a new one.
+
+**Unvalidated.** Whether one sentence is enough to stop the invention is a
+question only a session answers. Measure it on the next C2 or C4 run before
+building issue 04's remaining moves.
 
 ## The manipulation this realises
 

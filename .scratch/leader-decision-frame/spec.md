@@ -101,6 +101,57 @@ goes in the route prompts. The 30-key snapshot structure, its startup hash
 verification, and the orthogonality assertions in `test-intervention-v2` are
 untouched.
 
+## The late half of the discussion is not designed
+
+Issue 04's first move — naming a candidate the group has not covered — was built
+on 2026-09-10 and reaches the leader's Judge. It answers the early and middle of
+a discussion. **Nothing answers the end of one**, and the three pieces that would
+have to answer it do not know about each other.
+
+**The Observer already labels the phase.** `conversationPhase` carries one of
+`opening / exploration / comparison / deliberation / decision / closing` on every
+observation. **No code reads it.** T-C4-024 and T-C2-049 both sat on
+`exploration` for their whole length, so the field has never been checked against
+a session either.
+
+**The summary arms once, on five thresholds, and changes nothing after it fires.**
+`armSummaryIfEligible` needs 10 minutes elapsed, 12 human messages, 8 traits on
+the board, 2 candidates covered, and 5 minutes still left. That is the only "the
+discussion is late" signal in the server, and all it does is force one turn onto
+the summary route. T-C4-024 ended with `summaryStatus: "pending"` and nothing
+downstream that a summary having happened would change.
+
+**The coverage note goes quiet exactly when the group starts converging.** When
+`live` empties, the leader's Judge is told "there is no coverage gap to name" —
+which is the empty slot that produced the invented stopping rule, returning at
+the other end of the session. The instruction beside it ("say what the turn adds
+to the comparison the group is already having") is markedly vaguer than the one
+it replaces ("bring A into the discussion").
+
+Observed, not predicted: **T-C2-049 seq 26-31.** Two participants narrowed to A
+and B and asked Alex to help decide; Alex answered by putting one further miss
+for B on the table. Nothing told the Judge the group was converging, because
+nothing computes that.
+
+### What a design would have to settle
+
+- **When is it late?** `live.length === 0` is available now; elapsed time is
+  already read by the summary arming; `summaryStatus === "done"` is recorded. The
+  one signal that does not exist is *the humans have narrowed to a subset* — the
+  ledger holds `focusCandidate` per turn but nothing derives a narrowing.
+- **What does the leader do then?** Issue 04's remaining two moves cover part of
+  it: saying what the team has pooled, and raising a coverage shortfall once when
+  the group moves to narrow or close. **Moving the group toward a decision is not
+  in this spec at all.** Adding it is adding a treatment, and has to be declared
+  as one the way issue 05 is.
+- **What must not move.** The same fixed points as everything else here: no
+  change to when Alex speaks, and the peer receives none of it.
+
+**Not scheduled.** No session has yet run long past `live` emptying, so the late
+gap is derived from the shape of the code rather than from an observed failure.
+Measure it first: on the next session, read what Alex does on the turns after the
+list empties.
+
 ## Deliberately deferred
 
 - **The repeated question form.** In T-C3-003, 12 of Alex's 15 messages ended
