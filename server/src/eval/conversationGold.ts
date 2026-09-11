@@ -343,7 +343,9 @@ export function semanticOutcomeForControllerTurn(input: {
         | "factual_correction"
         | "conversation_grounded_synthesis"
         | "social_uptake",
-      selectedTraitId: input.judge.selectedTraitId,
+      // The gold record keeps its own single-fact shape: it labels whether the
+      // Judge picked the right fact, and a turn under review names at most one.
+      selectedTraitId: input.judge.discloseTraitIds[0] ?? null,
       evidenceSeqs: sortedUnique(input.judge.evidenceSeqs),
     };
   } else if (input.judge.decision === "reobserve") {

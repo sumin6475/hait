@@ -17,14 +17,22 @@ import {
 import { transcriptLabel } from "./labels.js";
 import { log } from "./log.js";
 import { traceTurnEvent } from "./turnTrace.js";
+import { modelRequestParams } from "./openai.js";
 
-export const CONVERSATION_OBSERVER_VERSION = "conversation-observer-v12";
-export const CONVERSATION_OBSERVER_PROMPT_VERSION = "conversation-observer-prompt-v10";
-export const CONVERSATION_OBSERVER_SCHEMA_VERSION = "conversation-observer-schema-v6";
-export const CONVERSATION_OBSERVER_MODEL = "gpt-4o-mini";
+export const CONVERSATION_OBSERVER_VERSION = "conversation-observer-v13";
+export const CONVERSATION_OBSERVER_PROMPT_VERSION = "conversation-observer-prompt-v11";
+export const CONVERSATION_OBSERVER_SCHEMA_VERSION = "conversation-observer-schema-v7";
+export const CONVERSATION_OBSERVER_MODEL = "gpt-5-mini";
+/**
+ * The request fields, decided once from the model name so the provenance record
+ * below and the request itself can never disagree. A reasoning model gets
+ * `reasoning.effort` and a raised cap instead of `temperature` — writing
+ * `temperature: 0` here while sending something else would have made every
+ * recorded run claim a setting it did not use.
+ */
+const OBSERVER_REQUEST_PARAMS = modelRequestParams(CONVERSATION_OBSERVER_MODEL, 2400);
 export const CONVERSATION_OBSERVER_PARAMETERS = Object.freeze({
-  temperature: 0,
-  maxOutputTokens: 2400,
+  ...OBSERVER_REQUEST_PARAMS,
   timeoutMs: 15_000,
   seed: null,
   seedSupported: false,
@@ -141,7 +149,6 @@ export const CONVERSATION_OBSERVER_OUTPUT_SCHEMA = z.object({
     "unrelated",
     "uncertain",
   ]),
-  alexRelevance: z.enum(["required", "relevant", "not_relevant", "uncertain"]),
   activeThread: ActiveThreadSchema,
   floor: z.object({
     holder: z.enum(["alex", "humanX", "humanY", "humanZ", "open", "unclear"]),
@@ -211,7 +218,6 @@ export interface ConversationStateAfter {
   transitionState: ConversationObserverResult["transitionState"];
   conversationPhase?: ConversationObserverResult["conversationPhase"];
   alexRelation?: ConversationObserverResult["alexRelation"];
-  alexRelevance?: ConversationObserverResult["alexRelevance"];
   activeThread?: ConversationObserverResult["activeThread"];
   floor?: ConversationObserverResult["floor"];
   mentionedCandidates?: Candidate[];
@@ -441,7 +447,6 @@ export function normalizeConversationObservation(
         : addressees.includes("group")
           ? "group_participant"
           : observation.alexRelation;
-  const alexRelevance = observation.alexRelevance;
   const normalizedRequestedScope = requestExplicitness === "none"
     ? "none" : observation.requestedScope;
   // The observer owns semantic focus, including corrections and explicit null.
@@ -596,7 +601,6 @@ export function normalizeConversationObservation(
             ),
           },
     alexRelation,
-    alexRelevance,
     relationToPendingAlexQuestion: hasPendingAlexQuestion
       ? observation.relationToPendingAlexQuestion
       : "unrelated",
@@ -639,7 +643,7 @@ Return both current-turn fields and cumulative state:
 - A name-only thanks does not create a question or required participation. A preference or conclusion such as "it is between A and B" is not a request and must have requestExplicitness none and requestIntent null. Interpret human-first requests, negation, quotations and later corrections semantically; naming Alex does not by itself cancel a floor another human already holds, but a single request that addresses a human and Alex together leaves the floor open to both.
 - requestedAction is a short literal-language description of what the group is trying to do. Preserve exact candidate letters and numbers.
 - alexParticipation distinguishes required, invited, merely relevant, and not involved. Group-inclusive language can include Alex even without naming Alex; an exchange between humans can still belong to a thread that includes Alex.
-- alexRelation and alexRelevance describe Alex's relation to the current turn and controlling thread. Use explicit_addressee only when the anchor explicitly names Alex or replyToSeq points to an Alex message. A human response to another human is not response_to_alex merely because an older Alex question or the active project remains open. "about_alex" means Alex is discussed in the third person, not addressed.
+- alexRelation describes Alex's relation to the current turn. Use explicit_addressee only when the anchor explicitly names Alex or replyToSeq points to an Alex message. A human response to another human is not response_to_alex merely because an older Alex question or the active project remains open. "about_alex" means Alex is discussed in the third person, not addressed.
 - floor describes who currently holds the floor, who is expected next, and whether a transition is available. Do not infer a permanent exclusion from one human-to-human reply.
 - relationToPendingAlexQuestion tracks whether this turn answers or extends an open question initiated by Alex. Use the cumulative thread and full transcript, not only the latest addressee.
 - fieldConfidence gives calibrated confidence for threading, addressee, floor, and Alex relation. confidence summarizes the full output.
@@ -808,7 +812,6 @@ export function reduceConversationStateAfter(input: {
     transitionState: input.observation.transitionState,
     conversationPhase: input.observation.conversationPhase,
     alexRelation: input.observation.alexRelation,
-    alexRelevance: input.observation.alexRelevance,
     activeThread: input.observation.activeThread,
     floor: input.observation.floor,
     mentionedCandidates: input.observation.mentionedCandidates,
@@ -999,8 +1002,7 @@ export async function observeConversationStructure(input: {
     }).responses.parse(
       {
         model: MODEL,
-        temperature: CONVERSATION_OBSERVER_PARAMETERS.temperature,
-        max_output_tokens: CONVERSATION_OBSERVER_PARAMETERS.maxOutputTokens,
+        ...OBSERVER_REQUEST_PARAMS,
         input: [
           { role: "system", content: SYSTEM },
           {
@@ -1117,21 +1119,21 @@ export async function observeConversationStructure(input: {
  *   this trigger without changing the rule; the raw conflict is preserved as a
  *   repair code so nothing leaves the audit.
  *
- * What remains is the one genuine contradiction: a thread that requires Alex's
- * participation on a turn the observer judged irrelevant to Alex. Nothing
- * deterministic can settle which reading is right, and both change routing.
+ * The third — a thread requiring Alex's participation on a turn the observer
+ * judged irrelevant to Alex — is now retired too. It rested on a field the
+ * observer no longer produces: across T-C1-027 (50 observations) and the five
+ * of the run at docs/measurements.md the relevance reading was `not_relevant`
+ * every single time, so the "contradiction" was really just the constant
+ * meeting the thread flag, and a second 5.8 s call bought a re-read of an
+ * answer that never varied.
+ *
+ * What remains is a conflict the normalizer could not resolve.
  */
 export function conversationObserverReviewReason(
   observation: ConversationObserverResult,
   conflicts: readonly string[] = [],
 ): string | null {
   if (conflicts.length > 0) return "unresolved_conflict";
-  if (
-    observation.activeThread?.alexParticipation === "required" &&
-    observation.alexRelevance === "not_relevant"
-  ) {
-    return "alex_participation_contradiction";
-  }
   return null;
 }
 
@@ -1146,7 +1148,6 @@ export function describeConversationSituation(snapshot: ConversationObserverSnap
   const { observation, stateAfter } = snapshot;
   const phase = stateAfter.conversationPhase ?? observation.conversationPhase;
   const alexRelation = stateAfter.alexRelation ?? observation.alexRelation;
-  const alexRelevance = stateAfter.alexRelevance ?? observation.alexRelevance;
   const floor = stateAfter.floor ?? observation.floor;
   const addressees = observation.addressees.length
     ? observation.addressees.join(", ")
@@ -1167,7 +1168,7 @@ export function describeConversationSituation(snapshot: ConversationObserverSnap
               : alexRelation === "unrelated"
                 ? "not involved in the current turn"
                 : "of uncertain relation to the current turn"
-    }; Alex's participation is ${alexRelevance.replaceAll("_", " ")}.`,
+    }.`,
   ];
   if (thread) {
     lines.push(
@@ -1485,7 +1486,7 @@ async function runObservation(input: {
     sessionId: input.sessionId,
     seq: input.anchorSeq,
     detail:
-      `observer: epoch ${input.conversationEpoch}; Alex ${snapshot.observation.alexRelation}/${snapshot.observation.alexRelevance}; ` +
+      `observer: epoch ${input.conversationEpoch}; Alex ${snapshot.observation.alexRelation}; ` +
       `addressee ${snapshot.observation.addressees.join(",") || "none"}; ` +
       `thread ${snapshot.observation.activeThread?.threadId ?? "none"}; ` +
       `legacy obligation ${snapshot.stateAfter.pendingAlexObligation?.kind ?? "none"}; ` +
@@ -1659,7 +1660,6 @@ export async function waitForConversationObservation(input: {
     expectedHumanResponder: (doc as any).expectedHumanResponder ?? null,
     conversationPhase: (doc as any).conversationPhase,
     alexRelation: (doc as any).alexRelation,
-    alexRelevance: (doc as any).alexRelevance,
     activeThread: (doc as any).activeThread ?? null,
     floor: (doc as any).floor,
     fieldConfidence: (doc as any).fieldConfidence,

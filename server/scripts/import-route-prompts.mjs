@@ -3,6 +3,21 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// 프롬프트 소스는 이제 `src/prompts/blocks/` 의 TS 블록이다. 이 스크립트는
+// 지워진 route-prompts.source.json 을 되살려 두 번째 출처를 만들어 버리므로,
+// 스프레드시트를 다시 진실로 삼기로 결정하기 전에는 돌지 않는다.
+if (process.env.ALLOW_LEGACY_PROMPT_IMPORT !== "1") {
+  console.error(
+    "prompts:import is disabled. The prompt source is server/src/prompts/blocks/*.ts.\n" +
+      "Re-importing the spreadsheet would recreate route-prompts.source.json as a second\n" +
+      "source of truth and discard every edit made in the blocks. If the spreadsheet is\n" +
+      "deliberately authoritative again, rerun with ALLOW_LEGACY_PROMPT_IMPORT=1 and then\n" +
+      "re-split the JSON into blocks by hand.",
+  );
+  process.exit(1);
+}
+
+
 function parseCsv(input) {
   const rows = [];
   let row = [];

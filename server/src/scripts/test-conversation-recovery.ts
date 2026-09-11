@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import { forceGuardsOnForTest } from "../lib/guardFlags.js";
+// A comparison run leaves guards off in `server/.env`, and these suites load it.
+// Pin them on before anything reads them, so a suite can never quietly assert
+// the behaviour of a build nobody ships.
+forceGuardsOnForTest();
 import { mock } from "node:test";
 import { Responses } from "openai/resources/responses/responses";
 import { generateScopedRouteMessage } from "../lib/routeScopedGeneration.js";
@@ -28,7 +33,7 @@ const observation: ConversationObserverResult = {
   requestedScope: "multiple_candidates", requestExplicitness: "explicit",
   transitionState: "transition_available", relationToPendingAlexQuestion: "unrelated",
   expectedHumanResponder: null, conversationPhase: "comparison", alexRelation: "explicit_addressee",
-  alexRelevance: "required", activeThread: {
+  activeThread: {
     threadId: "thread-1", rootSeq: 1, status: "open", goal: "compare_information",
     requestedAction: "compare A and B", requestedScope: "multiple_candidates", candidates: ["A", "B"],
     participants: [...roster], expectedResponders: ["alex"], alexParticipation: "required", evidenceSeqs: [1],
@@ -263,7 +268,7 @@ const closed = reduce(initial, 2, { ...quiet, activeThread: { ...observation.act
 assert.equal(closed.opportunities[0]!.status, "resolved_by_human");
 assert.equal(reduce(closed, 3, quiet).foregroundThreadId, null);
 assert.equal(validateConversationLedgerJudgeDecision({ state: { ...closed, opportunities: initial.opportunities }, eligibleTraitIds: [], transcriptSeqs: new Set([1, 2]), decision: {
-  decision: "speak", act: "answer", selectedOpportunityId: id, evidence: "selected_open_opportunity", evidenceSeqs: [1], selectedTraitId: null,
+  decision: "speak", act: "answer", selectedOpportunityId: id, evidence: "selected_open_opportunity", evidenceSeqs: [1], discloseTraitIds: [], focusCandidate: null, brief: "answer the open request",
 } }).ok, false, "legacy stale open opportunities on closed threads cannot be selected");
 for (const status of ["resolved_by_human", "withdrawn", "superseded", "deferred"] as const) {
   const state = reduce(initial, 2, { ...quiet, opportunityTransitions: [{ opportunityId: id, toStatus: status, reason: "observed resolution", evidenceSeqs: [2], correctedThreadId: null }] });
@@ -446,7 +451,7 @@ const b1Shape = CONVERSATION_OBSERVER_OUTPUT_SCHEMA.shape;
 assert.equal(
   Object.hasOwn(b1Shape, "mentionedCandidates"),
   true,
-  "the model is asked for mentionedCandidates — removing it destabilized alexRelevance",
+  "the model is asked for mentionedCandidates — removing it destabilized the fields after it",
 );
 // The normalizer still overwrites the value from the anchor text; asking for it
 // is about what the model reasons through, not about trusting its answer.
@@ -606,18 +611,22 @@ assert.ok(
   }
 }
 
-// B8c — the one contradiction nothing deterministic can settle still triggers a
-// review, and now says why, because the review overwrites the initial
-// observation in the record and used to leave no trace of its cause.
-const b8Contradiction = b8Normalize({
-  alexRelevance: "not_relevant",
+// B8c — the participation contradiction is retired with the relevance field it
+// read. What has to keep holding is that a thread requiring Alex no longer buys
+// a second 5.8 s observation on its own, and that an unresolved conflict still
+// does. Both directions are asserted so neither can regress silently.
+const b8ParticipationRequired = b8Normalize({
   activeThread: { ...observation.activeThread!, alexParticipation: "required" },
 });
 assert.equal(
-  conversationObserverReviewReason(b8Contradiction, []),
-  "alex_participation_contradiction",
+  conversationObserverReviewReason(b8ParticipationRequired, []),
+  null,
+  "a thread requiring Alex is not by itself a contradiction worth a second call",
 );
-assert.equal(conversationObserverReviewReason(b8Contradiction, ["something_unresolved"]), "unresolved_conflict");
+assert.equal(
+  conversationObserverReviewReason(b8ParticipationRequired, ["something_unresolved"]),
+  "unresolved_conflict",
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // [D2] The reveal guard has to see what the message actually disclosed. The old
@@ -641,7 +650,7 @@ assert.equal(conversationObserverReviewReason(b8Contradiction, ["something_unres
       systemPrompt: "system",
       userPrompt: "user",
       limits: { maxOutputTokens: 600, maxContentChars: 2400, timeoutMs: 45_000 } as any,
-      guard: { candidate: "A", maxTraitIds: 1, maxRestatedTraitIds: 2, reason: "focus_depth" },
+      guard: { candidate: "A", allowedTraitIds: ["A_p1"], reason: "focus_depth" },
       previouslySurfacedTraitIds: [],
       logContext: "d2-test",
     });
@@ -652,7 +661,7 @@ assert.equal(conversationObserverReviewReason(b8Contradiction, ["something_unres
     );
     assert.deepEqual(
       d2Initial?.violations,
-      ["too_many_traits"],
+      ["trait_outside_selected_contribution"],
       "and records the violation rather than accepting on empty evidence",
     );
     assert.equal(
@@ -662,8 +671,8 @@ assert.equal(conversationObserverReviewReason(b8Contradiction, ["something_unres
     );
     assert.match(
       String((generated.result as any).error ?? ""),
-      /too_many_traits/,
-      "and it is rejected for the reveal budget, not for something incidental",
+      /trait_outside_selected_contribution/,
+      "and it is rejected for saying what it was not permitted to say, not for something incidental",
     );
     assert.equal(d2Calls, 2, "one draft plus one repair attempt; extraction adds no model call");
   } finally {

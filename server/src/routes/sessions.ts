@@ -160,6 +160,12 @@ sessionsRouter.get("/:code", requireAdmin, async (req, res) => {
         endedAt: session.endedAt,
         createdAt: session.createdAt,
         aiState: (session as any).aiState ?? null,
+        // The board itself. Without it a session's trait figures can only be
+        // re-derived by hand from the transcript, and the one answer that is
+        // computed rather than written — the match/miss count Alex gives when
+        // asked — cannot be checked at all. T-C4-022 and T-C4-023 both recorded
+        // this gap; it is the state the count is read from.
+        revealStats: (session as any).revealStats ?? null,
       },
       participants: participants.map((p) => ({
         participantCode: p.participantCode,
@@ -224,6 +230,12 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         senderRole: m.senderRole,
         content: m.content,
         createdAt: m.createdAt,
+        // What this message actually put on the board, and what it declined to.
+        // Information release is the dependent variable, and until now it could
+        // not be counted from the export — every trait figure in
+        // `docs/measurements.md` was read straight out of the database instead.
+        sharedInfoIds: m.sharedInfoIds,
+        declinedTraitIds: (m as any).declinedTraitIds,
       })),
       interventions: interventions.map((i) => ({
         // Field list checked against the schema by `test:intervention-v2`. A new
@@ -265,6 +277,13 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         selectedOpportunityAlexBroadcastSeq: i.selectedOpportunityAlexBroadcastSeq,
         selectedOpportunityTransition: i.selectedOpportunityTransition,
         selectedTraitId: i.selectedTraitId,
+        // What the Judge said the turn could put on the board, and the sentence
+        // it wrote for the writer. `docs/adr/0010` moves those decisions into a
+        // model call, so the export has to carry them or the decision is
+        // unauditable after the session.
+        discloseTraitIds: i.discloseTraitIds,
+        judgeBrief: i.judgeBrief,
+        disabledGuards: i.disabledGuards,
         decisionStage: i.decisionStage,
         routeReason: i.routeReason,
         outcome: i.outcome,
@@ -356,7 +375,6 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         expectedHumanResponder: observation.expectedHumanResponder,
         conversationPhase: observation.conversationPhase,
         alexRelation: observation.alexRelation,
-        alexRelevance: observation.alexRelevance,
         activeThread: observation.activeThread,
         floor: observation.floor,
         fieldConfidence: observation.fieldConfidence,

@@ -127,11 +127,6 @@ const conversationStateAfterSchema = new mongoose.Schema(
       enum: ["explicit_addressee", "group_participant", "response_to_alex", "about_alex", "unrelated", "uncertain"],
       required: true,
     },
-    alexRelevance: {
-      type: String,
-      enum: ["required", "relevant", "not_relevant", "uncertain"],
-      required: true,
-    },
     activeThread: { type: activeThreadSchema, default: undefined },
     floor: { type: floorSchema, required: true },
     mentionedCandidates: { type: [String], enum: ["A", "B", "C", "D"], default: undefined },
@@ -247,10 +242,6 @@ const conversationObservationSchema = new mongoose.Schema(
     alexRelation: {
       type: String,
       enum: ["explicit_addressee", "group_participant", "response_to_alex", "about_alex", "unrelated", "uncertain"],
-    },
-    alexRelevance: {
-      type: String,
-      enum: ["required", "relevant", "not_relevant", "uncertain"],
     },
     activeThread: { type: activeThreadSchema, default: undefined },
     floor: { type: floorSchema, default: undefined },

@@ -1,4 +1,5 @@
 import type { RequestIntent } from "./routeContext.js";
+import { guardEnabled } from "./guardFlags.js";
 import type { Candidate, ParticipantRole } from "../types.js";
 
 export const CONVERSATION_LEDGER_VERSION = "conversation-ledger-v4";
@@ -107,13 +108,53 @@ export interface ConversationLedgerState {
   degradedMode: boolean;
 }
 
-export function humanFloorHeld(state: ConversationLedgerState): boolean {
+/**
+ * The one test for "a human is holding the floor", over a bare floor reading.
+ *
+ * Takes the reading rather than the state so the observer's own floor object —
+ * which has no `evidenceSeqs` and a wider `expectedNext` — can be asked the same
+ * question as the ledger's. Before this, the leader drift gate asked it with an
+ * inline `transition !== "held"` and got a different answer whenever Alex was
+ * the holder.
+ */
+export function floorReadingIsHumanHeld(
+  floor: Pick<ConversationFloorState, "holder" | "transition">,
+): boolean {
   return (
-    state.floor.transition === "held" &&
-    state.floor.holder !== "alex" &&
-    state.floor.holder !== "open" &&
-    state.floor.holder !== "unclear"
+    floor.transition === "held" &&
+    floor.holder !== "alex" &&
+    floor.holder !== "open" &&
+    floor.holder !== "unclear"
   );
+}
+
+export function humanFloorHeld(state: ConversationLedgerState): boolean {
+  return floorReadingIsHumanHeld(state.floor);
+}
+
+/**
+ * Whether the held floor is allowed to change a decision on this run.
+ *
+ * `humanFloorHeld` answers what the observer saw; this answers whether that
+ * observation gets to act. Every decision site reads *this* one, so a comparison
+ * run has a single answer to "is the floor held" instead of one per call site.
+ *
+ * T-C2-050 is why the distinction is a function and not a convention. The run
+ * asked for the floor veto off and lost three turns to it anyway (seqs 26, 27,
+ * 41), because the flag had been applied at the check before the Judge and not
+ * at the one after it. Review then found three more unflagged readers — the
+ * cooldown bypass, the required-request validator, and the leader drift gate.
+ * Four sites, four chances to forget. `docs/measurements.md`, T-C2-050.
+ */
+export function floorHeldForDecisions(state: ConversationLedgerState): boolean {
+  return floorReadingHeldForDecisions(state.floor);
+}
+
+/** The same answer, for a caller that holds only the reading. */
+export function floorReadingHeldForDecisions(
+  floor: Pick<ConversationFloorState, "holder" | "transition">,
+): boolean {
+  return guardEnabled("humanFloor") && floorReadingIsHumanHeld(floor);
 }
 
 export function opportunityMayBypassCooldown(
@@ -127,13 +168,33 @@ export function opportunityMayBypassCooldown(
   // bypass. The conditions below are unchanged, so this widens what may bypass,
   // never how far.
   const answersAlex = opportunity.answersAlexSeq !== undefined;
-  if (!answersAlex && (opportunity.expectation !== "invited" || opportunity.kind !== "uptake")) {
+  // Being named is being addressed, whether or not the sentence ends in a
+  // question mark. `explicit` is minted on exactly one branch — the observation
+  // put Alex in `addressees`, or read the turn as `explicit_addressee` — so it
+  // means a participant aimed this at Alex rather than at the room. A question
+  // asked that way is `required` and already speaks through the cooldown; a
+  // request phrased as a proposal is `invited` and did not, so T-C4-022 seq 22
+  // ("Alex - I want you to add about A") could have been met with silence for a
+  // reason the participant has no way to see. The two differ in punctuation and
+  // in nothing a participant would recognise.
+  //
+  // This reads the message and never the condition, so pacing stays the
+  // condition-invariant arithmetic `docs/adr/0001` requires. It widens what may
+  // bypass, not how far: the three conditions below are unchanged, so an
+  // invitation still speaks only on the turn it was made, on the foreground
+  // thread, and never over a human floor.
+  const explicitlyAddressed = opportunity.targetBasis === "explicit";
+  if (
+    !answersAlex &&
+    !explicitlyAddressed &&
+    (opportunity.expectation !== "invited" || opportunity.kind !== "uptake")
+  ) {
     return false;
   }
   return (
     state.foregroundThreadId === opportunity.threadId &&
     opportunity.evidenceSeqs.includes(state.currentTriggerSeq) &&
-    !humanFloorHeld(state)
+    !floorHeldForDecisions(state)
   );
 }
 
@@ -669,10 +730,49 @@ function mergeCandidateSalience(
  * T-C2-039 seq 10 a focus carried from an earlier thread outranked the candidate
  * a participant had just named. A hint does not overrule the transcript.
  */
+/**
+ * The candidates a thread is about.
+ *
+ * Two callers derived this expression independently — here and in
+ * `eligibleTraitIdsForLedgerState` — and the soundness of the Judge's "Your
+ * card" sentence rests on the two agreeing: a candidate may only be reported as
+ * spent if it was in the same scope the eligible list was filtered to. One
+ * definition, so the agreement is structural rather than lucky.
+ */
+export function threadScopeCandidates(
+  thread: Pick<ConversationThread, "candidates" | "scopeCandidates">,
+): Candidate[] {
+  return thread.scopeCandidates?.length ? thread.scopeCandidates : thread.candidates;
+}
+
+/**
+ * The foreground thread, but only while it is still a thread Alex can act in.
+ *
+ * A thread the observer has marked `resolved` or `superseded` stays on the state
+ * and stays foreground — the reducer sets `foregroundThreadId` on existence, not
+ * on status — so "the foreground thread" and "a live thread" are two different
+ * questions and were being answered by two different expressions.
+ *
+ * Found by review, 2026-09-10, before it reached a session. The eligible-trait
+ * list has always applied this test; the Judge's new "Your card" sentence read
+ * that list's emptiness as *Alex has nothing left to say*. On a resolved thread
+ * the list is empty for a reason that has nothing to do with Alex's card, so a
+ * turn where Alex still held all twenty-four of its traits was being told, in
+ * plain words, that every candidate was spent. An ambiguous absence had become a
+ * false statement. Both readers take the test from here now.
+ */
+export function liveForegroundThread(
+  state: Pick<ConversationLedgerState, "threads" | "foregroundThreadId">,
+): ConversationThread | undefined {
+  const thread = state.threads.find((item) => item.id === state.foregroundThreadId);
+  if (!thread) return undefined;
+  return thread.status === "open" || thread.status === "waiting" ? thread : undefined;
+}
+
 export function candidateSalienceOrder(
   thread: Pick<ConversationThread, "focusCandidate" | "focusBasis" | "candidates" | "scopeCandidates" | "candidateSalience">,
 ): Candidate[] {
-  const scope = thread.scopeCandidates?.length ? thread.scopeCandidates : thread.candidates;
+  const scope = threadScopeCandidates(thread);
   const salience = thread.candidateSalience ?? {};
   const ranked = [...scope].sort((left, right) => {
     const leftSeq = salience[left] ?? 0;

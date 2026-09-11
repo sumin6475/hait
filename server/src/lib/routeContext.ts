@@ -840,34 +840,19 @@ export interface RouteOutputScopeGuard {
   // Mediation has no single candidate scope; its guard only prevents new
   // facts from entering the visible board.
   candidate: Cand | null;
-  // Candidate focus and trait-count limits are independent. A depth lock keeps
-  // the subject stable; only Turn Metadata or an explicitly scope-less
-  // request should mechanically limit how many traits can be answered.
-  maxTraitIds?: number;
-  // [D4] `maxTraitIds` counts only *newly introduced* traits, so a message that
-  // recites nothing but already-surfaced ones passes it untouched. T-C1-025 seq 7
-  // restated sixteen traits and introduced none. A chat turn refers to a couple
-  // of settled points at most, whoever first said them.
-  maxRestatedTraitIds?: number;
-  // Length is a post-condition, not a request. Two prompt-only attempts failed
-  // to shorten Alex: T-C1-024 seq 7 ran five sentences against a stated contract
-  // of two and recorded no violation, because nothing checked. These bounds are
-  // separate limits on the same turn as the trait counts — a message can be
-  // within its reveal budget and still be a wall of text.
-  maxSentences?: number;
-  maxWords?: number;
   /**
-   * Set when the per-turn reveal budget supplied these bounds — that is, when
-   * the turn carried no request of its own. It is what lets `routeGenerationGuard`
-   * keep the budget on a direct-answer route while still dropping the candidate
-   * scope of a guard an explicit request built. Without the mark the two are
-   * indistinguishable: an explicit new-information request also caps traits at
-   * one, and that cap is deliberately not enforced on those routes.
+   * Exactly what this turn may newly introduce, named by the Judge.
+   *
+   * `docs/adr/0010` replaced every count on this type with this one list. An
+   * empty array is a real value and means "no new fact": it is what mediation,
+   * a backchannel and a narrowing answer all carry. `undefined` means the turn
+   * carries no factual bound at all.
    */
-  revealBudget?: true;
-  // NOTE_CONTRIBUTION may disclose exactly the Judge-selected note and no
-  // other trait, including traits that were already on the table.
   allowedTraitIds?: string[];
+  /**
+   * The one fact the turn exists to say, when there is exactly one. Left unset
+   * for a longer list on purpose — see `outputScopeViolation`.
+   */
   requiredTraitId?: string;
   reason:
     | "new_information_request"
@@ -879,71 +864,13 @@ export interface RouteOutputScopeGuard {
     | "mediation_no_new_traits"
     | "explicit_complete_request"
     | "requested_narrowing"
-    | "route_reveal_budget";
+    | "judge_named_disclosure";
 }
 
-/**
- * [D3] The per-turn reveal budget for Alex's two ordinary speaking routes.
- *
- * `address` and `followup` carried no trait-count guard at all unless a request
- * scope happened to supply one, so the only thing bounding them was the prompt
- * asking nicely — and it did not work. T-C1-020 seq 4 revealed fifteen traits;
- * after D6 stopped routing T-C1-025 seq 3 to the deterministic template, the
- * fallthrough to generation revealed **seventeen on the third message of the
- * session**, six of the eight notes Alex alone holds, and restated sixteen of
- * them again at seq 7. That is the hidden-profile manipulation collapsing, and
- * a prompt-level "share at most one trait" has now failed to prevent it in
- * three separate runs.
- *
- * The numbers match the written output contract (one new trait per turn) and
- * allow a natural acknowledgement of a settled point or two. An explicit
- * request for a full list is unaffected: that path sets its own, larger budget
- * and is left exactly as it is.
- */
-/**
- * What a turn that asked for nothing in particular may spend.
- *
- * The length bounds are a ceiling on the failure shape, not a restatement of the
- * prompt's aim. The prompt asks for two sentences and about forty words; the
- * guard fails the turn, so it has to sit above output the prompt is already
- * producing well. T-C1-027's longest message was 68 words across no more than
- * three sentences and was judged fine; T-C1-024 seq 7 was five sentences and
- * T-C1-025 averaged 138 words. Both bounds separate those two populations with
- * room, and neither costs a turn that was already going well.
- */
-const ROUTE_REVEAL_BUDGET = {
-  maxTraitIds: 1,
-  maxRestatedTraitIds: 2,
-  maxSentences: 3,
-  maxWords: 80,
-} as const;
-
-function withRouteRevealBudget(
-  guard: RouteOutputScopeGuard | undefined,
-  routeKind: RouteKind,
-  requestIntentKind: RequestIntent["kind"],
-): RouteOutputScopeGuard | undefined {
-  if (routeKind !== "address" && routeKind !== "followup") return guard;
-  // Only ordinary conversational turns. When the human asked something specific
-  // — a preference, a count, a full list, an explicit narrowing — the request
-  // scope machinery already decides what Alex may say, and it is entitled to
-  // decide that no trait-count limit applies. The budget is the default for a
-  // turn that carries no request at all, which is exactly the shape that went
-  // unbounded: T-C1-025 seq 3 was classified `none` and answered with seventeen
-  // traits.
-  if (requestIntentKind !== "none") return guard;
-  if (!guard) {
-    return { candidate: null, ...ROUTE_REVEAL_BUDGET, revealBudget: true, reason: "route_reveal_budget" };
-  }
-  return {
-    ...guard,
-    maxTraitIds: guard.maxTraitIds ?? ROUTE_REVEAL_BUDGET.maxTraitIds,
-    maxRestatedTraitIds: guard.maxRestatedTraitIds ?? ROUTE_REVEAL_BUDGET.maxRestatedTraitIds,
-    maxSentences: guard.maxSentences ?? ROUTE_REVEAL_BUDGET.maxSentences,
-    maxWords: guard.maxWords ?? ROUTE_REVEAL_BUDGET.maxWords,
-    revealBudget: true,
-  };
-}
+// The per-turn reveal budget lived here. `docs/adr/0010` removed it: it was a
+// count, it applied exactly when the request classifier read `none`, and on
+// T-C4-022 that was twenty of Alex's twenty-four turns. Eighteen of them carried
+// no new fact at all. What bounds a turn now is the list the Judge named.
 
 const BROAD_INFORMATION_REQUESTS = [
   /\bwhat\s+(?:do|have)\s+you\s+(?:have|got)\b/i,
@@ -1153,55 +1080,25 @@ function requestCountKind(text: string): RequestCountKind {
  * question — asked for a table, Alex asked compact-or-full; told "full row", it
  * asked which order; given the order, it asked exact-phrases-or-labels — until
  * the participant wrote that they had hoped the AI could just make the table.
- * The policy already says to ask "one clarification question only when the
- * request genuinely cannot be answered as written", and a prompt rule alone has
- * now failed at this three times, so the refusal is server-derived like the
- * anti-repeat block beside it.
+ * The policy of the day allowed "one clarification question only when the
+ * request genuinely cannot be answered as written", and a prompt rule alone had
+ * failed at this three times, so the refusal became server-derived like the
+ * anti-repeat block beside it. That escape hatch is now gone from the prompts
+ * entirely: all four conditions answer an ambiguous request on its most
+ * reasonable reading and say which reading they took.
  *
  * Note the standing rule these blocks must not break: Alex may never say that a
  * prompt, rule, or scope prevents it from answering. Both refusals below are
  * true in character — Alex writes chat prose, and a Peer really does hold only
  * its own card — so neither has to reach for a policy.
  */
-const LAYOUT_NOUNS = "table|chart|grid|matrix|spreadsheet";
-const LAYOUT_REQUESTS = [
-  // A layout noun only makes this a formatting request when something binds it
-  // to *how* the answer should look. Bare "table" cannot: "everything on the
-  // table" is this task's idiom for the visible board — VISIBLE_BOARD_SCOPE
-  // reads it that way — and T-C1-027 phrases whole-board requests exactly so.
-  new RegExp(
-    `\\b(?:make|create|build|put|lay|format|organi[sz]e|arrange|draw|give|show|write|turn|do)\\b[^.?!]{0,40}\\b(?:${LAYOUT_NOUNS})\\b`,
-    "i",
-  ),
-  new RegExp(`\\b(?:in|as|into)\\s+(?:a|an|the)\\s+(?:${LAYOUT_NOUNS})\\b`, "i"),
-  new RegExp(`\\b(?:${LAYOUT_NOUNS})\\s+(?:format|form|layout|view)\\b`, "i"),
-  /\b(?:columns?|rows?)\b/i,
-  /\bbullet(?:ed|s)?\b|\bnumbered list\b/i,
-  /(?:표|테이블|차트|도표)(?:로|를|을)/,
-];
-export function layoutRequestSignal(content: string | undefined | null): boolean {
-  // The idiom is removed before matching so that "put everything on the table"
-  // — a verb plus the noun, and a legitimate whole-board request — does not
-  // reach the verb pattern above.
-  const text = (content?.trim() ?? "").replace(/\bon the table\b/gi, " ");
-  return matchesAny(text, LAYOUT_REQUESTS);
-}
+// The layout, collation and candidate-letter detectors stood here: three word
+// lists deciding whether a participant had asked for a table, asked Alex to
+// compile everyone's notes, or addressed it by a candidate letter. `docs/adr/0010`
+// removed the blocks they fed, and a detector nothing calls is how a rule comes
+// back by accident. The phrasings they were built from are recorded beside the
+// Judge prompt, which is what reads for them now.
 
-/**
- * A request that Alex assemble what the group has posted. In C2/C4 this is the
- * leader's job and the summary route exists for it; in C1/C3 a Peer holds only
- * its own notes, so compiling the group's board is something Alex cannot
- * truthfully do — and claiming that view is a leader behaviour a Peer must not
- * show.
- */
-const COLLATION_REQUESTS = [
-  /\b(?:arrange|organi[sz]e|compile|collate|consolidate|combine|assemble|put together|pull together|sort)\b[^.?!]{0,60}\b(?:all|every|everyone|everybody|our|the (?:items|attributes|traits|points|lists?)|them|these|those)\b/i,
-  /\b(?:all|everyone(?:'s)?|everybody(?:'s)?|our|collective)\b[^.?!]{0,40}\b(?:items|attributes|traits|points|cards?|lists?)\b[^.?!]{0,60}\b(?:arrange|organi[sz]e|compile|collate|combine|together|into)\b/i,
-  /(?:정리|취합|모아|합쳐)/,
-];
-export function collationRequestSignal(content: string | undefined | null): boolean {
-  return matchesAny(content?.trim() ?? "", COLLATION_REQUESTS);
-}
 
 /**
  * [Label reservation] A/B/C/D name candidates and nothing else. Asked whether to
@@ -1406,6 +1303,28 @@ function deterministicCompleteResponse(input: {
     return undefined;
   }
 
+  // A Member may never recite the group's board. That is a leader behaviour, and
+  // `CONTEXT.md` makes condition orthogonality the property every change has to
+  // preserve — a Peer that assembles what everyone holds is performing the status
+  // it exists to be contrasted against.
+  //
+  // This used to be prevented by a word list that recognised "can you organize
+  // all our attributes together". `docs/adr/0010` removed the detector, and the
+  // rule is stated by condition instead, where it always held: it is about what a
+  // Member is, not about how a participant phrased the request. A Member's
+  // complete-list answer is still its own card, in full, which it can truthfully
+  // give.
+  // A condition gate stood here briefly and was wrong. D6b already settled this
+  // the other way: a Member may recite the board and does, and what is Leader-only
+  // is the "Still to cover" agenda line the recap ends with — reporting the facts
+  // is participation, naming what the group must do next is not. The tests below
+  // assert both conditions report the same facts.
+  //
+  // What is genuinely unprotected now is narrower and is recorded in
+  // `docs/adr/0010`: the *collation* refusal — "can you organize all our
+  // attributes together" — was a word list, it is gone, and a Member that
+  // assembles what everyone else holds is claiming a view it does not have. The
+  // Judge reads for it now; nothing deterministic does.
   const ids =
     input.intent.source === "visible_board"
       ? new Set([...allSurfacedIds(input.revealStats), ...humanConfirmedIds(input.revealStats)])
@@ -1737,7 +1656,6 @@ function requestScopeFromIntent(input: {
       guard: {
         candidate: null,
         reason: "requested_narrowing",
-        maxTraitIds: 0,
         allowedTraitIds: [],
       },
     };
@@ -1749,8 +1667,16 @@ function requestScopeFromIntent(input: {
       contextualFocus;
     if (!focus) {
       return {
+        // This used to read "Ask one brief clarification question". Two things
+        // then made that instruction unfollowable. `forbidsQuestionOutput` kills
+        // any C1 or C2 turn that ends in a question, so on half the conditions
+        // this block ordered a turn into a guard. And the four condition prompts
+        // now say an ambiguous request is answered on its most reasonable
+        // reading rather than sent back — the repeated clarification question is
+        // the T-C1-027 and T-C2-046 failure. The block asks for the same thing
+        // they do.
         block:
-          "The participant asked for new information, but no single candidate is established. Ask one brief clarification question instead of listing candidates or notes.",
+          "The participant asked for new information, but no single candidate is established. Answer for the candidate the discussion is most plainly about and say which one you took it to mean, in one short sentence. Do not ask them which candidate they meant, and do not list candidates or notes.",
       };
     }
     const surfaced = new Set([
@@ -1782,7 +1708,6 @@ function requestScopeFromIntent(input: {
         : `Question mode (server-derived): NEW_INFORMATION for Candidate ${focus}. Alex has no still-unshared fact in its own notes for that candidate beyond the visible team information. Say that directly and do not claim Alex lacks its complete own notes.`,
       guard: {
         candidate: focus,
-        maxTraitIds: allowedTraitIds.length,
         allowedTraitIds,
         reason: "new_information_request",
       },
@@ -1799,10 +1724,14 @@ function requestScopeFromIntent(input: {
       };
     }
     return {
-      block: `Request scope (server-derived; mandatory): this is not an all-candidate or complete-list request. The current discussion focus is Candidate ${focus}. Answer only about Candidate ${focus}, include at most one trait, and do not expand to another candidate.`,
+      // The candidate bound is enforced (the guard below carries it). The trait
+      // count is not: ADR-0010 moved that onto the Judge, whose named disclosure
+      // outranks this guard, so a sentence here promising "at most one trait"
+      // could contradict the facts the Judge put in front of the generator on
+      // the same turn. It names the scope it can actually hold and stops there.
+      block: `Request scope (server-derived; mandatory): this is not an all-candidate or complete-list request. The current discussion focus is Candidate ${focus}. Answer only about Candidate ${focus} and do not expand to another candidate.`,
       guard: {
         candidate: focus,
-        maxTraitIds: 1,
         reason: "scopeless_information_request",
       },
     };
@@ -1857,7 +1786,10 @@ export function buildRouteUserContext(input: {
   language: "en" | "ko";
   anchorSeq: number;
   judgeEvidence?: string | null;
-  selectedTraitId?: string | null;
+  /** Exactly what this turn may disclose, named by the Judge. */
+  discloseTraitIds?: string[];
+  /** The Judge's one-sentence instruction to the writer. */
+  judgeBrief?: string;
   mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons" | null;
   mediationFocusCandidate?: Cand | null;
   mediationEvidence?: string[];
@@ -1893,9 +1825,13 @@ export function buildRouteUserContext(input: {
 } {
   const conversationGroundedSynthesis =
     input.routeKind === "build_on" && input.judgeEvidence === "conversation_grounded_synthesis";
+  // The single-fact contribution contract, now sourced from what the Judge named.
+  // It still applies only to build_on: that route's whole shape is "one new fact
+  // attached to the point just made". Other routes disclose what the Judge named
+  // without being narrowed to one, which is the change `docs/adr/0010` makes.
   const selectedTrait =
     input.routeKind === "build_on" && input.judgeEvidence === "relevant_unsurfaced_information"
-      ? TRAIT_BY_ID.get(input.selectedTraitId ?? "")
+      ? TRAIT_BY_ID.get(input.discloseTraitIds?.[0] ?? "")
       : undefined;
   const inquiryCondition = input.conditionCode === "C3" || input.conditionCode === "C4";
   // Interactive generation reads the complete session transcript. Static
@@ -2127,9 +2063,11 @@ export function buildRouteUserContext(input: {
   // then have a Peer recite the group's board — the leader behaviour the
   // collation refusal exists to prevent. Those turns go to generation, where the
   // decline block is read and the widened scope still applies.
-  const declineTakesPrecedence =
-    layoutRequestSignal(requestBundle.content) ||
-    (!isLeaderCondition(input.conditionCode) && collationRequestSignal(requestBundle.content));
+  // The deterministic complete-list templates no longer step aside for a detected
+  // decline, because there is no detector. What they still step aside for is the
+  // Judge: a turn it named facts for is a turn it decided the content of, and a
+  // template that recites the whole board instead is not that turn.
+  const declineTakesPrecedence = Boolean(input.discloseTraitIds?.length);
   // [Issue 06] The route reads the observation instead of short-circuiting ahead
   // of it. The fixed sentence is a whole reply, so it can only answer a message
   // that asked for nothing else; a turn that also names a candidate is making a
@@ -2191,26 +2129,17 @@ export function buildRouteUserContext(input: {
     const alreadyStated = formatAlreadyStatedByYou(input.revealStats);
     if (alreadyStated) blocks.push(alreadyStated);
   }
-  if (input.routeKind === "address" || input.routeKind === "followup") {
-    blocks.push(
-      "Anti-repeat (server-derived): if your recent messages already asked this same question or offered the same options, do not repeat them — acknowledge what was just said and move the discussion forward instead.",
-    );
-    if (layoutRequestSignal(requestBundle.content)) {
-      blocks.push(
-        "Requested output form (server-derived): the participant asked for a table or a laid-out list. You write ordinary chat sentences, so you cannot give them that. Do not ask a clarification question this turn and do not offer alternative formats. Say briefly and plainly that you cannot lay it out that way, then give what you do have in normal sentences within your allowed scope.",
-      );
-    }
-    if (collationRequestSignal(requestBundle.content) && !isLeaderCondition(input.conditionCode)) {
-      blocks.push(
-        "Requested collation (server-derived): the participant asked you to put together what everyone has posted. You hold only your own notes and cannot see anyone else's card, so you cannot assemble the group's information. Do not ask a clarification question this turn. Say briefly that you only have your own notes and cannot compile everyone's, then give your own for the candidate currently under discussion.",
-      );
-    }
-  }
-  if (candidateLetterAddressSignal(requestBundle.content)) {
-    blocks.push(
-      "Name (server-derived): a participant used a candidate letter as if it were your name. A, B, C and D identify the candidates only. Say once, briefly, that you are Alex, then answer the substance of their message. Do not accept or agree to be called by a candidate letter.",
-    );
-  }
+  // Four blocks stood here, each injected when a regular expression matched the
+  // participant's message: don't repeat your own question, you cannot draw a
+  // table, you cannot compile everyone's notes, and A-D are candidates rather
+  // than your name. All four are gone with `docs/adr/0010`.
+  //
+  // Two reasons, and the second is the one that matters. The rules themselves do
+  // not vary by turn, so they belong in the four condition prompts, where they
+  // can be read and diffed. And the *detection* was a word list: T-C4-022 seq 53
+  // asked for a summary, the word was not in any list, and the turn was answered
+  // as though nothing had been asked. The Judge reads the message.
+
   // What Alex still holds. Every route that can disclose a trait gets it; a
   // greeting and a backchannel cannot, and the summary and closing recaps are
   // assembled deterministically from the board rather than from the card.
@@ -2225,6 +2154,28 @@ export function buildRouteUserContext(input: {
   if (input.routeKind !== "summary") {
     blocks.push(
       "Notation (server-derived): the + and − signs exist only for reading your notes. In your visible message never write '+', '−', or a plus/minus list — describe each trait in words as a match or a miss.",
+    );
+  }
+  // The Judge's instruction, and the exact wording of whatever it named. This is
+  // what `docs/adr/0010` moves upstream: the stage that read the message says what
+  // the turn is for, in a sentence, and the writer works from that rather than from
+  // a dozen server-derived blocks each deciding a piece of it.
+  //
+  // Placed last so it is the nearest thing to the transcript, and stated as the
+  // turn's purpose rather than as a rule, because it is neither a bound nor a
+  // style: the four condition prompts own how Alex sounds.
+  if (input.judgeBrief?.trim()) {
+    const namedFacts = (input.discloseTraitIds ?? [])
+      .map((id) => TRAIT_BY_ID.get(id))
+      .filter((trait): trait is NonNullable<typeof trait> => Boolean(trait))
+      .map((trait) => `- ${trait.valence === "pos" ? "MATCH" : "MISS"} for Candidate ${trait.candidate}: ${trait.text}`);
+    blocks.push(
+      [
+        `This turn: ${input.judgeBrief.trim()}`,
+        namedFacts.length
+          ? `Facts you may put on the table this turn, in these words:\n${namedFacts.join("\n")}\nDo not add a candidate fact beyond these.`
+          : "Add no candidate fact this turn. You may refer to what has already been said.",
+      ].join("\n\n"),
     );
   }
   const developerPrompt = blocks.join("\n\n");
@@ -2248,7 +2199,11 @@ export function buildRouteUserContext(input: {
     input.routeKind === "build_on" && focusDepthState.candidate
       ? {
           candidate: focusDepthState.candidate,
-          maxTraitIds: conversationGroundedSynthesis ? 0 : 1,
+          // A grounded synthesis adds no new fact, so its list is empty; an
+          // ordinary one-point build-on carries no list of its own and takes
+          // whatever the Judge named. The key is omitted rather than set to
+          // undefined so the guard compares equal to one built without it.
+          ...(conversationGroundedSynthesis ? { allowedTraitIds: [] as string[] } : {}),
           reason: conversationGroundedSynthesis
             ? "conversation_grounded_synthesis"
             : "route_single_point",
@@ -2257,7 +2212,6 @@ export function buildRouteUserContext(input: {
   const selectedContributionGuard: RouteOutputScopeGuard | undefined = selectedTrait
     ? {
         candidate: selectedTrait.candidate,
-        maxTraitIds: 1,
         allowedTraitIds: [selectedTrait.id],
         requiredTraitId: selectedTrait.id,
         reason: "selected_note_contribution",
@@ -2267,7 +2221,7 @@ export function buildRouteUserContext(input: {
     input.routeKind === "mediation"
       ? {
           candidate: null,
-          maxTraitIds: 0,
+          allowedTraitIds: [],
           reason: "mediation_no_new_traits",
         }
       : undefined;
@@ -2276,16 +2230,42 @@ export function buildRouteUserContext(input: {
   // four?" is exactly the turn that may name many traits, and
   // `buildRequestScope` says so by returning a block with no guard. Only turns
   // where no explicit request scope applies get the per-turn reveal budget.
-  const outputScopeGuard = requestScope
-    ? requestScope.guard
-    : withRouteRevealBudget(
-        selectedContributionGuard ??
-          routeSinglePointGuard ??
-          mediationNoNewTraitsGuard ??
-          focusGuard,
-        input.routeKind,
-        requestIntent.kind,
-      );
+  // The Judge's list is the turn's factual bound. An explicit request scope may
+  // still narrow it — that path reads the participant's own words and is removed
+  // with the classifier — but nothing widens it, and nothing counts.
+  // Only the routes the Judge actually decides. A greeting, a summary and a
+  // closing are assembled elsewhere and never pass through it, so an absent list
+  // there means "no Judge ran", not "say nothing".
+  const judgeNamedGuard: RouteOutputScopeGuard | undefined =
+    input.discloseTraitIds && contributesToBoard(input.routeKind)
+    ? {
+        candidate: null,
+        allowedTraitIds: input.discloseTraitIds,
+        ...(input.discloseTraitIds.length === 1
+          ? { requiredTraitId: input.discloseTraitIds[0]! }
+          : {}),
+        reason: "judge_named_disclosure",
+      }
+    : undefined;
+  // The Judge's list leads. Everything below it is a deterministic reading of the
+  // participant's words, and `docs/adr/0010` settles which wins: the stage that
+  // read the message decides, and a layer that ran afterwards without seeing that
+  // decision does not overrule it. T-C4-022 seq 53 is what the other order costs.
+  // The first three are the Judge's own list wearing a route's shape — they read
+  // `discloseTraitIds` and add what that route needs on top of it, so they are not
+  // competing decisions. `judgeNamedGuard` is the same list for every other route.
+  //
+  // What moved is the request scope: it now sits *below* all of them. It is a
+  // deterministic reading of the participant's words made after the Judge decided
+  // and without seeing that decision, and `docs/adr/0010` settles which wins.
+  // T-C4-022 seq 53 is what the other order costs.
+  const outputScopeGuard =
+    selectedContributionGuard ??
+    routeSinglePointGuard ??
+    mediationNoNewTraitsGuard ??
+    judgeNamedGuard ??
+    requestScope?.guard ??
+    focusGuard;
   return {
     // Kept as a combined audit/test view. Model calls use the separated
     // developerPrompt + transcriptPrompt fields below.

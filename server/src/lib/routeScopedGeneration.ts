@@ -1,4 +1,5 @@
 import { callAIStructured, type AIStructuredResult } from "./openai.js";
+import { guardEnabled } from "./guardFlags.js";
 import { extractHumanTraitsFast, type FastTraitCandidate } from "./poolingExtractor.js";
 import { candidatesForIds } from "./informationPools.js";
 import type { RouteOutputScopeGuard } from "./routeContext.js";
@@ -39,12 +40,6 @@ export interface OutputRepairAudit {
   guard?: {
     candidate: RouteOutputScopeGuard["candidate"];
     reason: RouteOutputScopeGuard["reason"];
-    maxTraitIds?: number;
-    // The restated and length bounds were enforced and not recorded, so an
-    // attempt rejected for either read as unexplained in the audit.
-    maxRestatedTraitIds?: number;
-    maxSentences?: number;
-    maxWords?: number;
     allowedTraitIds?: string[];
     requiredTraitId?: string;
   };
@@ -57,10 +52,6 @@ function auditedGuard(guard: RouteOutputScopeGuard | undefined): OutputRepairAud
   return {
     candidate: guard.candidate,
     reason: guard.reason,
-    maxTraitIds: guard.maxTraitIds,
-    maxRestatedTraitIds: guard.maxRestatedTraitIds,
-    maxSentences: guard.maxSentences,
-    maxWords: guard.maxWords,
     allowedTraitIds: guard.allowedTraitIds,
     requiredTraitId: guard.requiredTraitId,
   };
@@ -236,6 +227,18 @@ export function wordCount(content: string): number {
   return content.trim().split(/\s+/).filter(Boolean).length;
 }
 
+/**
+ * What is wrong with a generated message, factually.
+ *
+ * Two questions, and `docs/adr/0010` is why there are only two. The Judge names
+ * what this turn may put on the board, so "did anything else appear" is the whole
+ * factual check; a count of traits, of restatements, of sentences or of words was
+ * either impossible-by-construction once the content is named, or was never
+ * firing. The 2026-09-08 guard audit is the evidence for dropping counts rather
+ * than keeping them as a belt: a count bound repaired once in eleven, because
+ * "say less about the same subject" is something the model cannot do without
+ * failing the task, so it keeps the answer and loses the turn.
+ */
 export function outputScopeViolation(
   content: string,
   extractedIds: string[],
@@ -246,119 +249,33 @@ export function outputScopeViolation(
    *
    * A trait the other person just said, repeated in the reply to them, is
    * neither a disclosure nor a recital — it is uptake, which every route prompt
-   * explicitly asks for ("briefly takes up the latest human point"). Counting
-   * it made the bound penalise the behaviour the prompt requires: T-C1-023 seq
-   * 22 was dropped twice for naming four traits when two of them were the
-   * participant's own words and Alex had put two on the table.
-   *
-   * Excluded from both counts, not just the restated one. If the participant
-   * introduced it, Alex echoing it is not Alex introducing it.
+   * explicitly asks for. If the participant introduced it, Alex echoing it is
+   * not Alex introducing it.
    */
   echoedTraitIds: readonly string[] = [],
 ): string | null {
   const previouslySurfaced = new Set(previouslySurfacedTraitIds);
   const echoed = new Set(echoedTraitIds);
-  // What this turn actually put on the table, as opposed to what it repeated
-  // back. Measured with the same extractor on both sides, so the comparison
-  // cannot drift.
   const contributedIds = extractedIds.filter((id) => !echoed.has(id));
   const newlyIntroducedIds = contributedIds.filter((id) => !previouslySurfaced.has(id));
-  // Hard scope checks are factual only. Already-visible human traits may be
-  // referenced naturally; only facts newly introduced by this Alex turn are
-  // constrained.
+  // Nothing outside what the Judge named.
   if (
     guard.allowedTraitIds &&
     newlyIntroducedIds.some((id) => !guard.allowedTraitIds!.includes(id))
   ) {
     return "trait_outside_selected_contribution";
   }
+  // And when the Judge named exactly one fact, the turn exists to say it.
+  //
+  // Deliberately not applied to a longer list. Requiring every id of six would
+  // lose the turn to one paraphrase the matcher did not recognise, which is how
+  // T-C2-047 turn 9 died on a list of one. The bound that catches a turn saying
+  // nothing it was asked to say is worth its cost; the bound that catches a turn
+  // saying five of six is not.
   if (guard.requiredTraitId && !extractedIds.includes(guard.requiredTraitId)) {
     return "selected_trait_missing";
   }
-  if (guard.maxTraitIds !== undefined && newlyIntroducedIds.length > guard.maxTraitIds) {
-    return guard.reason === "mediation_no_new_traits"
-      ? "new_trait_in_mediation"
-      : "too_many_traits";
-  }
-  // [D4] Restating is not free. The check above counts only new traits, so a
-  // wholesale recital of the board passes it — T-C1-025 seq 7 restated sixteen
-  // traits and introduced none.
-  //
-  // [Issue 17] This bound was twice suspected of being the reason T-C1-021 lost
-  // eight turns, and twice it was not. It is reached only through
-  // `ROUTE_REVEAL_BUDGET`, which `withRouteRevealBudget` applies **only when
-  // the turn carries no request at all**. Those turns have nothing to
-  // enumerate, so the conflict that makes a repair impossible cannot arise on
-  // them. T-C1-021 met it because the request misclassified as `none`; issue 18
-  // fixed the classification, and the turn now reaches generation with no guard.
-  // Retiring the bound instead would have shipped a 40-word six-trait recital
-  // that gate D2 was built to refuse.
-  if (
-    guard.maxRestatedTraitIds !== undefined &&
-    contributedIds.length - newlyIntroducedIds.length > guard.maxRestatedTraitIds
-  ) {
-    return "too_many_restated_traits";
-  }
-  // Length, as a post-condition. Two prompt-only attempts failed to shorten
-  // Alex, and the reveal budget is a separate limit on the same turn: a message
-  // can introduce one trait and still run five sentences, which is what
-  // T-C1-024 seq 7 did against a stated contract of two.
-  if (guard.maxSentences !== undefined && sentenceCount(content) > guard.maxSentences) {
-    return "too_many_sentences";
-  }
-  if (guard.maxWords !== undefined && wordCount(content) > guard.maxWords) {
-    return "too_many_words";
-  }
-  const traitCandidates = candidatesForIds(newlyIntroducedIds);
-  if (
-    guard.candidate &&
-    [...traitCandidates].some((candidate) => candidate !== guard.candidate)
-  ) {
-    return "trait_outside_current_candidate";
-  }
-  const factOnlyBuildOnGuard = [
-    "route_single_point",
-    "selected_note_contribution",
-    "conversation_grounded_synthesis",
-  ].includes(guard.reason);
-  const labels = explicitCandidateLabels(content);
-  if (
-    guard.candidate &&
-    !factOnlyBuildOnGuard &&
-    [...labels].some((candidate) => candidate !== guard.candidate)
-  ) {
-    return "candidate_outside_current_focus";
-  }
   return null;
-}
-
-/**
- * Non-factual output-shape signals remain observable, but never trigger a
- * rewrite. They are intentionally separate from outputScopeViolation so
- * wording cannot suppress a factually valid turn.
- */
-export function outputScopeSoftViolations(
-  content: string,
-  extractedIds: string[],
-  guard: RouteOutputScopeGuard,
-  previouslySurfacedTraitIds: readonly string[] = [],
-): string[] {
-  const violations: string[] = [];
-  const previouslySurfaced = new Set(previouslySurfacedTraitIds);
-  const newlyIntroducedIds = extractedIds.filter((id) => !previouslySurfaced.has(id));
-  const restatedIds = extractedIds.length - newlyIntroducedIds.length;
-  const explicitTraitLabels =
-    content.match(/\(\s*(?:MATCH|MISS)\s*\)|\b(?:MATCH|MISS)\s*[—–:]/gi)?.length ?? 0;
-  const maxExplicitTraitLabels =
-    guard.maxTraitIds !== undefined ? guard.maxTraitIds + restatedIds : undefined;
-  if (maxExplicitTraitLabels !== undefined && explicitTraitLabels > maxExplicitTraitLabels) {
-    violations.push("too_many_trait_labels");
-  }
-  const labels = explicitCandidateLabels(content);
-  if (guard.candidate && [...labels].some((candidate) => candidate !== guard.candidate)) {
-    violations.push("candidate_outside_current_focus");
-  }
-  return violations;
 }
 
 /**
@@ -366,9 +283,16 @@ export function outputScopeSoftViolations(
  *
  * [T-C2-046] Deliberately a question mark and nothing cleverer. The rule this
  * enforces is the prompt's own sentence — "do not ask a question, end with a
- * question mark, or request information" — so matching it exactly is what
- * makes the post-condition and the prompt the same rule rather than two.
- * Anything subtler would start disagreeing with the text Alex was given.
+ * question mark, or request information" — so matching it exactly is what makes
+ * the post-condition and the prompt the same rule rather than two.
+ *
+ * Kept through the `docs/adr/0010` cull, and the count of surviving checks is
+ * four rather than three because of it. It passes the standing test on every
+ * leg: four sessions of evidence, three repairs out of three in T-C2-047, and
+ * still possible after the Judge names the content — the Judge decides what a
+ * turn says, never how it is punctuated. It guards the manipulation rather than
+ * the prose: an explanatory Alex that clarifies by asking is performing the
+ * condition it exists to be contrasted against.
  */
 export function outputAsksAQuestion(content: string): boolean {
   return content.includes("?");
@@ -459,15 +383,21 @@ export function evaluateDraft(input: {
     input.forbidQuestion && outputAsksAQuestion(input.content)
       ? "answered_with_a_question"
       : null;
-  const scope = input.guard
-    ? outputScopeViolation(
-        input.content,
-        extractedIds ?? [],
-        input.guard,
-        input.previouslySurfacedTraitIds,
-        echoedTraitIds,
-      )
-    : null;
+  // T-C4-023 lost three of twenty-nine turns here, all of them to the scope
+  // check and two of them on a direct question addressed to Alex by name. The
+  // flag broadcasts the message instead of dropping the turn, so the two runs
+  // can be compared. `extractedIds` is still computed and still recorded, so a
+  // comparison run keeps saying what the check would have caught.
+  const scope =
+    input.guard && guardEnabled("outputScope")
+      ? outputScopeViolation(
+          input.content,
+          extractedIds ?? [],
+          input.guard,
+          input.previouslySurfacedTraitIds,
+          echoedTraitIds,
+        )
+      : null;
   const verdict = outputVerdict({ metadata, question, scope });
   return {
     extractedIds,
@@ -476,17 +406,10 @@ export function evaluateDraft(input: {
     metadata,
     question,
     scope,
-    softViolations: [
-      ...internalMetadataSoftViolations(input.content),
-      ...(input.guard
-        ? outputScopeSoftViolations(
-            input.content,
-            extractedIds ?? [],
-            input.guard,
-            input.previouslySurfacedTraitIds,
-          )
-        : []),
-    ],
+    // Only the metadata signals remain observable-but-not-repaired. The two
+    // scope-shaped soft signals went with `docs/adr/0010`: both were counts, and
+    // one of them counted against a bound that no longer exists.
+    softViolations: internalMetadataSoftViolations(input.content),
     violations: verdict.violations,
     primary: verdict.primary,
     needsRepair: verdict.needsRepair,
@@ -547,16 +470,15 @@ export function repairCorrectionFor(input: {
     guard.requiredTraitId
       ? `The only candidate trait you may mention is: "${TRAIT_BY_ID.get(guard.requiredTraitId)?.text ?? guard.requiredTraitId}". Include that exact point and no other candidate trait, even if another trait was already discussed.`
       : null,
-    guard.maxTraitIds !== undefined &&
-    !guard.requiredTraitId &&
-    guard.reason !== "mediation_no_new_traits"
-      ? `Introduce at most ${plural(guard.maxTraitIds, "new candidate trait")} in this message${guard.candidate ? "; you may still acknowledge already-surfaced points" : ""}.`
-      : null,
-    guard.maxRestatedTraitIds !== undefined
-      ? `Refer back to at most ${plural(guard.maxRestatedTraitIds, "already-surfaced trait")}; do not recite the board.`
-      : null,
-    guard.maxSentences !== undefined || guard.maxWords !== undefined
-      ? `Keep it to at most ${plural(guard.maxSentences ?? 2, "sentence")} and under ${guard.maxWords ?? 40} words. Cut content, do not compress it into longer sentences.`
+    // The rewrite is told every bound in force, and after `docs/adr/0010` there
+    // is one: the list. Naming the facts is also what makes the instruction
+    // followable — "introduce at most one" left the model choosing which to cut.
+    guard.allowedTraitIds && !guard.requiredTraitId
+      ? guard.allowedTraitIds.length
+        ? `The only candidate facts you may introduce are: ${guard.allowedTraitIds
+            .map((id) => `"${TRAIT_BY_ID.get(id)?.text ?? id}"`)
+            .join("; ")}. Introduce no other candidate fact.`
+        : "Introduce no candidate fact that is not already visible in the conversation. You may refer to what has already been said."
       : null,
   ];
   return lines.filter((line): line is string => Boolean(line)).join(" ");
@@ -661,7 +583,7 @@ export async function generateScopedRouteMessage(input: {
   };
   const guardDetail = input.guard
     ? `guard=${input.guard.candidate ?? "none"} scope=${input.guard.reason} ` +
-      `maxTraits=${input.guard.maxTraitIds ?? "none"} extracted=${extractedIds?.length ?? 0}`
+      `allowed=${input.guard.allowedTraitIds?.join("/") ?? "any"} extracted=${extractedIds?.length ?? 0}`
     : "guard=none";
 
   let lastViolation = verdict.primary!;

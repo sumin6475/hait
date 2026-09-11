@@ -7,6 +7,13 @@ import { config } from "../config.js";
 import { Session } from "../models/Session.js";
 import { allocHumanSeq, allocSeq } from "../lib/seq.js";
 
+import { forceGuardsOnForTest } from "../lib/guardFlags.js";
+
+// A leftover `HAIT_GUARD_*=off` in server/.env reaches every suite through
+// dotenvx. A suite that passes only because a check was disabled reads exactly
+// like a suite that passes.
+forceGuardsOnForTest();
+
 const N = 50;
 
 await mongoose.connect(config.mongodbUri);

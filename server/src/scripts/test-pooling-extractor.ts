@@ -1,4 +1,9 @@
 import assert from "node:assert/strict";
+import { forceGuardsOnForTest } from "../lib/guardFlags.js";
+// A comparison run leaves guards off in `server/.env`, and these suites load it.
+// Pin them on before anything reads them, so a suite can never quietly assert
+// the behaviour of a build nobody ships.
+forceGuardsOnForTest();
 import { readFileSync } from "node:fs";
 import { mock } from "node:test";
 import { load } from "js-yaml";

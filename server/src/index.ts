@@ -1,4 +1,5 @@
 import express from "express";
+import { guardFlagsSummary } from "./lib/guardFlags.js";
 import cors from "cors";
 import http from "http";
 import { Server } from "socket.io";
@@ -52,6 +53,10 @@ async function start() {
   // httpServer로 listen (app.listen 아님))
   httpServer.listen(config.port, () => {
     console.log(`Server running on http://localhost:${config.port}`);
+    // A build with a guard switched off announces itself at startup, so nobody
+    // runs a comparison session believing it is an ordinary one.
+    const guardNotice = guardFlagsSummary();
+    if (guardNotice) console.log(guardNotice);
   });
 }
 

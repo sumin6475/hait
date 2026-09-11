@@ -2,8 +2,11 @@ import OpenAI from "openai";
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
+import { modelRequestParams } from "./openai.js";
+import { guardEnabled } from "./guardFlags.js";
+import { computeCandidateList } from "./candidateList.js";
 import type { MainJudgeSignal } from "./routeContext.js";
-import type { ConditionCode } from "../types.js";
+import type { Candidate, ConditionCode } from "../types.js";
 import { TRAIT_BY_ID } from "./traitData.js";
 import type {
   ConversationObserverSnapshot,
@@ -14,7 +17,8 @@ import type { CommunicativeAct } from "../types.js";
 import {
   candidateSalienceOrder,
   describeConversationLedger,
-  humanFloorHeld,
+  liveForegroundThread,
+  floorHeldForDecisions,
   opportunityMayBypassCooldown,
   opportunityStillStands,
   type ConversationLedgerState,
@@ -24,7 +28,21 @@ import {
 import { isLeaderCondition } from "./routeContext.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
-const JUDGE_MODEL = "gpt-4o-mini";
+// The Judge now reads the message for what it asks, decides the subject, names
+// what may be said, and writes the generator's instruction — four judgements the
+// deterministic layer used to make with regular expressions. `gpt-4o-mini` was
+// sized for a five-field routing decision. `docs/adr/0005` forbids swapping the
+// *speech* model for latency and says nothing about this one.
+const JUDGE_MODEL = "gpt-5-mini";
+
+/**
+ * How long the generator's instruction may be.
+ *
+ * It is one sentence of ordinary language, not a place to restate the board.
+ * Three hundred characters is roughly two sentences of English; the slack above
+ * it exists so a turn is not lost to a comma.
+ */
+export const BRIEF_MAX_CHARS = 400;
 const JUDGE_MAX_TOKENS = 64;
 const JUDGE_TIMEOUT_MS = 8_000;
 const JUDGE_WINDOW = 16;
@@ -118,8 +136,7 @@ export async function judgeIntervention(
     const resp = await client.responses.parse(
       {
         model: JUDGE_MODEL,
-        temperature: 0,
-        max_output_tokens: JUDGE_MAX_TOKENS,
+        ...modelRequestParams(JUDGE_MODEL, JUDGE_MAX_TOKENS),
         input: [
           { role: "system", content: JUDGE_SYSTEM },
           { role: "user", content: user },
@@ -299,8 +316,7 @@ export async function judgeConversationTurn(input: {
       const response = await client.responses.parse(
         {
           model: JUDGE_MODEL,
-          temperature: 0,
-          max_output_tokens: 220,
+          ...modelRequestParams(JUDGE_MODEL, 220),
           input: [
             { role: "system", content: UNIFIED_JUDGE_SYSTEM },
             { role: "user", content: user },
@@ -388,7 +404,22 @@ const ConversationLedgerJudgeSchema = z.object({
     .nullable(),
   selectedOpportunityId: z.string().nullable(),
   evidence: z.enum(LEDGER_JUDGE_EVIDENCE),
-  selectedTraitId: z.string().nullable(),
+  // What Alex may put on the board this turn, named rather than counted. Empty
+  // is a real answer and the common one: most turns add no fact. `docs/adr/0010`
+  // is why this is a list of ids and not a number — a count cannot be repaired
+  // without failing the task, and naming the content makes every count check
+  // redundant.
+  discloseTraitIds: z.array(z.string()),
+  // The subject, decided here rather than re-derived downstream from candidate
+  // mentions. A comparison names two candidates and a continuation names none,
+  // which is exactly when the downstream derivation returned nothing.
+  focusCandidate: z.enum(["A", "B", "C", "D"]).nullable(),
+  // One sentence telling the generator what this turn has to accomplish, in
+  // ordinary language. It never carries register or tone: the four condition
+  // prompts own how Alex sounds, and they are hashed and diffable where this is
+  // neither. Length is checked in `validateConversationLedgerJudgeDecision`
+  // rather than in the schema, because structured outputs reject maxLength.
+  brief: z.string(),
   evidenceSeqs: z.array(z.number().int()).max(12),
 });
 
@@ -397,7 +428,9 @@ const ConversationLedgerMemberJudgeSchema = z.object({
   act: z.enum(["answer", "participate", "follow", "contribute", "acknowledge"]).nullable(),
   selectedOpportunityId: z.string().nullable(),
   evidence: z.enum(LEDGER_JUDGE_EVIDENCE),
-  selectedTraitId: z.string().nullable(),
+  discloseTraitIds: z.array(z.string()),
+  focusCandidate: z.enum(["A", "B", "C", "D"]).nullable(),
+  brief: z.string(),
   evidenceSeqs: z.array(z.number().int()).max(12),
 });
 
@@ -409,16 +442,112 @@ export function ledgerJudgeSchemaFor(conditionCode: ConditionCode) {
 }
 
 export type ConversationLedgerJudgeDecision = z.infer<typeof ConversationLedgerJudgeSchema>;
-export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v5";
+/**
+ * The rules a retry can fix by being handed the eligible ids — which is a
+ * narrower set than "the rules that reject a named trait", and deliberately so.
+ *
+ * `disclose_trait_repeated` is out because every id named was already eligible;
+ * the defect is the duplicate, and repeating the list would point at the field
+ * that was right. It gets its own sentence instead.
+ *
+ * `trait_present_on_acknowledgement` and `trait_present_without_speech` are out
+ * because listing what may be named would actively mislead: on an
+ * acknowledgement and on a silence the only legal list is the empty one, and a
+ * sentence beginning "The only ids you may put in discloseTraitIds are" says the
+ * opposite.
+ *
+ * `relevant_fact_trait_invalid` is in, but conditionally — see
+ * `ledgerJudgeRetryMessage`. It fires for two different reasons and only one of
+ * them is about the ids.
+ */
+export const LEDGER_JUDGE_TRAIT_RETRY_RULE_CODES: readonly string[] = [
+  "disclose_trait_not_eligible",
+  "relevant_fact_trait_invalid",
+];
+
+/**
+ * What a rejected Judge decision is told on its one retry.
+ *
+ * Extracted from the call loop so it can be asserted. The previous form was an
+ * expression inside the request object: nothing could check that the eligible
+ * ids reached the model, and the only test asserted membership in a constant —
+ * it passed with the whole expression deleted.
+ *
+ * [T-C2-050 seq 14] is the turn this exists for. A participant asked Alex
+ * directly. Two C traits were still eligible. Attempt 1 named `C_p1`, on the
+ * board since seq 11, next to an eligible one, and was rejected for the spent
+ * id. The retry, handed the rule name and nothing else, named `C_p1` again plus
+ * `C_p2` — a trait on no card Alex holds — and the turn was lost to
+ * `ledger_judge_failure`. The eligible list sits in the message above the retry
+ * and the retry did not go back to it, so the ids are repeated inside the
+ * sentence that says what was wrong.
+ *
+ * Naming nothing is a real answer when nothing is left; the failure mode here is
+ * inventing, not abstaining. So the empty-list branch also names the way out —
+ * `relevant_unsurfaced_information` requires a fact, and a retry ordered to
+ * empty the list while keeping that evidence would trip
+ * `relevant_fact_trait_invalid` on its second and last attempt and lose the turn
+ * to the same `ledger_judge_failure` it was sent to repair.
+ */
+export function ledgerJudgeRetryMessage(input: {
+  user: string;
+  priorDecisionJson: string;
+  priorRuleCodes: readonly string[];
+  priorDiscloseTraitIds: readonly string[];
+  requiredOpportunityIds: readonly string[];
+  eligibleTraitIds: readonly string[];
+}): string {
+  const has = (code: string) => input.priorRuleCodes.includes(code);
+  const hints: string[] = [];
+
+  if (has("current_required_opportunity_not_selected") && input.requiredOpportunityIds.length) {
+    hints.push(
+      `Set selectedOpportunityId to one of: ${input.requiredOpportunityIds.join(", ")}. Do not select an older unanswered request.`,
+    );
+  }
+
+  // `relevant_fact_trait_invalid` is raised both for an empty list under
+  // `relevant_unsurfaced_information` and for the wrong act under it. Only the
+  // first is about the ids; on the second the ids may be perfectly legal and
+  // pointing at them sends the model back to the field it got right.
+  const idsAreTheProblem =
+    has("disclose_trait_not_eligible") ||
+    (has("relevant_fact_trait_invalid") && input.priorDiscloseTraitIds.length === 0);
+  if (idsAreTheProblem) {
+    hints.push(
+      input.eligibleTraitIds.length
+        ? `The only ids you may put in discloseTraitIds are: ${input.eligibleTraitIds.join(", ")}. Every other id is already on the board or was never Alex's to give.`
+        : "You hold no eligible unsurfaced fact this turn, so discloseTraitIds must be empty. If you chose relevant_unsurfaced_information, that evidence means you are adding a fact and you have none to add — choose different evidence, or stay silent.",
+    );
+  } else if (has("relevant_fact_trait_invalid")) {
+    hints.push(
+      'relevant_unsurfaced_information is the evidence for adding a fact, so it goes with act "contribute". The ids you named are not the problem.',
+    );
+  }
+
+  if (has("disclose_trait_repeated")) {
+    hints.push("Name each id at most once in discloseTraitIds.");
+  }
+
+  // The tail used to end "and selectedTraitId must be null". That field was
+  // removed from both judge schemas, and the sentence sat immediately after the
+  // one naming the ids that may be disclosed — telling the model, in the same
+  // breath, to name a fact and to name nothing.
+  return `${input.user}\n\nYour previous decision was ${input.priorDecisionJson}. It violated: ${input.priorRuleCodes.join(", ")}.${
+    hints.length ? ` ${hints.join(" ")}` : ""
+  } Correct the rejected output fields while keeping the transcript and ledger facts fixed. For a selected opportunity, evidence must be selected_open_opportunity.`;
+}
+
+export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v7";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v8";
+  "conversation-ledger-judge-prompt-v11";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
-  "conversation-ledger-judge-schema-v3";
+  "conversation-ledger-judge-schema-v4";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
+const LEDGER_JUDGE_REQUEST_PARAMS = modelRequestParams(JUDGE_MODEL, 700);
 export const CONVERSATION_LEDGER_JUDGE_PARAMETERS = Object.freeze({
-  temperature: 0,
-  maxOutputTokens: 260,
-  timeoutMs: 12_000,
+  ...LEDGER_JUDGE_REQUEST_PARAMS,
+  timeoutMs: 20_000,
   maxAttempts: 2,
   seed: null,
   seedSupported: false,
@@ -448,6 +577,31 @@ export interface ConversationLedgerJudgeCallResult {
   attempts: ConversationLedgerJudgeCallAttempt[];
 }
 
+/**
+ * Request shapes the Judge has to recognise, taken from real sessions.
+ *
+ * These were three regular-expression tables in `routeContext` until
+ * `docs/adr/0010`. They are kept here as evidence rather than as code: the
+ * phrasings are what participants actually wrote, and a word list is what missed
+ * "give us a summary" in T-C4-022 seq 53 and answered a summary request as
+ * though nothing had been asked.
+ *
+ *   Layout, which Alex cannot produce and must decline plainly:
+ *     "can you make a table of the attributes across all candidates?"
+ *     "can you give the table in the alphabetical order A, B, C, D?"
+ *     "full row"
+ *
+ *   Collation, which a Member cannot do because it only holds its own card:
+ *     "can we all just copy and paste all the items ... and alex can arrange them"
+ *     "can you organize all our attributes together?"
+ *
+ *   Being addressed by a candidate letter, which Alex corrects once:
+ *     "Alex, do you respond to C or just Alex?"
+ *     "C, what does your negative comments indicate for A?"
+ *
+ * And the one none of them caught: "Alex can you give us a summary? Don't ask
+ * followup quesiton, just give us with your call."
+ */
 export const LEDGER_JUDGE_SYSTEM = `You are the Main Judge for Alex, an AI participant in a small live group discussion.
 
 Use the complete transcript as the source of truth and the structured ledger as a correctable projection. Decide one of: select exactly one open response opportunity, choose one useful voluntary act, remain silent, or request re-observation for a material state conflict. Do not write Alex's message.
@@ -472,9 +626,23 @@ Voluntary acts have no selectedOpportunityId:
 Each turn lists the moves available on it. A move listed as not available is not a choice, and selecting it is invalid. Availability is a fact about this turn's options, never a budget to spend or save. Choose reobserve only for a material conflict affecting target, opportunity identity/lifecycle, thread assignment, or floor. Low confidence alone is not enough.
 When an open required opportunity was opened on the current trigger and no human floor is held, select it. Remaining silent in that state is invalid.
 
-For every selected opportunity, use exactly: decision=speak, the act fixed above for its kind, evidence=selected_open_opportunity, and selectedTraitId=null. Only an id listed as selectable on this turn may be selected.
+For every selected opportunity, use exactly: decision=speak and the act fixed above for its kind, with evidence=selected_open_opportunity. Only an id listed as selectable on this turn may be selected.
 
-For relevant_unsurfaced_information, select exactly one supplied eligible trait id. The eligible list covers every candidate in the thread's scope, ordered by what the group is currently on: the explicit focus candidate first when there is one, then the most recently named candidate. That order is a hint, not a restriction. Pick the id that fits the candidate the humans are actually discussing on this turn, reading the transcript rather than the position in the list; a fact about a candidate the group has moved past is not a useful move. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
+You also decide three things about the content of the turn. Nothing downstream decides them, and no other stage reads the transcript.
+
+focusCandidate is the subject. Name the candidate the turn is about, or null when it is about more than one or about none. Do not force a single letter onto a comparison.
+
+discloseTraitIds is exactly what Alex may put on the board this turn, chosen from the supplied eligible facts and from nothing else. It is a list because the right number varies with what was asked: empty on most turns, one when adding a fact to a running discussion, and every relevant id when a person asked Alex to give what it has. Read the request and answer the size of it. Naming a fact is legitimate on any act, including answering a request; you are not limited to one, and you are not obliged to name any. An acknowledgement names none. If you choose relevant_unsurfaced_information you are adding a fact, so name at least one.
+
+brief is one sentence of ordinary language telling the writer what this turn has to accomplish. Say what the person asked for and what the turn owes them - "they asked for a summary and told you not to ask anything back, so give the recap and stop", "they just answered your question about D, so take that up", "they want the full list for C". Write it as you would tell a colleague. Never describe how Alex should sound, never name the role, the strategy, the condition, or a style, and never mention ids, counts, scores, thresholds, opportunities, routes or anything else from this input. How Alex sounds is decided elsewhere. Keep it under 300 characters.
+
+Every requirement in this task counts the same, and it is not yours to change. Never write a brief that proposes a rule, a criterion, a threshold, a cutoff, or a way of grouping traits into kinds, and never write one that assumes any trait outweighs, offsets, or disqualifies another. When the group asks how they should decide, that is a real question and the brief must not duck it. Alex's honest position is that it is worth looking at the candidates properly before choosing, and that how the group goes about it is up to them. Say that much and let the writer put it in its own words. Do not turn it into a procedure: no rule to apply, no bar to clear, no instruction to lay everything out or to count anything, and no naming of what "properly" would consist of. What matters here is which facts reach the table, not how they are scored.
+
+Read the person's message for what it actually asks. A request does not have to be a question, a request for everything Alex has is different from a request for one more fact, and a request you cannot carry out - a table, a chart, a compilation of what everybody else holds - is still a request whose shape the brief must name so the writer can decline it plainly.
+
+Not every turn answers a request. When nobody has asked for anything and you still choose to speak, the brief says what the turn is FOR, in the same plain way. If the turn tells you the group has said little about some candidates, that is the move: name one of them and say the turn is for putting it on the table - "nobody has put anything on A yet, so bring A into the discussion". If it tells you every candidate has been covered, say what the turn adds to the comparison the group is already having. Do not fill the turn by proposing how to decide.
+
+The eligible list covers every candidate in the thread's scope, ordered by what the group is currently on: the explicit focus candidate first when there is one, then the most recently named candidate. That order is a hint, not a restriction. Pick what fits the candidate the humans are actually discussing on this turn, reading the transcript rather than the position in the list; a fact about a candidate the group has moved past is not a useful move. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
 
 /**
  * Alex's role in the group, as the Judge is told it.
@@ -512,6 +680,38 @@ export interface ConversationLedgerJudgeValidation {
   ruleCodes: string[];
 }
 
+/**
+ * The opportunities this turn is *required* to take: the ones a human opened on
+ * the message being judged.
+ *
+ * [T-C4-023] This rule was enforced and never stated. The prompt offered
+ * "Unanswered requests addressed to Alex, oldest first" — pointing at the
+ * backlog — while validation demanded the newest, so on three turns the Judge
+ * reached back to an older unanswered question and the decision was rejected.
+ * The retry named the rule code and not the id, so it guessed again and lost the
+ * turn, which added one more unanswered question to the backlog that caused it.
+ * Two of the three were the group asking "Alex can you give us a summary?".
+ *
+ * Prompt, retry and validation now read this one function, so the model cannot
+ * be rejected for missing something it was never told.
+ */
+export function currentRequiredOpportunityIdsFor(state: ConversationLedgerState): string[] {
+  return state.opportunities
+    .filter(
+      (opportunity) =>
+        opportunity.status === "open" &&
+        state.threads.some(
+          (thread) =>
+            thread.id === opportunity.threadId &&
+            (thread.status === "open" || thread.status === "waiting"),
+        ) &&
+        opportunity.expectation === "required" &&
+        opportunity.targets.includes("alex") &&
+        (opportunity.openedAtSeq ?? opportunity.opportunitySourceSeq) === state.currentTriggerSeq,
+    )
+    .map((opportunity) => opportunity.id);
+}
+
 export function validateConversationLedgerJudgeDecision(input: {
   decision: ConversationLedgerJudgeDecision;
   state: ConversationLedgerState;
@@ -524,24 +724,13 @@ export function validateConversationLedgerJudgeDecision(input: {
   if (!decision.evidenceSeqs.every((seq) => input.transcriptSeqs.has(seq))) {
     ruleCodes.push("evidence_seq_not_in_transcript");
   }
-  const currentRequiredOpportunityIds = new Set(
-    state.opportunities
-      .filter(
-        (opportunity) =>
-          opportunity.status === "open" &&
-          state.threads.some((thread) => thread.id === opportunity.threadId && (thread.status === "open" || thread.status === "waiting")) &&
-          opportunity.expectation === "required" &&
-          opportunity.targets.includes("alex") &&
-          (opportunity.openedAtSeq ?? opportunity.opportunitySourceSeq) === state.currentTriggerSeq,
-      )
-      .map((opportunity) => opportunity.id),
-  );
+  const currentRequiredOpportunityIds = new Set(currentRequiredOpportunityIdsFor(state));
   // This was a second, inline copy of the reducer's floor rule. Two rules for
   // one question is what B9 had to unify between the opportunity derivation and
   // the floor check, and it cost three consecutive turns before it was found.
   if (
     currentRequiredOpportunityIds.size > 0 &&
-    !humanFloorHeld(state) &&
+    !floorHeldForDecisions(state) &&
     !(
       (decision.decision === "speak" &&
         decision.selectedOpportunityId !== null &&
@@ -585,7 +774,13 @@ export function validateConversationLedgerJudgeDecision(input: {
     if (opportunity && !opportunityStillStands(state, opportunity)) {
       ruleCodes.push("selected_invited_opportunity_not_current");
     }
-    if (decision.evidence !== "selected_open_opportunity" || decision.selectedTraitId !== null) {
+    // Answering a request no longer forbids naming a fact. Under `docs/adr/0010`
+    // the Judge decides what the turn may put on the board on every act, and the
+    // turn that most needs to — "Alex, list what you have on C" — is a selected
+    // opportunity. Requiring an empty list here is what made T-C4-022 seq 53
+    // unanswerable: the Judge read the request, and a separate layer capped the
+    // answer at one trait.
+    if (decision.evidence !== "selected_open_opportunity") {
       ruleCodes.push("opportunity_evidence_contract_invalid");
     }
     if (
@@ -641,16 +836,45 @@ export function validateConversationLedgerJudgeDecision(input: {
       ruleCodes.push("voluntary_act_unavailable_this_turn");
     }
   }
+  // What the Judge named must be Alex's to name. `eligibleTraitIds` is the
+  // unsurfaced part of Alex's own card inside the thread's scope, so anything
+  // outside it is either already on the board or was never Alex's to disclose.
+  const ineligible = decision.discloseTraitIds.filter(
+    (id) => !input.eligibleTraitIds.includes(id),
+  );
+  if (ineligible.length) {
+    ruleCodes.push("disclose_trait_not_eligible");
+  }
+  if (new Set(decision.discloseTraitIds).size !== decision.discloseTraitIds.length) {
+    ruleCodes.push("disclose_trait_repeated");
+  }
   if (decision.evidence === "relevant_unsurfaced_information") {
-    if (
-      decision.act !== "contribute" ||
-      !decision.selectedTraitId ||
-      !input.eligibleTraitIds.includes(decision.selectedTraitId)
-    ) {
+    // This evidence *is* "I am adding a fact", so an empty list contradicts it.
+    if (decision.act !== "contribute" || decision.discloseTraitIds.length === 0) {
       ruleCodes.push("relevant_fact_trait_invalid");
     }
-  } else if (decision.selectedTraitId !== null) {
-    ruleCodes.push("trait_present_for_non_trait_evidence");
+  }
+  // A backchannel adds no fact by definition, in every condition.
+  if (decision.act === "acknowledge" && decision.discloseTraitIds.length > 0) {
+    ruleCodes.push("trait_present_on_acknowledgement");
+  }
+  // Silence says nothing, so it cannot name anything or instruct anyone.
+  if (decision.decision !== "speak") {
+    if (decision.discloseTraitIds.length > 0) ruleCodes.push("trait_present_without_speech");
+  } else if (guardEnabled("judgeBrief")) {
+    // T-C4-023 lost three turns here, two of them the participants' repeated
+    // "Alex can you give us a summary?". A rejected decision retries once and
+    // then falls to silence, so a brief the model wrote badly cost the whole
+    // turn — and until this session the brief was then discarded anyway. It
+    // reaches the generator now, which is what makes rejecting on it defensible
+    // at all; the flag exists to measure whether it still is.
+    if (!decision.brief.trim()) {
+      ruleCodes.push("brief_missing");
+    } else if (decision.brief.length > BRIEF_MAX_CHARS) {
+      // Checked here rather than in the schema: structured outputs reject
+      // `maxLength`, so the bound has to live where the rule codes do.
+      ruleCodes.push("brief_too_long");
+    }
   }
   if (
     state.degradedMode &&
@@ -779,8 +1003,8 @@ export function deterministicVetoBeforeJudge(
   state: ConversationLedgerState,
   options: { cooldownAvailable: boolean },
 ): DeterministicJudgeVeto | null {
-  if (humanFloorHeld(state)) return "human_floor_held";
-  if (options.cooldownAvailable) return null;
+  if (floorHeldForDecisions(state)) return "human_floor_held";
+  if (options.cooldownAvailable || !guardEnabled("cooldown")) return null;
   const takeable = conversationLedgerDecisionProjection(state, options).opportunities.some(
     (opportunity) => opportunity.status === "open" && opportunity.targets.includes("alex"),
   );
@@ -807,16 +1031,20 @@ export function deterministicVetoBeforeJudge(
 export function canonicalizeConversationLedgerJudgeDecision(
   decision: ConversationLedgerJudgeDecision,
 ): { decision: ConversationLedgerJudgeDecision; repairCodes: string[] } {
-  if (
-    decision.selectedTraitId !== null &&
-    decision.evidence !== "relevant_unsurfaced_information"
-  ) {
-    return {
-      decision: { ...decision, selectedTraitId: null },
-      repairCodes: ["trait_cleared_for_non_trait_evidence"],
-    };
+  const repairCodes: string[] = [];
+  let next = decision;
+  // Silence cannot carry an instruction or a disclosure. Both are shape errors
+  // rather than meaning changes — a silent turn broadcasts nothing either way —
+  // so they are repaired rather than rejected.
+  if (next.decision !== "speak" && (next.discloseTraitIds.length || next.brief.trim())) {
+    next = { ...next, discloseTraitIds: [], brief: "" };
+    repairCodes.push("silent_decision_carried_speech_fields");
   }
-  return { decision, repairCodes: [] };
+  // The trait clearing that used to live here is gone. It existed because
+  // evidence and disclosure were coupled, and `docs/adr/0010` uncouples them:
+  // naming a fact is now legitimate on any act the Judge chose, so a list that
+  // does not belong is rejected by validation rather than quietly emptied.
+  return { decision: next, repairCodes };
 }
 
 /**
@@ -871,6 +1099,98 @@ export interface LedgerJudgeCallInput {
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
   eligibleTraitIds: string[];
+  /** The board, for the leader's coverage note. Absent means no note is added. */
+  revealStats?: unknown;
+}
+
+/**
+ * The one line of the live candidate list the leader's Judge is given.
+ *
+ * [Q6/Q7, `.scratch/leader-decision-frame` issues 02-04] The list has been
+ * computed every turn since issue 02 and reached nothing but the record. The
+ * leader's generator already receives the whole board and the "Still to cover"
+ * agenda line; the *Judge* did not, so it wrote the turn's purpose without
+ * knowing which candidates the group had barely touched. In T-C4-024 that gap
+ * showed: on a turn where A and D had nothing on them, the Judge told the
+ * writer to "propose a clear criterion to decide", and Alex invented a rule
+ * that weighted trait categories — the one thing the equal-weight task standard
+ * forbids. Naming the uncovered candidates gives that turn a legitimate move.
+ *
+ * Only issue 04's first move is built. The list says what is thin; it does not
+ * say what the team has pooled, and it does not raise a shortfall at the close.
+ * Those are separate moves and separate measurements.
+ *
+ * **Peer conditions get null.** Owning the discussion procedure is the status
+ * manipulation (`.scratch/leader-decision-frame/spec.md`, "Receives the live
+ * candidate list: leader yes / peer no"). The gate is here, in one function, so
+ * a test can hold it.
+ *
+ * Numbers deliberately do not appear. The brief rules forbid the writer being
+ * told a count, and a Judge handed coverage integers is a Judge that can leak
+ * one — so it is handed the reading, not the arithmetic.
+ */
+export function leaderCoverageNote(
+  conditionCode: ConditionCode,
+  revealStats: unknown,
+): string | null {
+  if (!isLeaderCondition(conditionCode)) return null;
+  const { live, covered } = computeCandidateList(revealStats);
+  if (!live.length) {
+    return "Every candidate now has something on the table. There is no coverage gap to name.";
+  }
+  if (!covered.length) {
+    return `The group has said little about every candidate so far: ${live.join(", ")}.`;
+  }
+  return `The group has said little about ${live.join(" and ")} so far, next to ${covered.join(", ")}.`;
+}
+
+/**
+ * Which candidates in this thread's scope Alex has nothing further to say
+ * about, stated rather than left to be inferred from an absence.
+ *
+ * [T-C2-050 seq 19] Alex had put all six of its Candidate A traits on the board
+ * across seqs 15 and 17. The group came back to A, the Judge set
+ * `focusCandidate: "A"`, and for `discloseTraitIds` it emitted `["A"]` — the
+ * bare candidate letter where a trait id goes. There was no A id left in the
+ * eligible list to emit, and nothing in the prompt said so. The decision was
+ * rejected as ineligible and the turn broadcast an empty message.
+ *
+ * The eligible list already carried the fact, but only by omission, and noticing
+ * which prefix has gone missing from a list of ids is the thing a model is worst
+ * at — it answered with the letter itself. So the absence is named.
+ *
+ * This is not an edge case. A hidden-profile discussion that works properly
+ * through one candidate exhausts Alex's card for that candidate by design, and
+ * the group then keeps talking about it — which is exactly when the Judge is
+ * most likely to follow the topic instead of the list.
+ *
+ * Condition-blind, and it must stay that way. What Alex still holds is Alex's
+ * own card, which every condition already receives in full through the eligible
+ * list; naming what is absent from that list tells a Peer nothing it did not
+ * already have. Contrast `leaderCoverageNote`, which reports the *group's*
+ * coverage and is the leader's alone.
+ *
+ * No numbers, for the same reason as the coverage note: a count reads as a
+ * budget, and a budget is a fact about when Alex speaks (`docs/adr/0001`).
+ */
+export function exhaustedCandidateNote(
+  eligibleTraitIds: readonly string[],
+  scopeCandidates: readonly Candidate[],
+): string | null {
+  if (!scopeCandidates.length) return null;
+  const stillHeld = new Set(
+    eligibleTraitIds
+      .map((id) => TRAIT_BY_ID.get(id)?.candidate)
+      .filter((candidate): candidate is Candidate => candidate !== undefined),
+  );
+  const spent = scopeCandidates.filter((candidate) => !stillHeld.has(candidate));
+  if (!spent.length) return null;
+  const name = (candidate: Candidate) => `Candidate ${candidate}`;
+  const remaining = scopeCandidates.filter((candidate) => stillHeld.has(candidate));
+  if (!remaining.length) {
+    return `Everything on your card about ${spent.map(name).join(", ")} is already on the board, and this thread covers nothing else. You hold no unsurfaced fact to add here.`;
+  }
+  return `Everything on your card about ${spent.map(name).join(", ")} is already on the board. What you still hold is about ${remaining.map(name).join(", ")}.`;
 }
 
 /**
@@ -892,8 +1212,24 @@ export function buildLedgerJudgeUserMessage(
   input: Pick<
     LedgerJudgeCallInput,
     "messages" | "state" | "cooldownAvailable" | "backchannelAvailable" | "eligibleTraitIds"
-  >,
+  > &
+    Partial<Pick<LedgerJudgeCallInput, "conditionCode" | "revealStats">>,
 ): string {
+  // Both of the board-derived sentences require a board. `revealStats` has been
+  // documented as "absent means no note is added" since it was added, and was
+  // not honoured: `computeCandidateList(undefined)` returns coverage zero for
+  // all four candidates, so an absent board produced "the group has said little
+  // about every candidate" — a fabrication, not a silence. A live session always
+  // has one (`Session.revealStats` is defaulted at creation), so nothing on the
+  // speaking path loses a note; the caller that passes nothing is the offline
+  // replay eval, whose corpus carries no surfaced-trait ids on any of its 1451
+  // messages. An eval that feeds the Judge an invented board cannot measure the
+  // Judge.
+  const boardKnown = input.revealStats !== undefined;
+  const coverageNote =
+    input.conditionCode === undefined || !boardKnown
+      ? null
+      : leaderCoverageNote(input.conditionCode, input.revealStats);
   const decisionState = conversationLedgerDecisionProjection(input.state, {
     cooldownAvailable: input.cooldownAvailable,
   });
@@ -918,13 +1254,26 @@ export function buildLedgerJudgeUserMessage(
   // both T-C1-020 and T-C2-039 — the system block alone falls under the 1024
   // token minimum, so nothing was cacheable at all.
   const availability = (available: boolean) => (available ? "available" : "not available");
-  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  const requiredNow = currentRequiredOpportunityIdsFor(decisionState);
+  // The card note reads the eligible list, so it has to be gated by the same
+  // test the eligible list was built under. `foreground` above is "the thread in
+  // the foreground" and is right for the Decision-inputs lines, which describe
+  // that thread whatever its status; `liveForegroundThread` is "a thread Alex
+  // can still act in", which is what an empty eligible list means. Deriving the
+  // sentence from the wrong one of those turned a resolved thread into the
+  // claim that Alex's whole card was spent.
+  const liveThread = boardKnown ? liveForegroundThread(decisionState) : undefined;
+  const cardNote = liveThread
+    ? exhaustedCandidateNote(input.eligibleTraitIds, candidateSalienceOrder(liveThread))
+    : null;
+  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
 }
 
 export async function judgeConversationLedgerTurn(
   input: LedgerJudgeCallInput,
 ): Promise<ConversationLedgerJudgeCallResult> {
   const user = buildLedgerJudgeUserMessage(input);
+  const requiredIdsForRetry = currentRequiredOpportunityIdsFor(input.state);
   // The same projection the prompt was built from, so validation can never
   // reject a choice the prompt offered.
   const decisionState = conversationLedgerDecisionProjection(input.state, {
@@ -933,6 +1282,7 @@ export async function judgeConversationLedgerTurn(
   const attempts: ConversationLedgerJudgeCallAttempt[] = [];
   let priorRuleCodes: string[] = [];
   let priorDecisionJson = "none";
+  let priorDiscloseTraitIds: string[] = [];
   for (let attempt = 0; attempt < CONVERSATION_LEDGER_JUDGE_PARAMETERS.maxAttempts; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -944,8 +1294,7 @@ export async function judgeConversationLedgerTurn(
       const response = await client.responses.parse(
         {
           model: JUDGE_MODEL,
-          temperature: CONVERSATION_LEDGER_JUDGE_PARAMETERS.temperature,
-          max_output_tokens: CONVERSATION_LEDGER_JUDGE_PARAMETERS.maxOutputTokens,
+          ...LEDGER_JUDGE_REQUEST_PARAMS,
           input: [
             { role: "system", content: LEDGER_JUDGE_SYSTEM },
             // The role goal is its own message, and sits between the fixed
@@ -956,7 +1305,14 @@ export async function judgeConversationLedgerTurn(
               role: "user",
               content:
                 attempt > 0 && priorRuleCodes.length
-                  ? `${user}\n\nYour previous decision was ${priorDecisionJson}. It violated: ${priorRuleCodes.join(", ")}. Correct the rejected output fields while keeping the transcript and ledger facts fixed. For a selected opportunity, evidence must be selected_open_opportunity and selectedTraitId must be null.`
+                  ? ledgerJudgeRetryMessage({
+                      user,
+                      priorDecisionJson,
+                      priorRuleCodes,
+                      priorDiscloseTraitIds,
+                      requiredOpportunityIds: requiredIdsForRetry,
+                      eligibleTraitIds: input.eligibleTraitIds,
+                    })
                   : user,
             },
           ],
@@ -1017,6 +1373,7 @@ export async function judgeConversationLedgerTurn(
       });
       priorRuleCodes = validation.ruleCodes;
       priorDecisionJson = JSON.stringify(canonical.decision);
+      priorDiscloseTraitIds = canonical.decision.discloseTraitIds;
     } catch (error: any) {
       clearTimeout(timeout);
       const message = error?.message ?? String(error);

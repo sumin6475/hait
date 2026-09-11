@@ -53,7 +53,7 @@ maximum over every other message.
 | Turns discarded as superseded | ≤ 10% | 11% (T-C1-024) |
 | Observer share of turn time | — | 66% (T-C1-024) |
 | Judge cache hit rate | — | structurally impossible; see T-C1-022 |
-| Alex words per message, mean | ≤ 30 | 34.7 (T-C1-027) |
+| Alex words per message, mean | ≤ 30 | 33.3 (T-C4-023) |
 | Max traits in one message | ≤ 2 | 4 (T-C1-024) |
 | Wrong-candidate turns | 0 | 0 (T-C1-024) |
 | Alex messages with zero new information | 0 | 1 of 4 (T-C1-024) |
@@ -977,6 +977,110 @@ reaching its end.
 
 ---
 
+## T-C4-022 — the first aci session on a verified build
+
+**Chair + aci (C4), 55 messages (Alex 24, humans 31), 2026-09-09.** Build is
+verified in the record: `promptVersion` 1.10.0, one `promptHash` across all 29
+intervention rows, model `gpt-5-mini`. **It did not reach closing** — the session
+is still `in_progress`, so `summary` and `closing` remain unexercised end to end
+and issue 01's first criterion stays open. `mediation` fired once, at anchor 5.
+
+This is the session `.scratch/leader-decision-frame/issues/01` asked for as its
+second criterion: an aci session on the current build, with `outputGuard`,
+`routeKind` and latency present. T-C3-003 was aci but pre-repair and unverified.
+
+| | |
+| --- | ---: |
+| Alex words per message, mean | **32.6** |
+| Human words per message, mean | 20.8 |
+| Ratio | **1.6×** |
+| Alex messages containing a question mark | **22 / 24** |
+| Alex messages ending in an either/or question | **14 / 24** |
+| Alex messages ending in an offer to add a trait | **14 / 24** |
+| **Alex messages carrying no new trait** | **18 / 24** |
+| Max traits in one message | 6 |
+| Turns lost to a guard | **2 / 29** |
+| Turns lost to cooldown | 3 |
+| Turns superseded | 4 |
+| Median turn | 10.3 s |
+| Distinct traits on the board at the end | **21 / 40** |
+| Traits only Alex held, disclosed | **4 / 8** |
+| Alex's own card still unsaid at the end | 7 / 24 |
+
+**Confirmed — the aci collapse T-C3-003 recorded is neither pre-repair nor a
+peer artefact.** T-C3-003 closed twelve of fifteen messages with the same
+confirmation-request form. Here the frame is different but the shape is
+identical: **the last twelve consecutive Alex messages all end by offering to add
+a trait**, and eight messages ask which candidate to cover next. One build later,
+the other status, on a verified build. That is the second observation, so the
+deferred item in `.scratch/leader-decision-frame/spec.md` clears the two-session
+bar the checkpoint's sixth method rule sets, and stops being a rate to watch.
+
+**Confirmed — length came inside the target for the first time, and the
+information left with it.** 32.6 words is the lowest mean in the record and 1.6×
+the humans, against T-C3-003's 3.1×. In the same session **eighteen of
+twenty-four Alex messages carry no new trait at all**, against a target of zero.
+The two figures are one result: `ROUTE_REVEAL_BUDGET` reached a live turn for the
+first time on this build (issue 03), and it applies to `address` and `followup`
+whenever the request intent reads `none` — 20 of Alex's 24 turns here. The bound
+did what it was built to do and the turns had nothing left to carry.
+
+**Confirmed — a count bound killed an explicitly requested recap, twice, and the
+Chair had no route to answer it with.** At seq 53 a participant asked for a
+summary and for no follow-up question; at seq 54, for a retry. Both turns routed
+to `address`, extracted 19 and 25 traits, and died `too_many_traits` after
+repair against `maxTraitIds: 1`. Both are the count bound the 2026-09-08 guard
+audit already identified as the one that almost never repairs. Three causes
+compound, and each is separately true: `summary` is unreachable on the live
+controller (`.scratch/conversation-repair/issues/26`); no request-intent pattern
+matches the word *summary*, so the reveal budget applied to a recap request; and
+1.9.0 removed the output-discipline clause that had excused an explicitly
+requested list, leaving the request-scope machinery as the only source of that
+licence. The group then heard nothing for 62 seconds and a `long_silence` turn
+at seq 55 repeated the same offer.
+
+**Confirmed — the group eliminates the pooled answer on the first human message.
+Third session.** humanY eliminated Candidate C at seq 2, the first human message,
+on a board of one trait; humanX did so again at seq 5. T-C2-047 seq 2 and
+T-C3-003 seq 4 are the same move. C was reconsidered only as a request for
+Alex's notes, never as a candidate.
+
+**Disconfirmed for this session — that Alex withholds the traits only it holds.**
+Four of Alex's eight unique traits reached the board, against one of eight in
+T-C2-047. n is still small and nothing here separates selection from rate, but
+the direction that reading pointed in is not present.
+
+**What it says about the candidate list.** Second session read against
+`docs/adr/0009`, on real extractor output. C cleared the bar at seq 17 and A at
+seq 24, both immediately after an Alex disclosure; B cleared at seq 46; **D never
+cleared, ending at coverage 3.** The group's two eliminations — C at seq 2 on
+coverage 0, D at seq 35 on coverage 2 — both happened far below the bar, so the
+shortfall move would have fired twice and both times correctly. That is the third
+consecutive session in which it would have.
+
+**Observed, and not yet routed: the shortfall behaviour is already leaking, in
+the worst available form.** The list is log-only by issue 02 and did not reach
+Alex. But the unsaid-notes context block, shipped 2026-09-08, lists Alex's
+unsurfaced notes on every trait-bearing route, and D dominated that list from seq
+29 to the end. Alex responded by asking permission to disclose a D trait on every
+one of its last twelve turns and disclosing one on none of them. The behaviour
+issues 03 and 04 propose to build is therefore already occurring — through a
+context block written for a different purpose, with no route obliged to discharge
+it, in an interrogative the aci style makes cheap. Under `followup`, which took
+11 of 24 turns, nothing requires the turn to carry anything.
+
+**Not exercised.** `summary` and `closing`. Mediation past a single turn. Every
+Chair behaviour that depends on the discussion reaching its end — the same gap
+T-C2-047 left, for the same reason.
+
+**One gap in the export itself.** The session export's `messages` carry five
+fields and neither `sharedInfoIds` nor `declinedTraitIds`, so information release
+cannot be counted from `T-C4-022.json` alone; every trait figure above is read
+from the `messages` collection. Commit `5f616f8` covered the intervention rows
+and not this one.
+
+---
+
 ## Notes on the record itself
 
 **One run is missing, and one id is now used twice.** The original T-C1-021
@@ -995,3 +1099,222 @@ the next measurement.**
 analysis measured output cost and never asked whether a field carries value after
 its own value is discarded. That reasoning turned out to be wrong too — see
 T-C2-041 — but the method note stands on its own.
+
+**A model swap can break a call the tests never make.** Only `openai.callAIStructured`
+handled reasoning models; the Observer, the three Judge entry points, the three
+small judges and the trait verifier each built their own request and sent
+`temperature: 0` unconditionally. `gpt-5-mini` rejects that field, so moving the
+Judge to it left three call sites that would have failed on their first live
+request — with every suite green, because nothing in the test tree makes a model
+call. `openai.modelRequestParams` now decides those fields from the model name
+and the same value is what gets recorded, so the provenance line cannot claim a
+setting the request did not send. **A green suite says nothing about a request
+shape no test builds.**
+
+**A field can be dead and still be read.** `alexRelevance` was described here as
+having no live consumer. It had two: one sentence in the paragraph the Judge
+reads, and half the condition that bought a second full observation. Both were
+reading a value that came back `not_relevant` on 50 of 50 and 5 of 5 — a constant
+the Judge was told every turn and a "contradiction" that was really the constant
+meeting a thread flag. Removing it is right, and the reason to remove it is the
+opposite of the one first given. **Check the consumers before calling a field
+unused; a constant is not the same as absent.**
+
+---
+
+## T-C4-023 — 2026-09-09, Chair + aci, first session on the rewired build
+
+promptVersion `1.11.0`, `gpt-5-mini` for Observer, Judge and generator, 48 human/Alex
+messages, 29 intervention rows, 15 spoken and 14 silent.
+
+**Latency is fixed.** Median turn 1.6 s, max 7.1 s, against 10.3 s median in
+T-C4-022. The Observer and the Judge both moved to `gpt-5-mini` with
+`reasoning.effort: "minimal"`, and the fear that reasoning tokens would make the
+Observer slower did not materialise.
+
+**Length did not move.** Alex 33.3 words per message against the humans' 19.6
+(T-C4-022: 32.6 against 20.8). The target of ≤ 30 is still missed, and no check
+enforces it — `sentenceCount` and `wordCount` are exported and called by nothing.
+
+**The either/or question is gone; the question is not.** 1 of 15 messages ends in
+an either/or, against 14 of 24 in T-C4-022. 13 of 15 still carry a question mark.
+The C4 prompt of this session still carried the three either/or examples; they
+were replaced after this run, so the improvement is not yet attributable to them.
+
+**Seven of twenty-nine turns were lost, to four different causes.**
+
+| Cause | Turns | Which |
+|---|---:|---|
+| `current_required_opportunity_not_selected` | 3 | seq 13, 46, 48 — all direct questions to Alex |
+| output scope check after repair | 3 | seq 7, 15, 44 |
+| ordinary cooldown | 1 | seq 2 |
+
+Six further turns were vetoed before the Judge by the human floor, and five were
+superseded by a newer human message.
+
+**The largest cause was a rule the prompt never stated.** Validation demands the
+opportunity opened by the message being judged; the prompt offered "Unanswered
+requests addressed to Alex, oldest first" and named no required id. On seq 13,
+46 and 48 the Judge selected an older backlog question, was rejected, guessed
+again from the same list, and the turn was lost. **Two of the three were the
+group asking "Alex can you give us a summary?", once and then again.** Each loss
+added another unanswered question to the backlog that caused the next one, so
+the failure compounds: seq 44 lost, then 46, then 48, and the session ended with
+four unanswered direct questions open.
+
+**The Judge's brief was never delivered.** `docs/adr/0010` gives the Judge what
+the turn must accomplish; the generator received the fact list and not the
+sentence. `judgeBrief` was declared on the reservation, threaded through
+`routeTurn`, injected by `routeContext` — and never set at the one call site
+that reserves a live turn. Validation could reject a decision over that field
+(`brief_missing`, `brief_too_long`) while nothing downstream read it.
+
+**Alex named who said what.** Seq 39 and 41: "Participant Y says they don't have
+those", "Participant X and Participant Y do not have those two misses". The
+prompt forbids this — "Do not say who supplied which information" — and no check
+reads for it. The reading was correct; the attribution is the violation.
+
+**The count answer is deterministic, and unverifiable from the export.** Seq 43,
+"we have 4 matches and 4 misses for Candidate B", came from
+`deterministicKnownCountResponse`, not the model. Reconstructing the board from
+the transcript gives 4 matches and 3–4 misses, so it is plausibly right — but
+`revealStats` is still absent from the session export, so it cannot be checked
+from `T-C4-023.json` alone. That is the same export gap T-C4-022 recorded.
+
+**Method note — a green suite proved nothing about the half-built decision.** The
+brief was validated, threaded and injected, and every test passed, because no
+test follows a value from the Judge to the generator. **Wiring is not covered by
+checking that each end compiles.**
+
+---
+
+## T-C2-049 — 2026-09-10, Chair + xai, cooldown on and the output checks off
+
+promptVersion `1.11.0`. `disabledGuards: ["outputScope", "humanFloor", "judgeBrief"]` on all 19
+rows — the inverse of T-C4-024's single disabled cooldown, and the pairing that
+makes the two comparable.
+
+**The question ban held on its own.** C2 is explanatory, where any question is a
+post-condition violation. **0 of 14 messages carry a question mark** — not
+because the check killed them, but because none was written.
+
+**The counting answer is exact.** Asked for a whole summary with match and miss
+counts, Alex gave A 4·2, B 4·3, C 3·3, D 4·3. Reconstructing the board from
+`sharedInfoIds` gives the same four pairs. **All four correct.**
+
+**Four turns lived that the scope check would have killed** — seq 9, 18, 25, 28,
+each logged `delivered message broke trait_outside_selected_contribution`. One of
+them, seq 28, is the answer to "Alex can you help us decide?".
+
+**Cooldown and the scope check cost about the same.** T-C4-024 (cooldown off,
+checks on) broadcast 15 of 19; T-C2-049 (cooldown on, checks off) broadcast 14 of
+19. The two builds silence a similar number of turns by different means, so the
+question is not how many turns survive but which ones.
+
+**The invented decision criterion is not a C4 problem.** T-C4-024's "stopping
+rule" reappears here in different words: seq 18 proposes weighing "interpersonal
+misses against safety and performance matches", seq 20 calls a trait "a miss
+against our interpersonal requirements", seq 28 argues one candidate's misses are
+"fewer than D's and less likely to undercut core flight duties". Categories the
+task does not contain, ranked against each other. **Two conditions, two sessions,
+same defect — equal weighting is a control variable, so this is validity, not
+style.**
+
+**Method note — the trait leak was not a leak.** T-C4-024 and T-C2-049 both
+record `B_n5` in `declinedTraitIds` on the summary turn, and this log previously
+read that as a trait Alex said and the record lost. It is not. `B_n5` is on the
+board in both sessions (T-C4-024 seq 4, T-C2-049 seq 31). `B_n5` and `D_n1` carry
+byte-identical text — "Is considered arrogant" — and are the only such pair in
+the 40; naming one proposes the other, which the verifier then declines. Feeding
+all 40 traits' own card wording through the matcher fails for **zero**. The
+pooling DV is intact. **A decline next to a correct disclosure is the twin, not a
+loss** — and reading `declinedTraitIds` as "said but not recorded" produces a
+false positive on every arrogance turn.
+
+**What does lose a trait is dropping one word.** "B's seen as arrogant" defers
+`B_n5` and accepts nothing. The simulation scripts under `docs/simulation-result/`
+use exactly that wording, so anything measured from them undercounts.
+
+**Method note — a comparison `.env` reached the test suites.** The offline suites
+load `server/.env` through dotenvx, so `HAIT_GUARD_HUMAN_FLOOR=off` left over
+from this session made `test:conversation-ledger` fail on a floor assertion whose
+message said nothing about flags. The inverse is the real hazard: a suite that
+passes only because a check was disabled reads exactly like a suite that passes.
+Every offline entry point now calls `forceGuardsOnForTest()` first.
+**A flag that changes the build must not be able to change what the tests prove.**
+
+---
+
+## T-C2-050 — 2026-09-10, Chair + xai, the brief fence in place
+
+**Build:** `conversation-ledger-judge-prompt-v10`, `gpt-5-mini` on Observer, Judge
+and speech. Guards off: `outputScope`, `humanFloor`, `judgeBrief`. Cooldown on.
+
+26 intervention rows, 17 broadcast. Median latency 2.1 s, max 4.1 s. Nine
+silences: 4 cooldown, **3 human floor**, 1 judge failure, 1 superseded.
+
+**The brief fence held.** No invented decision rule in 45 messages — the defect
+that ran through T-C4-024 (ten consecutive briefs carrying "propose a clear
+criterion") and T-C2-049 does not appear once.
+
+### The floor flag was gating half its check
+
+All three floor silences — seqs 26, 27 and 41 — are
+`ledger_router_human_floor_held`, and every row of the session records
+`disabledGuards: ["outputScope", "humanFloor", "judgeBrief"]`. **The run asked for
+the floor veto to be off and lost three turns to it anyway.**
+
+The floor is read at two sites: before the Judge is called, and again after it has
+decided. Only the first read the flag. So on those three turns the turn reached
+the Judge, the Judge chose to speak, and the second read threw the decision away.
+A flag that silences one of a check's two sites does not measure that check.
+Fixed 2026-09-10; `test:conversation-ledger` now pins both sides.
+
+### Two turns lost inside the Judge's trait list
+
+**seq 14 — a spent id, then an invented one.** A participant asked Alex directly.
+Two C traits were still eligible (`C_n2`, `C_n3`). Attempt 1 answered
+`["C_p1", "C_n2"]`; `C_p1` had been on the board since seq 11, so the decision
+was rejected for the spent id. The retry was handed the rule name
+`disclose_trait_not_eligible` and nothing else, and answered `["C_p1", "C_p2"]` —
+the same spent id plus **`C_p2`, which is on no card Alex holds**. Turn lost to
+`ledger_judge_failure`. This is the `ledger_judge_failure` that looked, from the
+transcript, like Alex being called and not answering.
+
+**seq 19 — the bare candidate letter.** All six of Alex's A traits were on the
+board by seq 17. The group came back to A. The Judge set `focusCandidate: "A"`
+and, for the trait ids, emitted **`["A"]`** — the candidate letter where a trait
+id goes. No A id was left in the eligible list and nothing in the prompt said so.
+Rejected as ineligible; the turn broadcast an empty message.
+
+Both are the same shortage from opposite ends: the eligible list carries what
+Alex may name, and carries what Alex has *run out of* only as an absence. The
+Judge answered the absence with a letter. Two fixes, 2026-09-10 — the prompt now
+names the spent candidates in a sentence, and a retry that trips a trait rule is
+handed the eligible ids rather than only the rule name.
+
+### What `outputScope` was holding
+
+With the scope check off, the gap between what the Judge authorised and what Alex
+said is visible directly. On six turns the Judge named nothing and the generator
+spoke anyway, twice reciting most of the card:
+
+| seq | Judge authorised | extracted from the message |
+| --- | --- | --- |
+| 17 | `A_n5, A_n6` | all six A traits |
+| 22 | `D_n5, D_n6` | all six D traits |
+| 32 | — | 25 traits |
+| 34 | — | `D_p1, D_n6, D_n4` |
+| 42 | — | `A_n5, B_p2, B_n3, B_n6` |
+| 44 | — | 25 traits |
+
+The seq 32 and 44 rows are whole-board recaps and may be legitimate; the rest are
+not. **The scope check is the only thing standing between `discloseTraitIds` and
+what reaches the board,** which is the measurement this comparison run was for.
+
+**Method note — a claim corrected.** The seq 14 and seq 19 events above were first
+written up against **T-C2-049**, which is the wrong session: T-C2-049 seq 14 is a
+plain cooldown silence, and its one rejected trait choice (seq 12) emitted the
+literal placeholder strings `"C_p?"` and `"C_n?"`. The ids and the seqs were
+right and the session was wrong. Comments and `ARCHITECTURE.md` were corrected
+before the fixes were finished.

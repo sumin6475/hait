@@ -3,6 +3,7 @@
 //previous_response_id로 컨텍스트 관리
 
 import mongoose from "mongoose";
+import { disabledGuards } from "../lib/guardFlags.js";
 import type { AIDecision, RouteKind, RerouteReason, ExemptReason } from "../types.js";
 
 const outputRepairAttemptSchema = new mongoose.Schema(
@@ -50,11 +51,11 @@ const outputGuardSchema = new mongoose.Schema(
     inForce: { type: Boolean, required: true },
     reason: { type: String },
     candidate: { type: String, enum: ["A", "B", "C", "D"] },
-    revealBudget: { type: Boolean },
-    maxTraitIds: { type: Number },
-    maxRestatedTraitIds: { type: Number },
-    maxSentences: { type: Number },
-    maxWords: { type: Number },
+    // The counts that used to sit here went with `docs/adr/0010`. What a turn
+    // was permitted to introduce is now a named list, so the record holds the
+    // list rather than a number nobody can check a message against afterwards.
+    allowedTraitIds: { type: [String] },
+    requiredTraitId: { type: String },
     traitIds: { type: [String], default: [] },
     violation: { type: String },
   },
@@ -214,6 +215,12 @@ const aiInterventionSchema = new mongoose.Schema(
     // Main Judge selection provenance. Cadence mediation can supersede the
     // build-on route, so this may be recorded even when the trait is not used.
     selectedTraitId: { type: String },
+    // What the Judge said this turn could put on the board, and the instruction
+    // it wrote for the writer. Both are recorded because `docs/adr/0010` moves
+    // decisions the deterministic layer used to make into a model call, and a
+    // decision made by a model that is not written down cannot be audited later.
+    discloseTraitIds: { type: [String] },
+    judgeBrief: { type: String },
     /**
      * [Issue 13B] The requests that were open, and unanswered, on a turn Alex
      * stayed silent.
@@ -236,6 +243,12 @@ const aiInterventionSchema = new mongoose.Schema(
     promptKey: { type: String },
     promptVersion: { type: String },
     promptHash: { type: String },
+    // Which turn-killing checks were switched off when this row was written.
+    // Empty on every normal run. It is a schema default rather than a field the
+    // four create sites each pass, because a comparison transcript that forgot
+    // to record its flags reads exactly like an ordinary one — the whole point
+    // is that a reader can never mistake the two.
+    disabledGuards: { type: [String], default: disabledGuards },
     contextFromSeq: { type: Number },
     contextToSeq: { type: Number },
     floorMs: { type: Number },

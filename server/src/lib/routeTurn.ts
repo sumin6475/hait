@@ -62,7 +62,10 @@ export interface RouteTurnInput {
   priorityEvidence?: string;
   mainJudgeDecision?: MainJudgeDecision | null;
   judgeEvidence?: string | null;
-  selectedTraitId?: string | null;
+  /** Exactly what this turn may disclose, named by the Judge. */
+  discloseTraitIds?: string[];
+  /** The Judge's one-sentence instruction to the writer. */
+  judgeBrief?: string;
   decisionStage?: InterventionDecisionStage;
   routeReason?: string;
   mediationLatched?: boolean;
@@ -160,40 +163,29 @@ export function routeGenerationLimits(
   // Every other turn is an ordinary chat reply, and the model's own length
   // control says so. The three cases above enumerate a whole profile and are
   // deliberately left at the API default.
-  return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000, verbosity: "low" };
+  // `verbosity: "low"` was here and is gone with `docs/adr/0010`. It was a
+  // global "be terse" nudge sitting on top of a turn the Judge may have told to
+  // give a complete list, and it pushed the same direction as the count bound
+  // that emptied eighteen of T-C4-022's twenty-four messages. Length is the
+  // prompt's job, and the record says the prompt is doing it.
+  return { maxOutputTokens: 600, maxContentChars: 2_400, timeoutMs: 45_000 };
 }
 
 /**
- * Direct answers keep their prompt-level factual scope, but are not rewritten
- * by candidate/trait extraction. Contribution routes retain their hard guard.
+ * The guard the generation call is judged against.
  *
- * The per-turn reveal budget is the exception, and it had been swallowed by the
- * rule: `withRouteRevealBudget` computes it *for* address and followup, and this
- * function then returned undefined for both because its reason is not
- * `requested_narrowing`. Every assertion on the budget tested the predicate
- * directly, so it passed its own suite while reaching no live turn — one of the
- * three possibilities T-C2-041 seq 4 could not be told apart from.
- *
- * The budget passes through; the candidate scope still does not. So a direct
- * answer is not rewritten because it named the wrong candidate, and is still
- * bounded in how much it may reveal and how long it may run.
+ * This used to strip the guard on `address` and `followup` unless it was the
+ * reveal budget, on the reasoning that a direct answer should not be rewritten
+ * for naming the wrong candidate. `docs/adr/0010` makes that unnecessary and
+ * harmful in one move: the guard is now the list the Judge named for this turn,
+ * and the two routes it stripped are the ones that carried 21 of Alex's 24 turns
+ * in T-C4-022. Dropping it there would drop the only factual bound that remains.
  */
 export function routeGenerationGuard(
-  routeKind: RouteKind,
+  _routeKind: RouteKind,
   guard: RouteOutputScopeGuard | undefined,
 ): RouteOutputScopeGuard | undefined {
-  if (routeKind !== "address" && routeKind !== "followup") return guard;
-  if (guard?.reason === "requested_narrowing") return guard;
-  if (!guard?.revealBudget) return undefined;
-  return {
-    candidate: null,
-    maxTraitIds: guard.maxTraitIds,
-    maxRestatedTraitIds: guard.maxRestatedTraitIds,
-    maxSentences: guard.maxSentences,
-    maxWords: guard.maxWords,
-    revealBudget: true,
-    reason: "route_reveal_budget",
-  };
+  return guard;
 }
 
 export interface OutputGuardAudit {
@@ -206,11 +198,9 @@ export interface OutputGuardAudit {
   inForce: boolean;
   reason?: string;
   candidate?: Candidate;
-  revealBudget?: boolean;
-  maxTraitIds?: number;
-  maxRestatedTraitIds?: number;
-  maxSentences?: number;
-  maxWords?: number;
+  /** Exactly what the turn was permitted to introduce. */
+  allowedTraitIds?: string[];
+  requiredTraitId?: string;
   /**
    * What the deterministic matcher found in the broadcast message. Pool
    * identifiers only: no participant text, and no message content, enters this
@@ -239,13 +229,8 @@ export function outputGuardAudit(input: {
     inForce: Boolean(guard),
     ...(guard?.reason !== undefined ? { reason: guard.reason } : {}),
     ...(guard?.candidate ? { candidate: guard.candidate } : {}),
-    ...(guard?.revealBudget ? { revealBudget: true } : {}),
-    ...(guard?.maxTraitIds !== undefined ? { maxTraitIds: guard.maxTraitIds } : {}),
-    ...(guard?.maxRestatedTraitIds !== undefined
-      ? { maxRestatedTraitIds: guard.maxRestatedTraitIds }
-      : {}),
-    ...(guard?.maxSentences !== undefined ? { maxSentences: guard.maxSentences } : {}),
-    ...(guard?.maxWords !== undefined ? { maxWords: guard.maxWords } : {}),
+    ...(guard?.allowedTraitIds ? { allowedTraitIds: guard.allowedTraitIds } : {}),
+    ...(guard?.requiredTraitId ? { requiredTraitId: guard.requiredTraitId } : {}),
     traitIds: input.broadcastTraitIds,
     ...(input.violation ? { violation: input.violation } : {}),
   };
@@ -338,7 +323,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
     language: ((session as any).language ?? "en") as "en" | "ko",
     anchorSeq: input.anchorSeq,
     judgeEvidence: input.judgeEvidence,
-    selectedTraitId: input.routeKind === "build_on" ? input.selectedTraitId : undefined,
+    // Every route now carries what the Judge named. The build_on restriction is
+    // gone with `docs/adr/0010`: answering "list what you have on C" is the turn
+    // that most needs to disclose, and it is not a build_on.
+    discloseTraitIds: input.discloseTraitIds,
+    judgeBrief: input.judgeBrief,
     mediationTrigger: input.mediationTrigger,
     mediationFocusCandidate: input.mediationFocusCandidate,
     mediationEvidence: input.mediationEvidence,
@@ -415,7 +404,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       judgeEvidence: input.judgeEvidence ?? undefined,
       communicativeAct: input.communicativeAct,
       judgeEvidenceSeqs: input.judgeEvidenceSeqs,
-      selectedTraitId: input.selectedTraitId ?? undefined,
+      discloseTraitIds: input.discloseTraitIds,
+      judgeBrief: input.judgeBrief,
       mediationTrigger: input.mediationTrigger,
       decisionStage: input.decisionStage ?? "system",
       routeReason: input.routeReason,
@@ -456,14 +446,15 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   };
 
   if (input.routeKind === "build_on" && input.judgeEvidence === "relevant_unsurfaced_information") {
+    const buildOnTraitId = input.discloseTraitIds?.[0];
     if (
-      !input.selectedTraitId ||
+      !buildOnTraitId ||
       context.outputScopeGuard?.reason !== "selected_note_contribution"
     ) {
       await recordGenerationFailure("selected_trait_missing_or_invalid");
       return { ok: false, error: "selected_trait_missing_or_invalid" };
     }
-    if (previouslySurfacedTraitIds.includes(input.selectedTraitId)) {
+    if (previouslySurfacedTraitIds.includes(buildOnTraitId)) {
       await recordGenerationFailure("selected_trait_no_longer_unsurfaced");
       return { ok: false, error: "selected_trait_no_longer_unsurfaced" };
     }
@@ -550,7 +541,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       conversationEpoch: input.expectedConversationEpoch,
       interactionObligationEpoch: input.interactionObligationEpoch,
       postGenerationReevaluation: input.postGenerationReevaluation,
-      selectedTraitId: input.selectedTraitId ?? undefined,
+      discloseTraitIds: input.discloseTraitIds,
+      judgeBrief: input.judgeBrief,
       communicativeAct: input.communicativeAct,
       judgeEvidenceSeqs: input.judgeEvidenceSeqs,
       mediationTrigger: input.mediationTrigger,
@@ -601,7 +593,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
         conversationEpoch: input.expectedConversationEpoch,
         interactionObligationEpoch: input.interactionObligationEpoch,
         postGenerationReevaluation: input.postGenerationReevaluation,
-        selectedTraitId: input.selectedTraitId ?? undefined,
+        discloseTraitIds: input.discloseTraitIds,
+      judgeBrief: input.judgeBrief,
         communicativeAct: input.communicativeAct,
         judgeEvidenceSeqs: input.judgeEvidenceSeqs,
         mediationTrigger: input.mediationTrigger,
@@ -691,7 +684,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
       priorityEvidence: input.priorityEvidence,
       mainJudgeDecision: input.mainJudgeDecision ?? undefined,
       judgeEvidence: input.judgeEvidence ?? undefined,
-      selectedTraitId: input.selectedTraitId ?? undefined,
+      discloseTraitIds: input.discloseTraitIds,
+      judgeBrief: input.judgeBrief,
       communicativeAct: input.communicativeAct,
       judgeEvidenceSeqs: input.judgeEvidenceSeqs,
       decisionStage: input.decisionStage ?? "system",
@@ -832,10 +826,11 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   // verification still runs in the background, as the same late correction the
   // human path uses.
     try {
+      const contributedTraitId = input.discloseTraitIds?.[0];
       const deterministic =
         input.routeKind === "build_on" &&
         input.judgeEvidence === "relevant_unsurfaced_information" &&
-        input.selectedTraitId
+        contributedTraitId
           ? {
               // The selected note is guaranteed onto the board whatever the
               // matcher made of the wording — that is what this branch is for.
@@ -843,7 +838,7 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
               // replaced: dropping it was how a second trait in the same
               // message left no trace.
               acceptedIds: [
-                ...new Set([input.selectedTraitId, ...broadcastExtraction.acceptedIds]),
+                ...new Set([...(input.discloseTraitIds ?? []), ...broadcastExtraction.acceptedIds]),
               ],
               verificationCandidates: broadcastExtraction.verificationCandidates,
             }

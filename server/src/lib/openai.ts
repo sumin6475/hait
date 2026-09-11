@@ -13,6 +13,28 @@ const REASONING_MODEL = /^(o1|o3|o4|gpt-5)/i;
 // 발화 텍스트 자체는 스키마가 800자로 제한 → 여유분은 순전히 추론 토큰용 헤드룸.
 const REASONING_TOKEN_HEADROOM = 1024;
 
+/**
+ * The request fields that differ between a reasoning model and a plain one.
+ *
+ * `callAIStructured` below has handled this since the speech model moved to
+ * `gpt-5-mini`. Every other model call in the server builds its own request and
+ * passed `temperature: 0` unconditionally — which a reasoning model rejects, so
+ * swapping any of those models silently broke the call at run time and nothing
+ * caught it, since no test makes a live request. Call sites now ask here instead
+ * of hard-coding either shape.
+ *
+ * For a non-reasoning model the result is byte-identical to what those call
+ * sites sent before: `temperature: 0` and the cap they asked for.
+ */
+export function modelRequestParams(model: string, maxOutputTokens: number) {
+  return REASONING_MODEL.test(model)
+    ? {
+        reasoning: { effort: "minimal" as const },
+        max_output_tokens: maxOutputTokens + REASONING_TOKEN_HEADROOM,
+      }
+    : { temperature: 0 as const, max_output_tokens: maxOutputTokens };
+}
+
 //AI 호출결과 타입
 export type AICallResult =
   | {

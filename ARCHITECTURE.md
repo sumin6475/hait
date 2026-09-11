@@ -89,12 +89,52 @@ handler for a human message, or on a timer armed by it.**
 | Call | Model | Where |
 |---|---|---|
 | Alex's visible message | `gpt-5-mini` | `openai.callAIStructured` default |
-| Conversation Observer | `gpt-4o-mini` | `conversationObserver` |
-| Main Judge / ledger judge | `gpt-4o-mini` | `interventionJudge` |
+| Conversation Observer | `gpt-5-mini` | `conversationObserver` |
+| Main Judge / ledger judge | `gpt-5-mini` | `interventionJudge` |
 | Follow-up, uptake, signal judges | `gpt-4o-mini` | respective files |
 | Bounded trait verifier | `gpt-4o-mini` | `poolingExtractor.verifyHumanTraitCandidates` |
 
-`docs/adr/0005` forbids swapping the speech model for latency.
+## Comparison-run guard flags
+
+Four checks that can cost Alex a turn can be switched off for a paired run, via
+`server/.env` — `HAIT_GUARD_OUTPUT_SCOPE`, `HAIT_GUARD_COOLDOWN`,
+`HAIT_GUARD_HUMAN_FLOOR`, `HAIT_GUARD_JUDGE_BRIEF`, all defaulting to on
+(`server/src/lib/guardFlags.ts`). T-C4-023 lost seven of twenty-nine turns to
+four different vetoes; which of them earn their cost is a measurement, not an
+argument. Whatever is off is written to every intervention row as
+`disabledGuards` and printed at startup, so a comparison transcript always says
+so.
+
+**A flag has to reach every site of its check.** The human floor had four
+readers, and only one of them was flagged:
+
+| reader | what it decides | was flagged |
+| --- | --- | --- |
+| `deterministicVetoBeforeJudge` | whether the Judge is called at all | yes |
+| `ledgerSpeechBlockedByHumanFloor` | whether the Judge's decision survives | no |
+| `opportunityMayBypassCooldown` | whether an invited opportunity is offered | no |
+| the leader drift gate (inline read) | whether a Chair corrects task drift | no |
+
+T-C2-050 ran with `HAIT_GUARD_HUMAN_FLOOR=off` and still lost three turns (seqs
+26, 27, 41) to `ledger_router_human_floor_held`: the turn reached the Judge, the
+Judge chose to speak, and the second reader threw the decision away. The other
+two were found by review afterwards — the third attributes its loss to the
+cooldown in the silence audit, and the fourth used a different definition
+entirely (`transition === "held"` regardless of holder, so Alex's own floor
+counted).
+
+There is now one predicate, `floorHeldForDecisions` in `conversationLedger.ts`,
+and `humanFloorHeld` is the unflagged reading it wraps. `test:conversation-ledger`
+asserts that no module outside `conversationLedger.ts` calls the unflagged form,
+so a fifth reader cannot appear silently.
+
+`docs/adr/0005` forbids swapping the speech model for latency; it says nothing about the
+Observer or the Judge, both of which moved to `gpt-5-mini`.
+
+A reasoning model rejects `temperature` and needs output headroom for its hidden reasoning
+tokens. `openai.modelRequestParams(model, maxOutputTokens)` decides those fields from the model
+name, and every direct call site uses it — so a model swap can no longer break a request shape,
+and the recorded parameters cannot disagree with what was sent.
 
 ---
 
@@ -155,7 +195,7 @@ default and the live path.**
 onHumanMessage
   ├ superseded?                    latestPushSeq moved on → drop
   ├ busy?                          queue as pendingPostGenerationSeq → re-enter later
-  ├ waitForConversationObservation  gpt-4o-mini, serial per session (~7 s)
+  ├ waitForConversationObservation  gpt-5-mini, serial per session (~7 s)
   ├ updateMediationState / armSummaryIfEligible
   ├ task-grounding drift + Chair → mediation, and return
   └ judgeLiveLedgerTurn
@@ -170,6 +210,42 @@ the turn is still retractable (`ai-typing` is already true); when the timer
 fires, `reservation` clears and `busy` is set, and the turn is committed to
 generation. This is what makes a consecutive AI turn structurally impossible
 rather than merely improbable.
+
+#### What the Judge is told about Alex's own card
+
+The Judge receives the unsurfaced part of Alex's card that falls inside the
+foreground thread's scope, ranked by what the group is currently on
+(`eligibleTraitIdsForLedgerState`). That list carried one fact only as an
+absence: which candidates Alex has **nothing further** on. In T-C2-050 seq 19 all
+six of Alex's Candidate A traits were already on the board, the group came back
+to A, and the Judge emitted `["A"]` — the bare candidate letter — where a trait
+id goes; the decision was rejected and the turn broadcast nothing.
+`exhaustedCandidateNote` now states the absence as a sentence beside the other
+per-turn facts ("Your card: …"). It is gated on `liveForegroundThread`, the same
+test the eligible list is built under: the list is *also* empty when the
+foreground thread has been resolved or superseded, and reading that emptiness as
+exhaustion told the Judge every candidate was spent while Alex still held all
+twenty-four of its traits. One accessor, so the sentence and the list it
+describes cannot disagree.
+
+**Both board-derived sentences require a board.** `revealStats` has been
+documented as "absent means no note is added" since it was added and did not do
+it: coverage zero for all four candidates reads as *the group has said little
+about every candidate*, so an absent board produced a fabrication rather than a
+silence. A live session always has one (`Session.revealStats` is defaulted at
+creation), so nothing on the speaking path loses a note. The caller that passes
+nothing is the offline replay eval — and its corpus records `sharedInfoIds` as
+empty on **all 1451 messages of all 41 sessions**, because the pilot export it
+was built from never carried the field's contents. That run now reports how many
+turns carried a board (zero today) and says in its own report that decisions
+turning on which trait Alex may name are not scoreable from it. Separately, a retry that trips a
+trait-eligibility rule is handed the eligible ids rather than only the rule code:
+at T-C2-050 seq 14 the first attempt named a trait spent eight seqs earlier, and
+the retry — given only the rule name — repeated it and added `C_p2`, which is on
+no card Alex holds, losing the turn to `ledger_judge_failure`. Both are condition-blind: this is Alex's own card, which
+every condition already receives in full. `leaderCoverageNote` on the adjacent
+line reports the *group's* coverage and is the leader's alone — that asymmetry is
+the manipulation and stays.
 
 ### Route kinds
 
@@ -243,11 +319,15 @@ opportunity stays open and nothing is counted as said.
 | Developer | `buildRouteUserContext` blocks | yes |
 | User | transcript + "return only Alex's next message" | yes |
 
-The system prompt is compiled: `route-prompts.source.json` →
+The system prompt is compiled: `src/prompts/blocks/*.ts` →
 `npm run prompts:compile` → `route-prompts.snapshot.v1.json`.
 `routePromptRegistry` recomputes every hash at import and throws on mismatch,
 and asserts there are exactly 30 entries — 6 routes × 2 peer conditions plus
-9 routes × 2 chair conditions. Editing a prompt therefore changes
+9 routes × 2 chair conditions. **Those 30 entries hold four distinct prompts.**
+Every route within a condition compiles to byte-identical text, and the route
+contracts in `blocks/route-contracts.ts` are enumerated but never appended, so
+what differs by route is built per turn by `buildRouteUserContext` and nothing
+else. Editing a prompt therefore changes
 `promptVersion`, and **sessions on either side of the change are not directly
 comparable.**
 
@@ -492,9 +572,10 @@ so a test can pin it. `NON_CONTRIBUTING_ROUTES`, `COVERAGE_ENOUGH`,
 validators are all in this group and should stay exported.
 
 A further handful — `FOLLOWUP_WINDOW`, `PARTICIPANT_LABEL`, `deterministicRateGate`,
-`isRedundantRejection`, `ledgerSpeechBlockedByHumanFloor`, `buildCueSnippet`,
-`wordCount`, `knownTraitIds`, `NO_REQUEST_INTENT` — are used only inside their
-own file. Over-exported, not unused.
+`isRedundantRejection`, `buildCueSnippet`, `wordCount`, `knownTraitIds`,
+`NO_REQUEST_INTENT` — are used only inside their own file. Over-exported, not
+unused. (`ledgerSpeechBlockedByHumanFloor` left this group when the floor flag
+reached it: `test:conversation-ledger` now pins both sides of that flag.)
 
 ## 9. Modes, flags and environment
 

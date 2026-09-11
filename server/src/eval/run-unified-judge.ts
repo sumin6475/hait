@@ -92,7 +92,7 @@ for (const testCase of fixture.cases) {
     }
     outputs.push(
       `${judged.decision}/${judged.act ?? "none"}/${judged.evidence}/${judged.selectedTraitId ?? "none"}` +
-        ` observer=${snapshot.stateAfter.alexRelation}/${snapshot.stateAfter.alexRelevance}` +
+        ` observer=${snapshot.stateAfter.alexRelation}` +
         ` floor=${snapshot.stateAfter.expectedHumanResponder ?? "none"}/${snapshot.stateAfter.transitionState}` +
         ` active=${snapshot.observation.activeCandidates.join(",") || "none"}`,
     );

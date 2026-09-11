@@ -34,7 +34,6 @@ interface ObserverCase {
     relationToPendingAlexQuestion?: ConversationObserverResult["relationToPendingAlexQuestion"];
     expectedHumanResponder?: ConversationObserverResult["expectedHumanResponder"];
     alexRelation?: ConversationObserverResult["alexRelation"];
-    alexRelevance?: ConversationObserverResult["alexRelevance"];
     activeThreadGoal?: NonNullable<ConversationObserverResult["activeThread"]>["goal"];
     alexParticipation?: NonNullable<ConversationObserverResult["activeThread"]>["alexParticipation"];
   };
@@ -71,7 +70,6 @@ function matches(actual: ConversationObserverResult, expected: ObserverCase["exp
     return false;
   }
   if (expected.alexRelation && actual.alexRelation !== expected.alexRelation) return false;
-  if (expected.alexRelevance && actual.alexRelevance !== expected.alexRelevance) return false;
   if (expected.activeThreadGoal && actual.activeThread?.goal !== expected.activeThreadGoal) {
     return false;
   }
@@ -120,7 +118,7 @@ for (const testCase of file.cases) {
   for (const result of results) {
     console.log(
       result.ok
-        ? `       addressee=${result.observation.addressees.join(",") || "none"} active=${result.observation.activeCandidates.join(",") || "none"} act=${result.observation.speechAct} goal=${result.observation.threadGoal} scope=${result.observation.requestedScope}:${result.observation.requestExplicitness} transition=${result.observation.transitionState} relation=${result.observation.relationToPendingAlexQuestion} alex=${result.observation.alexRelation}/${result.observation.alexRelevance} thread=${result.observation.activeThread?.threadId ?? "none"}:${result.observation.activeThread?.alexParticipation ?? "none"} expected=${result.observation.expectedHumanResponder ?? "none"}`
+        ? `       addressee=${result.observation.addressees.join(",") || "none"} active=${result.observation.activeCandidates.join(",") || "none"} act=${result.observation.speechAct} goal=${result.observation.threadGoal} scope=${result.observation.requestedScope}:${result.observation.requestExplicitness} transition=${result.observation.transitionState} relation=${result.observation.relationToPendingAlexQuestion} alex=${result.observation.alexRelation} thread=${result.observation.activeThread?.threadId ?? "none"}:${result.observation.activeThread?.alexParticipation ?? "none"} expected=${result.observation.expectedHumanResponder ?? "none"}`
         : `       error=${result.error}`,
     );
   }

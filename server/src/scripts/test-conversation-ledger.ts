@@ -1,4 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync, readdirSync } from "node:fs";
+import { forceGuardsOnForTest } from "../lib/guardFlags.js";
+// A comparison run leaves guards off in `server/.env`, and these suites load it.
+// Pin them on before anything reads them, so a suite can never quietly assert
+// the behaviour of a build nobody ships.
+forceGuardsOnForTest();
 import type { Candidate } from "../types.js";
 import { replayObservedConversation } from "../eval/conversationReplay.js";
 import {
@@ -7,6 +13,7 @@ import {
   createConversationLedgerState,
   describeConversationLedger,
   humanFloorHeld,
+  floorHeldForDecisions,
   observerDeltaFromTurn,
   opportunityMayBypassCooldown,
   reduceConversationLedger,
@@ -16,10 +23,18 @@ import {
   type ConversationLedgerState,
   type ObservedTurnForLedger,
 } from "../lib/conversationLedger.js";
-import { eligibleTraitIdsForLedgerState } from "../lib/interventionEngine.js";
+import {
+  eligibleTraitIdsForLedgerState,
+  ledgerSpeechBlockedByHumanFloor,
+} from "../lib/interventionEngine.js";
 import {
   canonicalizeConversationLedgerJudgeDecision,
   buildLedgerJudgeUserMessage,
+  currentRequiredOpportunityIdsFor,
+  exhaustedCandidateNote,
+  leaderCoverageNote,
+  LEDGER_JUDGE_TRAIT_RETRY_RULE_CODES,
+  ledgerJudgeRetryMessage,
   conversationLedgerDecisionProjection,
   deterministicVetoBeforeJudge,
   ledgerJudgeRoleGoal,
@@ -234,7 +249,21 @@ assert.equal(
   null,
   "and the turn is no longer vetoed before the Judge runs",
 );
-// An ordinary invitation that answers nothing of Alex's still waits its turn.
+// Naming Alex speaks through the cooldown, whether or not the sentence is a
+// question.
+//
+// This assertion used to read `false`, with the reason "the cooldown still
+// governs every invitation that is not an answer to Alex". It was vacuous: the
+// fixture left `foregroundThreadId` at `null`, so the thread comparison inside
+// `opportunityMayBypassCooldown` short-circuited before the kind test was
+// reached, and the same `false` came back however the predicate was written.
+// Setting the thread is what makes this exercise the predicate at all.
+//
+// The behaviour it asserted is also the one being changed. T-C4-022 seq 22 named
+// Alex and asked for more on Candidate A; because the sentence was a proposal
+// rather than a question it minted an `invitation`, which did not bypass. Alex
+// can therefore be addressed by name and answer with silence, for a reason no
+// participant can see. Punctuation is the whole of the difference.
 const ordinaryInvitation = reduceConversationLedger(
   null,
   observerDeltaFromTurn({
@@ -252,11 +281,51 @@ const ordinaryInvitation = reduceConversationLedger(
     }),
   }),
 ).state;
-assert.equal(ordinaryInvitation.opportunities[0]!.answersAlexSeq, undefined);
+const ordinaryInvitationOpportunity = ordinaryInvitation.opportunities[0]!;
+assert.equal(ordinaryInvitationOpportunity.answersAlexSeq, undefined);
+assert.equal(ordinaryInvitationOpportunity.kind, "invitation");
 assert.equal(
-  opportunityMayBypassCooldown(ordinaryInvitation, ordinaryInvitation.opportunities[0]!),
+  ordinaryInvitationOpportunity.targetBasis,
+  "explicit",
+  "a turn that names Alex is minted with an explicit target basis",
+);
+const namedOnForegroundThread = {
+  ...ordinaryInvitation,
+  foregroundThreadId: ordinaryInvitationOpportunity.threadId,
+};
+assert.equal(
+  opportunityMayBypassCooldown(namedOnForegroundThread, ordinaryInvitationOpportunity),
+  true,
+  "naming Alex speaks through the cooldown even when the request is not a question",
+);
+// The widening is to being named and to nothing else. A request put to the room
+// still waits its turn, on the same thread and the same trigger, so an ordinary
+// group turn cannot reach the bypass by inheriting it.
+const groupRequest = reduceConversationLedger(
+  null,
+  observerDeltaFromTurn({
+    sessionKey: "T-C4-022-GROUP",
+    observerVersion: "test-observer",
+    roster,
+    sourceRole: "humanY",
+    currentTriggerSeq: 17,
+    contextThroughSeq: 17,
+    observation: observation({
+      speechAct: "proposal",
+      addressees: ["group"],
+      requestExplicitness: "explicit",
+    }),
+  }),
+).state;
+const groupOpportunity = groupRequest.opportunities[0]!;
+assert.equal(groupOpportunity.targetBasis, "group_expanded");
+assert.equal(
+  opportunityMayBypassCooldown(
+    { ...groupRequest, foregroundThreadId: groupOpportunity.threadId },
+    groupOpportunity,
+  ),
   false,
-  "the cooldown still governs every invitation that is not an answer to Alex",
+  "a request put to the room is not a request put to Alex, and still waits",
 );
 
 // --- Issue 13 half B: an unanswered request survives the turn it was made on -
@@ -283,7 +352,9 @@ for (const laterSeq of [18, 21, 25]) {
         act: "participate",
         selectedOpportunityId: answersAlexOpportunity.id,
         evidence: "selected_open_opportunity",
-        selectedTraitId: null,
+        discloseTraitIds: [],
+        focusCandidate: null,
+        brief: "answer what they just asked",
         evidenceSeqs: [17],
       },
       state: later,
@@ -371,7 +442,9 @@ assert.ok(
       act: "participate",
       selectedOpportunityId: answersAlexOpportunity.id,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [17],
     },
     state: afterTtl,
@@ -448,7 +521,9 @@ const selectingTheOlderRequest = validateConversationLedgerJudgeDecision({
     act: "participate",
     selectedOpportunityId: answersAlexOpportunity.id,
     evidence: "selected_open_opportunity",
-    selectedTraitId: null,
+    discloseTraitIds: [],
+    focusCandidate: null,
+    brief: "answer what they just asked",
     evidenceSeqs: [17],
   },
   state: requiredNowWithOlderRequest,
@@ -470,6 +545,400 @@ assert.match(
   /outranks a voluntary act/,
   "and the ranking it does state is the one half B was asked for",
 );
+
+// ── The leader's coverage note, and the peer's silence about it ─────────────
+// [T-C4-024] On a turn where nobody had asked anything and A and D had nothing
+// on them, the Judge wrote "propose a clear criterion to decide" and Alex
+// invented a rule that weighted trait categories. Equal weighting is the study's
+// control, so that turn was not a wording problem. Two things follow, and both
+// are asserted here: the leader is told which candidates are thin, so the turn
+// has a legitimate move; and the peer is told nothing, because owning the
+// discussion procedure is the status manipulation.
+{
+  // `aiSurfacedIds` is one flat list on the root, not per candidate — the shape
+  // `informationPools` actually reads.
+  const boardOnBandC = {
+    byCandidate: {
+      A: { revealedIds: [] },
+      B: { revealedIds: ["B_p1", "B_p2", "B_p3"] },
+      C: { revealedIds: ["C_p1", "C_n1", "C_n2"] },
+      D: { revealedIds: [] },
+    },
+    aiSurfacedIds: ["B_p4", "B_n5", "C_p6", "C_p7"],
+  };
+  // Leader: the thin candidates are named, and the covered ones are the contrast.
+  for (const leader of ["C2", "C4"] as const) {
+    const note = leaderCoverageNote(leader, boardOnBandC);
+    assert.ok(note, `${leader} is a leader and receives the coverage note`);
+    assert.match(note!, /said little about A and D/);
+    assert.match(note!, /B, C/);
+    // The Judge is handed the reading, never the arithmetic — the brief rules
+    // forbid a count reaching the writer, and a Judge given integers can leak one.
+    assert.doesNotMatch(note!, /\d/, "the coverage note carries no number");
+  }
+  // Peer: nothing at all. This is the manipulation, not an optimisation.
+  for (const peer of ["C1", "C3"] as const) {
+    assert.equal(
+      leaderCoverageNote(peer, boardOnBandC),
+      null,
+      `${peer} is a peer and must not receive the live candidate list`,
+    );
+  }
+  // The note reaches the Judge's turn facts only when a condition is supplied,
+  // and it reaches them beside the other moves available now — not in the role
+  // goal, which is a session constant and would lose its cache prefix.
+  const judgeMessages = [2, 3].map((seq) => ({
+    seq,
+    senderRole: "humanY" as const,
+    speaker: "Participant Y",
+    content: `m${seq}`,
+  }));
+  const leaderPrompt = buildLedgerJudgeUserMessage({
+    messages: judgeMessages,
+    state: twoRequests,
+    cooldownAvailable: true,
+    backchannelAvailable: true,
+    eligibleTraitIds: [],
+    conditionCode: "C2",
+    revealStats: boardOnBandC,
+  });
+  assert.match(leaderPrompt, /Moves available on this turn:[\s\S]*- Coverage: The group has said little about A and D/);
+  // No board, no sentence about the board. `revealStats` has been documented as
+  // "absent means no note is added" since it was added and did not do it:
+  // coverage zero for all four candidates reads as "the group has said little
+  // about every candidate", so an absent board produced a fabrication rather
+  // than a silence. The offline replay eval is the caller that passes nothing —
+  // its corpus records no surfaced ids on any of its 1451 messages — and it is
+  // the instrument these notes are measured with.
+  assert.doesNotMatch(
+    buildLedgerJudgeUserMessage({
+      messages: judgeMessages,
+      state: twoRequests,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode: "C4",
+    }),
+    /- Coverage:|- Your card:/,
+    "a leader with no board is told nothing about the board, not told it is empty",
+  );
+  const peerPrompt = buildLedgerJudgeUserMessage({
+    messages: judgeMessages,
+    state: twoRequests,
+    cooldownAvailable: true,
+    backchannelAvailable: true,
+    eligibleTraitIds: [],
+    conditionCode: "C1",
+    revealStats: boardOnBandC,
+  });
+  assert.doesNotMatch(peerPrompt, /- Coverage:/, "the peer's Judge never sees a coverage line");
+  // Every candidate covered is a state with its own reading, not an empty string
+  // that would read as a missing input.
+  const fullBoard = {
+    byCandidate: Object.fromEntries(
+      (["A", "B", "C", "D"] as const).map((c) => [
+        c,
+        { revealedIds: [`${c}_p1`, `${c}_p2`, `${c}_p3`, `${c}_p4`] },
+      ]),
+    ),
+    aiSurfacedIds: ["A_n5", "B_n5", "C_n1", "D_n5"],
+  };
+  assert.match(
+    leaderCoverageNote("C4", fullBoard)!,
+    /no coverage gap to name/,
+    "an exhausted list says so rather than going quiet",
+  );
+}
+
+// ── A candidate Alex has nothing further on is named, not left blank ────────
+// [T-C2-050 seq 19] All six of Alex's Candidate A traits were on the board by
+// seq 17. The group came back to A, the Judge focused A, and for the trait ids
+// it emitted `["A"]` — the bare candidate letter. No A id was left to emit and
+// nothing said so; the decision was rejected and the turn broadcast nothing.
+{
+  const spentOnC = exhaustedCandidateNote(
+    ["A_p1", "A_n5", "B_p3", "D_p1", "D_n6"],
+    ["C", "A", "B", "D"],
+  );
+  assert.match(spentOnC!, /card about Candidate C is already on the board/);
+  assert.match(spentOnC!, /still hold is about Candidate A, Candidate B, Candidate D/);
+  assert.doesNotMatch(spentOnC!, /\d/, "the card note carries no count");
+  // Nothing left anywhere in scope is its own reading. Going quiet here is what
+  // produced the invented trait: the Judge had no sentence telling it the shelf
+  // was empty, only fifteen ids that happened to start with other letters.
+  assert.match(
+    exhaustedCandidateNote([], ["C"])!,
+    /this thread covers nothing else\. You hold no unsurfaced fact to add here/,
+  );
+  // A full card says nothing at all — the note reports an absence, and inventing
+  // one where there is none would make it noise on most turns.
+  assert.equal(exhaustedCandidateNote(["C_p1"], ["C"]), null);
+  assert.equal(exhaustedCandidateNote(["A_p1"], []), null);
+
+  // Condition-blind, and it must stay so. This is Alex's own card, which every
+  // condition already receives in full; `leaderCoverageNote` reports the group's
+  // coverage and is the leader's alone.
+  // A board has to be present for either board-derived sentence to be emitted;
+  // what is in it does not matter for the card note, which reads the eligible
+  // list. Absence means "board unknown", not "board empty".
+  const anyBoard = { byCandidate: { A: { revealedIds: ["A_p1"] } }, aiSurfacedIds: [] };
+  // The fixture's thread is scoped to A and B; the note reports the thread's
+  // scope, so widen it to the whole board the way a comparison phase is.
+  const wholeBoardThread: ConversationLedgerState = {
+    ...twoRequests,
+    threads: twoRequests.threads.map((thread) => ({
+      ...thread,
+      candidates: ["A", "B", "C", "D"],
+      scopeCandidates: ["A", "B", "C", "D"],
+    })),
+  };
+  const cardPromptFor = (conditionCode: "C1" | "C2" | "C3" | "C4") =>
+    buildLedgerJudgeUserMessage({
+      messages: [16, 17, 20, 21].map((seq) => ({
+        seq,
+        senderRole: "humanY" as const,
+        speaker: "Participant Y",
+        content: `m${seq}`,
+      })),
+      state: wholeBoardThread,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: ["A_p1", "B_p3", "D_p1"],
+      conditionCode,
+      // The card note describes the board, so it needs one present. What is in
+      // it does not matter here — the spent candidate is read from the eligible
+      // list — but its absence means "no board", which suppresses both notes.
+      revealStats: anyBoard,
+    });
+  for (const conditionCode of ["C1", "C2", "C3", "C4"] as const) {
+    assert.match(
+      cardPromptFor(conditionCode),
+      /- Your card: Everything on your card about Candidate C is already on the board/,
+      `${conditionCode}: the Judge is told which candidate Alex has spent`,
+    );
+  }
+
+  // An empty eligible list has two causes, and only one of them is "Alex has
+  // nothing left to say". `eligibleTraitIdsForLedgerState` also returns nothing
+  // when the foreground thread has been resolved or superseded — a turn the
+  // observer is instructed to produce whenever the group finishes with a
+  // candidate. Reading that emptiness as exhaustion told the Judge, in plain
+  // words, that every candidate was spent while Alex still held its whole card.
+  // Found by review before it reached a session; both readers take the liveness
+  // test from `liveForegroundThread` now.
+  for (const status of ["resolved", "superseded"] as const) {
+    const closed: ConversationLedgerState = {
+      ...wholeBoardThread,
+      threads: wholeBoardThread.threads.map((thread) => ({ ...thread, status })),
+    };
+    assert.deepEqual(
+      eligibleTraitIdsForLedgerState(closed, new Set()),
+      [],
+      `fixture check: a ${status} foreground thread makes nothing eligible`,
+    );
+    assert.doesNotMatch(
+      buildLedgerJudgeUserMessage({
+        messages: [{ seq: 21, senderRole: "humanY", speaker: "Participant Y", content: "m21" }],
+        state: closed,
+        cooldownAvailable: true,
+        backchannelAvailable: true,
+        eligibleTraitIds: [],
+        conditionCode: "C1",
+        revealStats: anyBoard,
+      }),
+      /- Your card:/,
+      `a ${status} thread empties the list for a reason that is not Alex's card, and says nothing`,
+    );
+  }
+}
+
+// ── A rejected trait choice is told which ids it may name ───────────────────
+// [T-C2-050 seq 14] Two C traits were still eligible. The first attempt named
+// one of them next to `C_p1`, already on the board since seq 11, and was
+// rejected for the spent id. The retry was handed the rule code and nothing
+// else, and answered with `C_p1` again plus `C_p2` — a trait on no card Alex
+// holds. The turn was lost to `ledger_judge_failure`.
+//
+// Asserted against the message the model actually receives. The first version of
+// this block asserted only that a string was a member of a constant, and passed
+// with the whole retry expression deleted — the sixth vacuous first attempt in
+// this repair.
+{
+  const retry = (over: Partial<Parameters<typeof ledgerJudgeRetryMessage>[0]>) =>
+    ledgerJudgeRetryMessage({
+      user: "USER-BODY",
+      priorDecisionJson: '{"decision":"speak"}',
+      priorRuleCodes: [],
+      priorDiscloseTraitIds: [],
+      requiredOpportunityIds: [],
+      eligibleTraitIds: [],
+      ...over,
+    });
+
+  // (a) The ids reach the model, by name.
+  const named = retry({
+    priorRuleCodes: ["disclose_trait_not_eligible"],
+    priorDiscloseTraitIds: ["C_p1", "C_p2"],
+    eligibleTraitIds: ["C_n2", "C_n3"],
+  });
+  assert.match(named, /only ids you may put in discloseTraitIds are: C_n2, C_n3/);
+  assert.match(named, /USER-BODY/, "the retry carries the whole turn, not only the correction");
+
+  // (b) Nothing left: the prohibition alone is not enough. An ordered-empty list
+  // under `relevant_unsurfaced_information` trips `relevant_fact_trait_invalid`
+  // on the second and last attempt, which loses the turn to the same failure the
+  // retry was sent to repair. So the way out is named too.
+  const nothingLeft = retry({
+    priorRuleCodes: ["disclose_trait_not_eligible"],
+    priorDiscloseTraitIds: ["A_p1"],
+    eligibleTraitIds: [],
+  });
+  assert.match(nothingLeft, /discloseTraitIds must be empty/);
+  assert.match(nothingLeft, /choose different evidence, or stay silent/);
+
+  // (c) An unrelated rejection leaves the trait sentence out entirely.
+  const unrelated = retry({ priorRuleCodes: ["brief_too_long"] });
+  assert.doesNotMatch(unrelated, /discloseTraitIds/);
+
+  // (d) `relevant_fact_trait_invalid` fires for two different reasons. With a
+  // non-empty list the ids were legal and the act was not, so pointing at the
+  // ids would send the model back to the field it got right.
+  const wrongAct = retry({
+    priorRuleCodes: ["relevant_fact_trait_invalid"],
+    priorDiscloseTraitIds: ["A_p1"],
+    eligibleTraitIds: ["A_p1", "B_p3"],
+  });
+  assert.match(wrongAct, /goes with act "contribute"/);
+  assert.doesNotMatch(wrongAct, /only ids you may put/);
+  const emptyList = retry({
+    priorRuleCodes: ["relevant_fact_trait_invalid"],
+    priorDiscloseTraitIds: [],
+    eligibleTraitIds: ["A_p1", "B_p3"],
+  });
+  assert.match(emptyList, /only ids you may put in discloseTraitIds are: A_p1, B_p3/);
+
+  // (e) A duplicate is not fixed by being shown the list it was already drawn
+  // from, so it gets its own sentence.
+  assert.match(
+    retry({ priorRuleCodes: ["disclose_trait_repeated"], eligibleTraitIds: ["A_p1"] }),
+    /Name each id at most once/,
+  );
+
+  // (f) The required-opportunity hint still composes with the trait hint.
+  const both = retry({
+    priorRuleCodes: ["current_required_opportunity_not_selected", "disclose_trait_not_eligible"],
+    requiredOpportunityIds: ["opp:20:direct_question:alex"],
+    eligibleTraitIds: ["A_p1"],
+  });
+  assert.match(both, /Set selectedOpportunityId to one of: opp:20:direct_question:alex/);
+  assert.match(both, /only ids you may put in discloseTraitIds are: A_p1/);
+
+  // (g) The tail no longer orders a field the schema does not have. It sat
+  // directly after the sentence naming disclosable ids and said to name none.
+  assert.doesNotMatch(retry({ priorRuleCodes: ["brief_missing"] }), /selectedTraitId/);
+
+  // Two codes must stay OUT of the eligible-ids hint: on an acknowledgement and
+  // on a silence the only legal list is the empty one, so naming what may be
+  // disclosed says the opposite of the rule.
+  for (const excluded of ["trait_present_on_acknowledgement", "trait_present_without_speech"]) {
+    assert.ok(
+      !LEDGER_JUDGE_TRAIT_RETRY_RULE_CODES.includes(excluded),
+      `${excluded} must not receive the eligible-ids hint: its only legal list is empty`,
+    );
+  }
+}
+
+// ── The brief may not invent a way to decide ────────────────────────────────
+// The rule the two sessions broke is stated to the Judge now, in the paragraph
+// that defines the brief. Equal weighting is a control variable: a brief that
+// proposes a cutoff or groups traits into kinds moves it.
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /Never write a brief that proposes a rule, a criterion, a threshold, a cutoff, or a way of grouping traits into kinds/,
+);
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /never write one that assumes any trait outweighs, offsets, or disqualifies another/,
+);
+// Forbidding alone leaves the turn empty, which is how the invention started —
+// every worked example was request-shaped and no example covered a turn nobody
+// asked for. The replacement move is stated too.
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /Not every turn answers a request/,
+);
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /nobody has put anything on A yet, so bring A into the discussion/,
+);
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /Do not fill the turn by proposing how to decide/,
+);
+// Forbidding a procedure must not turn into deflecting the question. "How should
+// we decide?" gets an answer — a position, not a method — because how the group
+// proceeds is itself observed, and an Alex that refuses to engage removes the
+// thing being measured.
+assert.match(LEDGER_JUDGE_SYSTEM, /that is a real question and the brief must not duck it/);
+assert.match(LEDGER_JUDGE_SYSTEM, /worth looking at the candidates properly before choosing/);
+assert.match(LEDGER_JUDGE_SYSTEM, /how the group goes about it is up to them/);
+// And the position stays a position: no bar, no count, no definition of "properly".
+assert.match(LEDGER_JUDGE_SYSTEM, /no instruction to lay everything out or to count anything/);
+
+// [T-C4-023] The validator above is only half of it. The rule was enforced and
+// never stated: the same prompt that rejects an older request also listed the
+// backlog "oldest first" and named no required id, so on seq 13, 46 and 48 the
+// Judge reached back, was rejected, guessed again from the same list, and the
+// turn was lost. Two of the three were "Alex can you give us a summary?", and
+// each loss added another unanswered question to the backlog that caused it.
+//
+// The prompt must name the id the validator will demand. This asserts the two
+// agree on this exact state — the one where they can disagree.
+{
+  const requiredNowPrompt = buildLedgerJudgeUserMessage({
+    messages: [16, 17, 21].map((seq) => ({
+      seq,
+      senderRole: "humanY" as const,
+      speaker: "Participant Y",
+      content: `m${seq}`,
+    })),
+    state: requiredNowWithOlderRequest,
+    cooldownAvailable: true,
+    backchannelAvailable: true,
+    eligibleTraitIds: [],
+  });
+  assert.match(
+    requiredNowPrompt,
+    /You must select one of these, opened by the message you are judging: opp:21:direct_question:alex/,
+    "the Judge is told which opportunity this turn requires, not only rejected for missing it",
+  );
+  assert.match(
+    requiredNowPrompt,
+    /taking one of them instead is rejected/,
+    "and told that the older list below it is context, since that list is what it reached for",
+  );
+  // The required ids in the prompt are the ids the validator demands, from one
+  // function, so a future edit cannot move one without the other.
+  assert.deepEqual(
+    currentRequiredOpportunityIdsFor(requiredNowWithOlderRequest),
+    ["opp:21:direct_question:alex"],
+  );
+  // A turn that requires nothing must not grow a phantom requirement.
+  const nothingRequiredPrompt = buildLedgerJudgeUserMessage({
+    messages: [16, 17].map((seq) => ({
+      seq,
+      senderRole: "humanY" as const,
+      speaker: "Participant Y",
+      content: `m${seq}`,
+    })),
+    state: twoRequests,
+    cooldownAvailable: true,
+    backchannelAvailable: true,
+    eligibleTraitIds: [],
+  });
+  assert.match(nothingRequiredPrompt, /No opportunity is required this turn\./);
+  assert.doesNotMatch(nothingRequiredPrompt, /You must select one of these/);
+}
 
 const uptakeReplay = replayObservedConversation({
   sessionKey: "T-C4-UPTAKE-CLUSTER",
@@ -522,7 +991,9 @@ assert.ok(
       act: "follow",
       selectedOpportunityId: uptakeState.opportunities[0]!.id,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [1, 7, 8],
     },
     state: { ...uptakeState, currentTriggerSeq: 9 },
@@ -579,7 +1050,9 @@ assert.equal(
       act: "follow",
       selectedOpportunityId: uptakeState.opportunities[0]!.id,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [1, 7, 8],
     },
     state: uptakeState,
@@ -818,7 +1291,9 @@ const requiredStandingSelection = validateConversationLedgerJudgeDecision({
     act: "participate",
     selectedOpportunityId: standingId,
     evidence: "selected_open_opportunity",
-    selectedTraitId: null,
+    discloseTraitIds: [],
+    focusCandidate: null,
+    brief: "answer what they just asked",
     evidenceSeqs: [1, 12],
   },
   state: standingReduced.state,
@@ -833,7 +1308,9 @@ assert.ok(
       act: null,
       selectedOpportunityId: null,
       evidence: "no_useful_move",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "",
       evidenceSeqs: [12],
     },
     state: standingReduced.state,
@@ -891,7 +1368,9 @@ const validJudgeSelection = validateConversationLedgerJudgeDecision({
     act: "participate",
     selectedOpportunityId: secondId,
     evidence: "selected_open_opportunity",
-    selectedTraitId: null,
+    discloseTraitIds: [],
+    focusCandidate: null,
+    brief: "answer what they just asked",
     evidenceSeqs: [9],
   },
   state: finalState,
@@ -907,7 +1386,9 @@ assert.ok(
       act: "participate",
       selectedOpportunityId: secondId,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [9],
     },
     state: finalState,
@@ -932,7 +1413,9 @@ assert.equal(
       act: "participate",
       selectedOpportunityId: staleOpportunityId,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [4],
     },
     state: directAfterOlderOpen,
@@ -949,7 +1432,9 @@ assert.ok(
       act: "participate",
       selectedOpportunityId: null,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [9],
     },
     state: finalState,
@@ -964,7 +1449,9 @@ assert.equal(
       act: "participate",
       selectedOpportunityId: null,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [9],
     },
     state: finalState,
@@ -980,7 +1467,9 @@ assert.equal(
       act: "participate",
       selectedOpportunityId: secondId,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [9],
     },
     state: consumed.state,
@@ -996,7 +1485,9 @@ assert.equal(
       act: "contribute",
       selectedOpportunityId: null,
       evidence: "no_useful_move",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [9],
     },
     state: finalState,
@@ -1350,7 +1841,9 @@ const capitulationAttempts: ConversationLedgerJudgeCallAttempt[] = [
       act: "follow",
       selectedOpportunityId: "opp:19:uptake:alex",
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [20],
     },
     ruleCodes: ["selected_opportunity_not_open_for_alex", "selected_invited_opportunity_not_current"],
@@ -1362,7 +1855,9 @@ const capitulatedSilence = {
   act: null,
   selectedOpportunityId: null,
   evidence: "no_useful_move" as const,
-  selectedTraitId: null,
+  discloseTraitIds: [],
+  focusCandidate: null,
+  brief: "",
   evidenceSeqs: [] as number[],
 };
 assert.equal(
@@ -1389,7 +1884,9 @@ assert.equal(
       act: "contribute" as const,
       selectedOpportunityId: null,
       evidence: "relevant_unsurfaced_information" as const,
-      selectedTraitId: "A_p1",
+      discloseTraitIds: ["A_p1"],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [20],
     },
     capitulationAttempts,
@@ -1409,7 +1906,9 @@ assert.equal(
         act: null,
         selectedOpportunityId: "opp:19:uptake:alex",
         evidence: "no_useful_move" as const,
-        selectedTraitId: null,
+        discloseTraitIds: [],
+        focusCandidate: null,
+        brief: "",
         evidenceSeqs: [] as number[],
       },
       ruleCodes: ["non_speak_has_opportunity"],
@@ -1504,7 +2003,9 @@ const voluntaryFollow = validateConversationLedgerJudgeDecision({
     act: "follow",
     selectedOpportunityId: null,
     evidence: "conversation_grounded_synthesis",
-    selectedTraitId: null,
+    discloseTraitIds: [],
+    focusCandidate: null,
+    brief: "answer what they just asked",
     evidenceSeqs: [20, 21],
   },
   state: gate3State,
@@ -1525,7 +2026,9 @@ assert.deepEqual(
       act: "follow",
       selectedOpportunityId: null,
       evidence: "social_uptake",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [21],
     },
     state: gate3State,
@@ -1545,7 +2048,9 @@ assert.deepEqual(
       act: "participate",
       selectedOpportunityId: null,
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [21],
     },
     state: gate3State,
@@ -1782,7 +2287,9 @@ assert.ok(
       act: "participate",
       selectedOpportunityId: "opp:1:group_request:alex",
       evidence: "selected_open_opportunity",
-      selectedTraitId: null,
+      discloseTraitIds: [],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [2],
     },
     state: cooldownBlockedState,
@@ -1805,15 +2312,26 @@ const strayTrait = canonicalizeConversationLedgerJudgeDecision({
   act: "follow",
   selectedOpportunityId: null,
   evidence: "conversation_grounded_synthesis",
-  selectedTraitId: "A_p2",
+  discloseTraitIds: ["A_p2"],
+  focusCandidate: null,
+  brief: "answer what they just asked",
   evidenceSeqs: [18],
 });
-assert.equal(strayTrait.decision.selectedTraitId, null, "the inert field is cleared");
+// The clearing this block used to assert is gone with `docs/adr/0010`. Naming a
+// fact was coupled to one evidence value, so a fact named under any other was
+// inert and got emptied; now the Judge decides what the turn may disclose on
+// every act, so the same list is a real instruction and is kept. What was a
+// repair is a validation question instead: the list must be Alex's to name.
+assert.deepEqual(
+  strayTrait.decision.discloseTraitIds,
+  ["A_p2"],
+  "a fact named under another evidence value is no longer emptied",
+);
 assert.equal(strayTrait.decision.act, "follow", "the decision itself is untouched");
 assert.deepEqual(
   strayTrait.repairCodes,
-  ["trait_cleared_for_non_trait_evidence"],
-  "the repair is recorded rather than silently applied",
+  [],
+  "and nothing is repaired, because nothing about it is a shape error",
 );
 assert.deepEqual(
   validateConversationLedgerJudgeDecision({
@@ -1831,12 +2349,14 @@ const carriedTrait = canonicalizeConversationLedgerJudgeDecision({
   act: "contribute",
   selectedOpportunityId: null,
   evidence: "relevant_unsurfaced_information",
-  selectedTraitId: "C_n1",
+  discloseTraitIds: ["C_n1"],
+  focusCandidate: null,
+  brief: "answer what they just asked",
   evidenceSeqs: [10],
 });
-assert.equal(
-  carriedTrait.decision.selectedTraitId,
-  "C_n1",
+assert.deepEqual(
+  carriedTrait.decision.discloseTraitIds,
+  ["C_n1"],
   "a trait the evidence licenses is never cleared",
 );
 assert.deepEqual(carriedTrait.repairCodes, [], "an already-valid decision reports no repair");
@@ -1847,14 +2367,19 @@ assert.ok(
       act: "contribute",
       selectedOpportunityId: null,
       evidence: "relevant_unsurfaced_information",
-      selectedTraitId: "Z_z9",
+      discloseTraitIds: ["Z_z9"],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [10],
     }).decision,
     state: gate3State,
     eligibleTraitIds: ["C_n1"],
     transcriptSeqs: new Set([10, 21]),
     cooldownAvailable: true,
-  }).ruleCodes.includes("relevant_fact_trait_invalid"),
+  }).ruleCodes.includes("disclose_trait_not_eligible"),
+  // Same rejection, renamed reason. Eligibility used to be checked only under
+  // one evidence value, folded into `relevant_fact_trait_invalid`; it is now
+  // checked on every act, because every act may name a fact.
   "repair never launders a trait id the ledger does not offer",
 );
 
@@ -2109,6 +2634,76 @@ assert.equal(
   "when both vetoes apply the floor is reported, matching the order the router applies them",
 );
 
+// The floor is checked twice — once here, before the Judge is called, and once
+// after it has decided — so the flag has to reach both. T-C2-050 ran with
+// `HAIT_GUARD_HUMAN_FLOOR=off` and still lost three turns to the second check:
+// the Judge was consulted, decided to speak, and the decision was thrown away
+// by a guard the run had switched off. A flag that silences one of a check's
+// two sites measures half a check.
+{
+  process.env.HAIT_GUARD_HUMAN_FLOOR = "off";
+  try {
+    assert.equal(
+      humanFloorHeld(floorHeld),
+      true,
+      "the floor itself is unchanged; only whether it vetoes is flagged",
+    );
+    assert.equal(
+      deterministicVetoBeforeJudge(floorHeld, { cooldownAvailable: true }),
+      null,
+      "with the guard off the turn reaches the Judge",
+    );
+    assert.equal(
+      ledgerSpeechBlockedByHumanFloor(floorHeld),
+      false,
+      "and the Judge's decision is not thrown away after it is made",
+    );
+    // Review found two more readers after the first two were flagged. The
+    // cooldown bypass ended in `!humanFloorHeld(state)`, so a floor-held turn
+    // whose only option was an invited uptake was still killed — and the row
+    // was written with silenceReason "cooldown", attributing the loss to the
+    // wrong check. The required-request validator read it too, relaxing the
+    // rule that forces Alex to answer a direct question.
+    assert.equal(
+      floorHeldForDecisions(floorHeld),
+      false,
+      "every decision site reads one predicate, and it is off",
+    );
+  } finally {
+    forceGuardsOnForTest();
+  }
+}
+assert.equal(
+  ledgerSpeechBlockedByHumanFloor(floorHeld),
+  true,
+  "guard back on: a held human floor still blocks the decided turn",
+);
+assert.equal(
+  floorHeldForDecisions(floorHeld),
+  true,
+  "guard back on: the shared predicate reports the floor again",
+);
+// Four sites, one predicate. The unflagged reading stays inside the file that
+// defines it; every other module asks the flagged question. A fifth reader added
+// later must do the same, or a comparison run measures a check it asked to
+// switch off — which is what T-C2-050 did, losing three turns (seqs 26, 27, 41)
+// with `HAIT_GUARD_HUMAN_FLOOR=off` recorded on every row.
+{
+  const libDir = new URL("../lib/", import.meta.url);
+  const unflagged = readdirSync(libDir)
+    .filter((name) => name.endsWith(".ts") && name !== "conversationLedger.ts")
+    .filter((name) =>
+      /\b(?:humanFloorHeld|floorReadingIsHumanHeld)\s*\(/.test(
+        readFileSync(new URL(name, libDir), "utf8"),
+      ),
+    );
+  assert.deepEqual(
+    unflagged,
+    [],
+    `these modules read the floor without the guard flag: ${unflagged.join(", ")}`,
+  );
+}
+
 // --- Issue 02: the Judge decides which act, and is not shown the clock ------
 //
 // The prompt used to carry "Messages since Alex" and "Ordinary cooldown
@@ -2164,7 +2759,9 @@ const voluntaryWithoutCooldown = validateConversationLedgerJudgeDecision({
     act: "contribute",
     selectedOpportunityId: null,
     evidence: "relevant_unsurfaced_information",
-    selectedTraitId: "A_p1",
+    discloseTraitIds: ["A_p1"],
+    focusCandidate: null,
+    brief: "answer what they just asked",
     evidenceSeqs: [2],
   },
   state: cooldownBlockedState,
@@ -2183,7 +2780,9 @@ assert.equal(
       act: "contribute",
       selectedOpportunityId: null,
       evidence: "relevant_unsurfaced_information",
-      selectedTraitId: "A_p1",
+      discloseTraitIds: ["A_p1"],
+      focusCandidate: null,
+      brief: "answer what they just asked",
       evidenceSeqs: [2],
     },
     state: cooldownBlockedState,

@@ -46,8 +46,11 @@ import {
 import {
   CONVERSATION_LEDGER_VERSION,
   candidateSalienceOrder,
+  liveForegroundThread,
+  threadScopeCandidates,
   describeConversationLedger,
-  humanFloorHeld,
+  floorHeldForDecisions,
+  floorReadingHeldForDecisions,
   opportunityMayBypassCooldown,
   withOpportunityTransition,
   type ConversationLedgerState,
@@ -87,6 +90,7 @@ import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { allSurfacedIds, humanConfirmedIds } from "./informationPools.js";
 import { currentTopicCandidate } from "./poolingTally.js";
 import { computeCandidateList } from "./candidateList.js";
+import { guardEnabled } from "./guardFlags.js";
 
 type IO = Server<ClientToServerEvents, ServerToClientEvents, {}, SocketData>;
 type SummaryStatus = "not_eligible" | "pending" | "generating" | "done";
@@ -102,7 +106,10 @@ interface Reservation {
   priorityEvidence?: string;
   mainJudgeDecision: MainJudgeDecision | null;
   judgeEvidence?: string | null;
-  selectedTraitId?: string | null;
+  /** What the Judge said this turn may put on the board. See `docs/adr/0010`. */
+  discloseTraitIds?: string[];
+  /** The Judge's one-sentence instruction to the writer. */
+  judgeBrief?: string;
   focusCandidate?: Cand | null;
   mediationTrigger?: "evidence_latch" | "cadence_after_two_build_ons";
   decisionStage: InterventionDecisionStage;
@@ -270,9 +277,9 @@ export function eligibleTraitIdsForLedgerState(
   state: ConversationLedgerState,
   surfaced: ReadonlySet<string>,
 ): string[] {
-  const thread = state.threads.find((item) => item.id === state.foregroundThreadId);
-  if (!thread || (thread.status !== "open" && thread.status !== "waiting")) return [];
-  const scope = thread.scopeCandidates?.length ? thread.scopeCandidates : thread.candidates;
+  const thread = liveForegroundThread(state);
+  if (!thread) return [];
+  const scope = threadScopeCandidates(thread);
   const inScope = ALEX_Z_IDS.filter((id) => {
     const candidate = TRAIT_BY_ID.get(id)?.candidate;
     return candidate !== undefined && scope.includes(candidate) && !surfaced.has(id);
@@ -314,7 +321,13 @@ export function ledgerRouteKindForAct(
 }
 
 export function ledgerSpeechBlockedByHumanFloor(state: ConversationLedgerState): boolean {
-  return humanFloorHeld(state);
+  // This is the check *after* the Judge has decided. T-C2-050 ran with
+  // `HAIT_GUARD_HUMAN_FLOOR=off` and still lost three turns to
+  // `ledger_router_human_floor_held` (seqs 26, 27, 41) — the check before the
+  // Judge read the flag, this one did not, so the turn reached the Judge, the
+  // Judge chose to speak, and the decision was thrown away here. Both read one
+  // predicate now; see `floorHeldForDecisions`.
+  return floorHeldForDecisions(state);
 }
 
 function reconcileRuntimeBroadcasts(
@@ -385,6 +398,8 @@ async function judgeLiveLedgerTurn(input: {
   docs: any[];
   snapshot: ConversationObserverSnapshot | null;
   eligibleTraitIdsForState: (state: ConversationLedgerState) => string[];
+  /** The board. Reaches the Judge only for the leader's coverage note. */
+  revealStats: unknown;
   messagesSinceAlex: number;
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
@@ -428,6 +443,7 @@ async function judgeLiveLedgerTurn(input: {
     cooldownAvailable: input.cooldownAvailable,
     backchannelAvailable: input.backchannelAvailable,
     eligibleTraitIds: input.eligibleTraitIdsForState(state),
+    revealStats: input.revealStats,
   });
   const attempts = [...judged.attempts];
   if (judged.decision?.decision === "reobserve" && !reobserved) {
@@ -449,6 +465,7 @@ async function judgeLiveLedgerTurn(input: {
         cooldownAvailable: input.cooldownAvailable,
         backchannelAvailable: input.backchannelAvailable,
         eligibleTraitIds: input.eligibleTraitIdsForState(state),
+        revealStats: input.revealStats,
       });
       attempts.push(...judged.attempts);
     }
@@ -611,7 +628,8 @@ async function runLegacyObserverFallback(input: {
     priorityRoute: null,
     mainJudgeDecision: decision.decision,
     judgeEvidence: decision.evidence,
-    selectedTraitId: decision.selectedTraitId,
+    // Legacy rollback path: its decision still names at most one fact.
+    discloseTraitIds: decision.selectedTraitId ? [decision.selectedTraitId] : [],
     focusCandidate: signal.focusCandidate,
     mediationTrigger: resolved.mediationTrigger,
     decisionStage: "main_judge",
@@ -768,7 +786,8 @@ async function cancelReservation(runtime: RuntimeState, reason: string) {
     mainJudgeDecision: reservation.mainJudgeDecision ?? undefined,
     judgeEvidence: reservation.judgeEvidence ?? undefined,
     judgeEvidenceSeqs: reservation.judgeEvidenceSeqs,
-    selectedTraitId: reservation.selectedTraitId ?? undefined,
+    discloseTraitIds: reservation.discloseTraitIds ?? [],
+    judgeBrief: reservation.judgeBrief,
     controllerMode: reservation.controllerMode,
     ledgerVersion: reservation.ledgerState?.ledgerVersion,
     ledgerJudgeVersion: reservation.ledgerState
@@ -986,7 +1005,8 @@ async function runReservation(runtime: RuntimeState, reservation: Reservation) {
       priorityEvidence: reservation.priorityEvidence,
       mainJudgeDecision: reservation.mainJudgeDecision,
       judgeEvidence: reservation.judgeEvidence,
-      selectedTraitId: reservation.selectedTraitId,
+      discloseTraitIds: reservation.discloseTraitIds,
+      judgeBrief: reservation.judgeBrief,
       decisionStage: reservation.decisionStage,
       routeReason: reservation.routeReason,
       mediationTrigger: reservation.mediationTrigger,
@@ -1867,7 +1887,13 @@ export async function onHumanMessage(input: {
   if (
     groundingSignal === "task_standard_drift" &&
     isLeaderCondition(runtime.conditionCode) &&
-    snapshot?.observation.floor.transition !== "held"
+    // Was `snapshot?.observation.floor.transition !== "held"` — a fourth
+    // definition of "the floor is held", and the only one no comparison run
+    // could switch off. It also disagreed with the other three on one case: a
+    // floor whose holder is *Alex* counted as held here and not there, so Alex
+    // having just spoken suppressed the leader's drift correction. Reading the
+    // one predicate fixes both; the behaviour change is that case alone.
+    !(snapshot && floorReadingHeldForDecisions(snapshot.observation.floor))
   ) {
     await reserveTurn(runtime, {
       anchorSeq: input.messageSeq,
@@ -1905,6 +1931,7 @@ export async function onHumanMessage(input: {
       docs: anchorDocs,
       snapshot,
       eligibleTraitIdsForState,
+      revealStats: (session as any).revealStats,
       messagesSinceAlex: sinceAI,
       cooldownAvailable,
       backchannelAvailable,
@@ -2040,7 +2067,15 @@ export async function onHumanMessage(input: {
         priorityEvidence: selectedOpportunity ? decision.evidence : undefined,
         mainJudgeDecision: legacyDecisionForAct(decision.act),
         judgeEvidence: decision.evidence,
-        selectedTraitId: decision.selectedTraitId,
+        discloseTraitIds: decision.discloseTraitIds,
+        // T-C4-023: this line was missing, and `docs/adr/0010` was therefore only
+        // half built. The Judge decided what the turn must accomplish, wrote it
+        // down, had it validated — `brief_missing` and `brief_too_long` can reject
+        // the whole decision and cost the turn — and then nothing carried it to
+        // the generator, which received a list of facts and no statement of what
+        // this turn was for. Three of the session's silences were decisions
+        // rejected on a field with no consumer.
+        judgeBrief: decision.brief,
         focusCandidate: selectedFocusCandidate,
         decisionStage: "main_judge",
         routeReason: selectedOpportunity
@@ -2341,7 +2376,8 @@ export async function onHumanMessage(input: {
       priorityRoute: null,
       mainJudgeDecision: "contribute",
       judgeEvidence: decision.evidence,
-      selectedTraitId: decision.selectedTraitId,
+      // Legacy rollback path: its decision still names at most one fact.
+      discloseTraitIds: decision.selectedTraitId ? [decision.selectedTraitId] : [],
       focusCandidate: cadenceFocusCandidate,
       decisionStage: "main_judge",
       routeReason: "judge_peer_participation",
@@ -2388,7 +2424,8 @@ export async function onHumanMessage(input: {
     priorityRoute: null,
     mainJudgeDecision: legacyDecision,
     judgeEvidence: decision.evidence,
-    selectedTraitId: decision.selectedTraitId,
+    // Legacy rollback path: its decision still names at most one fact.
+    discloseTraitIds: decision.selectedTraitId ? [decision.selectedTraitId] : [],
     focusCandidate: cadenceFocusCandidate,
     mediationTrigger: resolved.mediationTrigger,
     decisionStage: "main_judge",

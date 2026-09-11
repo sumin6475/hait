@@ -26,8 +26,10 @@ import {
   CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION,
   judgeConversationLedgerTurn,
 } from "../lib/interventionJudge.js";
+import { disabledGuards } from "../lib/guardFlags.js";
+import { eligibleTraitIdsForLedgerState } from "../lib/interventionEngine.js";
 import { transcriptLabel } from "../lib/labels.js";
-import { ALEX_Z_IDS, TRAIT_BY_ID } from "../lib/traitData.js";
+import { TRAIT_BY_ID } from "../lib/traitData.js";
 import type { ParticipantRole } from "../types.js";
 import {
   ConversationGoldFileSchema,
@@ -213,6 +215,8 @@ if (existsSync(runRoot)) {
 }
 mkdirSync(runRoot, { recursive: true });
 const turnRows: Array<Record<string, unknown>> = [];
+/** Turns whose session actually recorded what was put on the board. */
+let boardTurns = 0;
 let observerErrors = 0;
 let judgeErrors = 0;
 
@@ -319,22 +323,60 @@ for (const { entry, input, gold } of inputs) {
           (thread) => thread.id === previousLedgerState!.foregroundThreadId,
         )
       : undefined;
-    const candidates = currentThread?.candidates ?? snapshot.observation.activeCandidates;
-    const focusedCandidate = candidates.length === 1 ? candidates[0]! : null;
-    const surfacedThroughAnchor = new Set(
-      input.messages
-        .filter((candidate) => candidate.replaySeq <= message.replaySeq)
-        .flatMap((candidate) => candidate.sharedInfoIds ?? []),
+    // The board through this anchor, rebuilt into the shape a live session
+    // stores it in, and handed to the Judge exactly as the live path hands it —
+    // this file supplies the board and never derives the leader's list from it,
+    // which is the boundary `test:intervention-v2` holds by name.
+    //
+    // Split by speaker rather than pooled. The coverage reading only unions the
+    // two sides, but which side a trait came from is the pooling DV, and an eval
+    // that blurs it cannot be read against a session.
+    const messagesThroughAnchor = input.messages.filter(
+      (candidate) => candidate.replaySeq <= message.replaySeq,
     );
-    const coverageAvailable = input.source.format === "json";
-    const eligibleTraitIds =
-      coverageAvailable && focusedCandidate
-        ? ALEX_Z_IDS.filter(
-            (id) =>
-              TRAIT_BY_ID.get(id)?.candidate === focusedCandidate &&
-              !surfacedThroughAnchor.has(id),
-          )
-        : [];
+    const surfacedThroughAnchor = new Set(
+      messagesThroughAnchor.flatMap((candidate) => candidate.sharedInfoIds ?? []),
+    );
+    // Whether this session records what was put on the board at all. The flag
+    // used to read `source.format === "json"`, which is not the same question
+    // and answered it wrongly for 39 of the corpus's 41 sessions: `sharedInfoIds`
+    // is present and empty on every one of the corpus's 1451 messages, because
+    // the pilot export it was built from never carried the field's contents.
+    //
+    // So the board is unknown, and the Judge is told nothing about it rather
+    // than told an invention. `revealStats` is left absent, which now suppresses
+    // both board-derived sentences; on a live session it is always present.
+    // This corrects itself the moment a corpus with real ids is prepared.
+    const coverageAvailable = surfacedThroughAnchor.size > 0;
+    if (coverageAvailable) boardTurns += 1;
+    const revealStats = coverageAvailable
+      ? {
+          byCandidate: Object.fromEntries(
+            (["A", "B", "C", "D"] as const).map((candidate) => [
+              candidate,
+              {
+                revealedIds: messagesThroughAnchor
+                  .filter((replayed) => replayed.senderRole !== "ai")
+                  .flatMap((replayed) => replayed.sharedInfoIds ?? [])
+                  .filter((id) => TRAIT_BY_ID.get(id)?.candidate === candidate),
+              },
+            ]),
+          ),
+          aiSurfacedIds: messagesThroughAnchor
+            .filter((replayed) => replayed.senderRole === "ai")
+            .flatMap((replayed) => replayed.sharedInfoIds ?? []),
+        }
+      : undefined;
+    // The live path's own function, over the whole thread scope. The previous
+    // form returned `[]` unless the thread had exactly one candidate, which is
+    // most of a comparison phase — and once the Judge's prompt began stating
+    // what an empty list *means*, that silent gap became the sentence "you hold
+    // no unsurfaced fact to add here" on turns where Alex held its whole card.
+    // An eval that feeds the Judge a false premise cannot measure the Judge.
+    const eligibleTraitIds = eligibleTraitIdsForLedgerState(
+      previousLedgerState,
+      surfacedThroughAnchor,
+    );
     const sinceAlex = messagesSinceAlex(transcriptThroughAnchor);
     const judged = await judgeConversationLedgerTurn({
       messages: transcriptThroughAnchor,
@@ -343,6 +385,7 @@ for (const { entry, input, gold } of inputs) {
       cooldownAvailable: sinceAlex >= TRIGGER_CONFIG.COOLDOWN_MIN_MSGS,
       backchannelAvailable: true,
       eligibleTraitIds,
+      revealStats,
     });
     if (!judged.decision) judgeErrors += 1;
     const candidateSemanticOutcome =
@@ -498,6 +541,12 @@ const runManifest = {
     node: process.version,
     platform: process.platform,
     architecture: process.arch,
+    // Which turn-killing checks were off for this run. The flags are not forced
+    // on here, unlike the offline suites: an eval run against a comparison build
+    // is a legitimate thing to want. What is not legitimate is a run that does
+    // not say which build it measured — a comparison manifest with no flag line
+    // reads exactly like an ordinary one.
+    disabledGuards: disabledGuards(),
   },
   execution: {
     sessionCode: sessionCode ?? null,
@@ -511,7 +560,11 @@ const runManifest = {
 writeFileSync(resolve(runRoot, "manifest.json"), `${JSON.stringify(runManifest, null, 2)}\n`);
 writeFileSync(
   resolve(runRoot, "report.md"),
-  `# Conversation controller smoke run\n\n- Sessions: ${summary.sessions}\n- Human turns: ${summary.turns}\n- Observer errors: ${observerErrors}\n- Judge errors: ${judgeErrors}\n- Speak / silent / reobserve: ${summary.speak} / ${summary.silent} / ${summary.reobserve}\n- Finalized gold turns scored: ${summary.finalizedGoldTurns}\n- Acceptance status: ${summary.acceptanceStatus}\n- State mutation: observation-only; hypothetical broadcasts were not consumed\n\nThis run is controller diagnostic evidence, not a complete acceptance result.\n`,
+  `# Conversation controller smoke run\n\n- Sessions: ${summary.sessions}\n- Human turns: ${summary.turns}\n- Observer errors: ${observerErrors}\n- Judge errors: ${judgeErrors}\n- Speak / silent / reobserve: ${summary.speak} / ${summary.silent} / ${summary.reobserve}\n- Finalized gold turns scored: ${summary.finalizedGoldTurns}\n- Acceptance status: ${summary.acceptanceStatus}\n- State mutation: observation-only; hypothetical broadcasts were not consumed\n- Board (surfaced trait ids) available on: ${boardTurns} of ${turnRows.length} turns\n\nThis run is controller diagnostic evidence, not a complete acceptance result.${
+    boardTurns > 0
+      ? ""
+      : "\n\n**No turn in this run carried a board.** The corpus records \`sharedInfoIds\` as empty on every message, so the Judge was given no coverage line and no spent-card line, and decisions that turn on which trait Alex may name are not scoreable from this run."
+  }\n`,
 );
 console.log(`[conversation-smoke] wrote ${turnRows.length} turns to ${runRoot}`);
 
