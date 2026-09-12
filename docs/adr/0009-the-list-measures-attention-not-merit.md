@@ -55,6 +55,20 @@ list reasoning from "ten minus coverage" would run Alex on an information
 advantage the design does not grant, in a study whose entire measurement is what
 each participant contributes.
 
+## The bar below is superseded
+
+**Amendment, 2026-09-12.** `0011` withdraws the coverage bar. Its derivation is
+sound and its counter was not: coverage counts the whole board, and Alex holds
+six traits per candidate, so Alex clears a bar of five alone. Across T-C2-050 and
+T-C2-051 all eight removals were Alex's own disclosures and none was a human's,
+which left the leader's sentence saying nothing a leader can act on. A candidate
+now leaves the list when a **human** has pooled something about it that Alex does
+not hold.
+
+Everything else in this ADR stands, and `0011` argues from it: the list still
+measures attention rather than merit, still reads no score, and still may not
+reason about what has not been said.
+
 ## The rule
 
 A candidate leaves the list when `coverage >= 5`, and for no other reason.

@@ -34,8 +34,10 @@ quantity depends on:
 Each profile holds 24 traits, 8 of them unique to it. **C is the pooled answer,
 and the board ranks it last until unshared traits arrive.** Any measure that
 reads the board as merit is therefore inverted during the early phase — this is
-the whole substance of `docs/adr/0009`, and the reason the candidate list is
-built on coverage rather than on score.
+the whole substance of `docs/adr/0009`, and the reason the candidate list reads
+neither score nor coverage. It counts what the humans have pooled
+(`docs/adr/0011`) — the board's total cannot tell a leader anything, because Alex
+alone can run it up.
 
 Four AI conditions cross role with communication strategy:
 
@@ -211,6 +213,27 @@ the turn is still retractable (`ai-typing` is already true); when the timer
 fires, `reservation` clears and `busy` is set, and the turn is committed to
 generation. This is what makes a consecutive AI turn structurally impossible
 rather than merely improbable.
+
+#### What the leader's list counts
+
+A candidate leaves the live list when a **human** has put something about it on
+the board that Alex does not hold — one trait off a participant's own card
+(`POOLED_ENOUGH`, `humanPooledIds`). Coverage and score are computed beside it,
+recorded, and decide nothing.
+
+The bar this replaced was coverage 5 over the whole board (`docs/adr/0009`).
+Alex holds six traits per candidate, so Alex clears five alone, and it did:
+across T-C2-050 and T-C2-051 all eight removals were Alex's own disclosures and
+none was a human's. At T-C2-051 seq 23 the Chair's Judge was therefore told there
+was no coverage gap to name while fifteen human-held traits were unsaid, and Alex
+passed that on to the room. Under the rule now in force, C — the pooled answer,
+and the one candidate the humans pooled nothing about — stays on the list to the
+end of both sessions. See `docs/adr/0011`.
+
+**The list is no longer shadow.** `leaderCoverageNote` turns it into one line of
+the Chair's Judge input; peers receive null from the same function, which is the
+status manipulation and not an optimisation. `test:intervention-v2` pins the set
+of files allowed to read the list at all.
 
 #### What opens a request
 
@@ -595,9 +618,9 @@ Deleting `aiTurn.ts` orphaned a second layer, which is the point: half of
 
 Roughly sixty exports are used by `scripts/` or `eval/` and by no other runtime
 file. That is generate-or-lock-with-tests working: a pure function is exported
-so a test can pin it. `NON_CONTRIBUTING_ROUTES`, `COVERAGE_ENOUGH`,
-`coverageByCandidate`, `evaluateDraft`, `outputGuardAudit` and the judge
-validators are all in this group and should stay exported.
+so a test can pin it. `NON_CONTRIBUTING_ROUTES`, `POOLED_ENOUGH`,
+`DERIVED_COUNTS`, `coverageByCandidate`, `evaluateDraft`, `outputGuardAudit` and
+the judge validators are all in this group and should stay exported.
 
 A further handful — `FOLLOWUP_WINDOW`, `PARTICIPANT_LABEL`, `deterministicRateGate`,
 `isRedundantRejection`, `buildCueSnippet`, `wordCount`, `knownTraitIds`,
@@ -625,7 +648,7 @@ Offline, no network, no database:
 
 | Command | Locks |
 |---|---|
-| `npm run test:intervention-v2` | 5 184 lines. Routing, guards, the trait-wording three-way comparison, the shadow-only candidate list, broadcast ordering, the non-contributing route list, transcript replays of real sessions |
+| `npm run test:intervention-v2` | 5 184 lines. Routing, guards, the trait-wording three-way comparison, the candidate list and who may read it, broadcast ordering, the non-contributing route list, transcript replays of real sessions |
 | `npm run test:pooling-extractor` | The fast matcher against pinned real messages |
 | `npm run test:conversation-ledger` | The deterministic reducer |
 | `npm run test:conversation-gold` | Gold-corpus schema and attribution |
@@ -665,6 +688,8 @@ class of bug in §7:
 | 0007 | Status is ownership of the candidate list |
 | 0008 | The list is computed from the board |
 | 0009 | The list measures attention, not merit |
+| 0010 | The Judge owns what a turn may spend |
+| 0011 | The list counts what the humans pooled |
 
 ---
 

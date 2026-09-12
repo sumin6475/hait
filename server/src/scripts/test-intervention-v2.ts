@@ -86,8 +86,8 @@ import {
 } from "../lib/interventionJudge.js";
 import { ledgerRouteKindForAct } from "../lib/interventionEngine.js";
 import { validateQuestionUptakeDecision } from "../lib/questionUptakeJudge.js";
-import { TRAIT_BY_ID, TRAIT_DB } from "../lib/traitData.js";
-import { computeCandidateList, COVERAGE_ENOUGH } from "../lib/candidateList.js";
+import { ALEX_Z_IDS, TRAIT_BY_ID, TRAIT_DB } from "../lib/traitData.js";
+import { computeCandidateList, DERIVED_COUNTS, POOLED_ENOUGH } from "../lib/candidateList.js";
 import { AIIntervention } from "../models/AIIntervention.js";
 import { ConversationObservation } from "../models/ConversationObservation.js";
 import { Session } from "../models/Session.js";
@@ -4505,16 +4505,28 @@ const boardOf = (ids: string[]) => {
   return { byCandidate, aiSurfacedIds: [] as string[] };
 };
 
-// The bar is derived, not chosen, and this is the fact it is derived from:
-// every candidate carries exactly the same number of traits that all three
-// profiles can see, so one past that number is the first coverage at which
-// something unshared must have reached the board.
+// The bar is derived, not chosen, and these are the facts it is derived from.
+// Every candidate carries exactly the same number of traits that all three
+// profiles can see, and exactly the same number that Alex does not hold at all;
+// the second is what the bar counts, so it falls identically on all four.
 const sharedPerCandidate = (["A", "B", "C", "D"] as const).map(
   (candidate) =>
     TRAIT_DB.filter((trait) => trait.candidate === candidate && trait.profiles.length === 3).length,
 );
+const humanOnlyPerCandidate = (["A", "B", "C", "D"] as const).map(
+  (candidate) =>
+    TRAIT_DB.filter((trait) => trait.candidate === candidate && !trait.profiles.includes("Z"))
+      .length,
+);
 assert.deepEqual(sharedPerCandidate, [4, 4, 4, 4]);
-assert.equal(COVERAGE_ENOUGH, 5);
+assert.deepEqual(humanOnlyPerCandidate, [4, 4, 4, 4]);
+assert.equal(DERIVED_COUNTS.sharedPerCandidate, 4);
+assert.equal(DERIVED_COUNTS.humanOnlyPerCandidate, 4);
+assert.equal(POOLED_ENOUGH, 1);
+assert.ok(
+  POOLED_ENOUGH <= DERIVED_COUNTS.humanOnlyPerCandidate,
+  "a bar no candidate could clear would retire nobody, ever",
+);
 for (const candidate of ["A", "B", "C", "D"] as const) {
   const shared = TRAIT_DB.filter(
     (trait) => trait.candidate === candidate && trait.profiles.length === 3,
@@ -4531,6 +4543,7 @@ assert.deepEqual(emptyBoard.live, ["A", "B", "C", "D"], "an empty board has pool
 assert.deepEqual(emptyBoard.covered, []);
 assert.deepEqual(emptyBoard.coverage, { A: 0, B: 0, C: 0, D: 0 });
 assert.deepEqual(emptyBoard.score, { A: 0, B: 0, C: 0, D: 0 });
+assert.deepEqual(emptyBoard.pooled, { A: 0, B: 0, C: 0, D: 0 });
 
 // Alex's unspoken profile is in neither source set, so it cannot move the list.
 // Alex pushes a candidate only by paying for it with a disclosure the pooling
@@ -4546,6 +4559,23 @@ assert.equal(
   "a trait Alex has said is on the board like any other",
 );
 
+// [ADR 0011] And a trait Alex has said is still Alex's. The bar it replaced was
+// coverage 5 over the whole board, which Alex clears alone: six traits per
+// candidate against a bar of five. In T-C2-050 and T-C2-051 every candidate left
+// the list this way, so the leader's coverage sentence went quiet while the
+// pooled answer's four human-only traits were unsaid in both.
+const alexSaidAllOfItsOwn = computeCandidateList({
+  byCandidate: {},
+  aiSurfacedIds: ALEX_Z_IDS,
+});
+assert.deepEqual(alexSaidAllOfItsOwn.coverage, { A: 6, B: 6, C: 6, D: 6 });
+assert.deepEqual(
+  alexSaidAllOfItsOwn.live,
+  ["A", "B", "C", "D"],
+  "Alex emptying its whole card retires nobody, because nobody else has spoken",
+);
+assert.deepEqual(alexSaidAllOfItsOwn.pooled, { A: 0, B: 0, C: 0, D: 0 });
+
 // The bar itself, from either side.
 assert.deepEqual(
   computeCandidateList(boardOf(["A_p1", "A_p2", "A_p3", "A_p4"])).live,
@@ -4553,24 +4583,35 @@ assert.deepEqual(
   "four traits can all be shared, so they settle nothing",
 );
 const oneMore = computeCandidateList(boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "A_n1"]));
-assert.deepEqual(oneMore.covered, ["A"], "one past the shared set is something pooled");
+assert.deepEqual(oneMore.covered, ["A"], "one trait off a human's own card is one pooled");
 assert.deepEqual(oneMore.live, ["B", "C", "D"]);
+assert.equal(oneMore.pooled.A, 1);
 
-// The property the whole redesign rests on: the list is a function of coverage
-// and of nothing else. Two boards with identical coverage and opposite scores
-// must produce the same list. If score is ever reintroduced as an input, this
-// is what fails.
-const strongestPossible = computeCandidateList(
-  boardOf(["C_p1", "C_p2", "C_p3", "C_p4", "C_p5", "A_p1", "A_p2", "A_p3", "A_p4"]),
+// A human repeating something Alex said is not pooling. `A_n5` is Alex's own, so
+// crediting it to a human moves nothing — which is what keeps the extractor's
+// attributions from deciding the leader's agenda.
+assert.deepEqual(
+  computeCandidateList(boardOf(["A_p1", "A_p2", "A_p3", "A_p4", "A_n5"])).live,
+  ["A", "B", "C", "D"],
+  "a trait Alex holds cannot retire a candidate, whoever the extractor credits",
 );
-const weakestPossible = computeCandidateList(
-  boardOf(["C_n1", "C_n2", "C_n3", "C_p6", "C_p7", "A_n1", "A_n2", "A_n3", "A_n4"]),
-);
-assert.deepEqual(strongestPossible.coverage, weakestPossible.coverage);
+
+// The property the whole redesign rests on: the list reads what the humans
+// pooled and nothing else. Two boards with the same pooled set must produce the
+// same list however far apart their coverage and score are. If either is ever
+// reintroduced as an input, this is what fails.
+const strongestPossible = computeCandidateList(boardOf(["A_n1", "A_p1", "A_p2", "A_p3", "A_p4"]));
+const weakestPossible = computeCandidateList(boardOf(["A_n1"]));
+assert.deepEqual(strongestPossible.pooled, weakestPossible.pooled);
+assert.notDeepEqual(strongestPossible.coverage, weakestPossible.coverage);
 assert.notDeepEqual(strongestPossible.score, weakestPossible.score);
-assert.deepEqual(strongestPossible.live, weakestPossible.live, "the list does not read score");
+assert.deepEqual(
+  strongestPossible.live,
+  weakestPossible.live,
+  "the list reads neither coverage nor score",
+);
 assert.deepEqual(strongestPossible.covered, weakestPossible.covered);
-assert.equal(strongestPossible.score.C - weakestPossible.score.C, 6);
+assert.equal(strongestPossible.score.A - weakestPossible.score.A, 4);
 
 // The case the old rule got wrong, stated as a rule rather than as a session.
 // Over a shared-dominated board the pooled answer scores -2 while every other
@@ -4599,7 +4640,8 @@ assert.equal(listedTurn.validateSync(), undefined);
 const recordedList = listedTurn.toObject().candidateList!;
 assert.deepEqual(recordedList.live, ["B", "C", "D"]);
 assert.deepEqual(recordedList.covered, ["A"]);
-assert.equal(recordedList.coverage!.A, COVERAGE_ENOUGH);
+assert.equal(recordedList.coverage!.A, 5);
+assert.equal(recordedList.pooled!.A, POOLED_ENOUGH);
 assert.equal(recordedList.score!.A, 3);
 assert.equal(ordinaryIntervention.toObject().candidateList, undefined);
 
@@ -4648,18 +4690,27 @@ for (const sessionCode of ["T-C3-007", "T-C1-016", "T-C2-001"]) {
   }
 }
 
-// T-C1-016 is the session the old rule failed on: it set the pooled answer
-// aside at coverage 4 and score 0. Against a bar that means "something unshared
-// has been said", that session never cleared it for anybody — the group's whole
-// board stayed inside what a single card could already hold. The old rule
-// eliminated the right answer out of a discussion that had pooled nothing.
+// T-C1-016 is the session the old score rule failed on: it set the pooled
+// answer aside at coverage 4 and score 0. Neither bar since can do that — the
+// list stopped expressing verdicts at `docs/adr/0009`.
+//
+// What the two bars disagree about is who the group has left out. Across the
+// whole session the humans put three traits on the board that Alex does not
+// hold (`C_p2`, `D_n3`, `D_n4`) and the coverage bar saw none of them, because
+// no candidate's total ever reached five: it reported all four still untouched
+// while A and B were the only two that actually were. The pooled bar names
+// those two, which is the sentence a leader can act on.
 const previouslyDropped = replayCandidateList("T-C1-016");
 assert.deepEqual(
   previouslyDropped.at(-1)!.covered,
-  [],
-  "T-C1-016 pooled nothing unshared about any candidate",
+  ["C", "D"],
+  "T-C1-016's humans pooled something of their own about C and D",
 );
-assert.deepEqual(previouslyDropped.at(-1)!.live, ["A", "B", "C", "D"]);
+assert.deepEqual(
+  previouslyDropped.at(-1)!.live,
+  ["A", "B"],
+  "and nothing of their own about A or B, which is what the leader is told",
+);
 
 // The list is allowed to empty, and that is the signal the group may close.
 const converging = replayCandidateList("T-C3-007");

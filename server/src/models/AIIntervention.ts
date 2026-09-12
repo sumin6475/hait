@@ -75,6 +75,9 @@ const candidateListSchema = new mongoose.Schema(
   {
     coverage: { A: Number, B: Number, C: Number, D: Number },
     score: { A: Number, B: Number, C: Number, D: Number },
+    // What a human put on the board that Alex does not hold — the quantity the
+    // list is built on since `docs/adr/0011`. Absent on rows written before it.
+    pooled: { A: Number, B: Number, C: Number, D: Number },
     live: { type: [String], default: [] },
     covered: { type: [String], default: [] },
   },

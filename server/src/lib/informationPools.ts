@@ -32,6 +32,25 @@ export function humanConfirmedIds(revealStats: any): Set<string> {
   return human;
 }
 
+/**
+ * Traits a human put on the board that Alex does not hold.
+ *
+ * This is the part of the board that could only have come off a participant's
+ * own notes. Alex's profile carries the four traits every card shows plus two of
+ * its own, so anything outside it reached the group because a human pooled it —
+ * and a human repeating something Alex said drops out here, which is the point.
+ *
+ * The live candidate list is built on this rather than on coverage: see
+ * `docs/adr/0011`.
+ */
+export function humanPooledIds(revealStats: any): Set<string> {
+  const ids = new Set<string>();
+  for (const id of humanSurfacedIds(revealStats)) {
+    if (!TRAIT_BY_ID.get(id)!.profiles.includes("Z")) ids.add(id);
+  }
+  return ids;
+}
+
 /** Any trait already spoken aloud, regardless of speaker. Use only for repetition prevention. */
 export function allSurfacedIds(revealStats: any): Set<string> {
   return new Set([...humanSurfacedIds(revealStats), ...aiSurfacedIds(revealStats)]);

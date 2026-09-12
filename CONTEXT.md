@@ -83,9 +83,10 @@ why it never decides what the group works on next.
 
 **Live list**:
 The candidates the group has not yet pooled anything about, recomputed from the
-board every turn. A candidate leaves the list when enough of it is on the board
-that at least one trait must have come from someone's own card rather than from
-what everybody could already see. Leaving means Alex stops steering toward that
+board every turn. A candidate leaves the list when a human has put something
+about it on the board that Alex does not hold — one trait off a participant's own
+card is enough, and nothing Alex says moves it, because Alex saying its own card
+tells the leader nothing about what the group still has to give. Leaving means Alex stops steering toward that
 candidate and stops volunteering information about it — Alex still answers
 questions about it, and it is removed from nobody's choice. The list says where
 attention is still owed, never which candidate is winning.

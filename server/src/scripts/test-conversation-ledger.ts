@@ -6,6 +6,7 @@ import { forceGuardsOnForTest } from "../lib/guardFlags.js";
 // the behaviour of a build nobody ships.
 forceGuardsOnForTest();
 import type { Candidate } from "../types.js";
+import { ALEX_Z_IDS } from "../lib/traitData.js";
 import { replayObservedConversation } from "../eval/conversationReplay.js";
 import {
   CONVERSATION_LEDGER_VERSION,
@@ -644,11 +645,14 @@ assert.match(
 {
   // `aiSurfacedIds` is one flat list on the root, not per candidate — the shape
   // `informationPools` actually reads.
+  // B_n3 and C_p2 are the load-bearing ids: they sit on one human's card and not
+  // on Alex's, so they are what retires B and C. Everything else here is shared
+  // or Alex's own, and under `docs/adr/0011` none of it moves the list.
   const boardOnBandC = {
     byCandidate: {
       A: { revealedIds: [] },
-      B: { revealedIds: ["B_p1", "B_p2", "B_p3"] },
-      C: { revealedIds: ["C_p1", "C_n1", "C_n2"] },
+      B: { revealedIds: ["B_p1", "B_p2", "B_p3", "B_n3"] },
+      C: { revealedIds: ["C_p1", "C_n1", "C_n2", "C_p2"] },
       D: { revealedIds: [] },
     },
     aiSurfacedIds: ["B_p4", "B_n5", "C_p6", "C_p7"],
@@ -657,7 +661,7 @@ assert.match(
   for (const leader of ["C2", "C4"] as const) {
     const note = leaderCoverageNote(leader, boardOnBandC);
     assert.ok(note, `${leader} is a leader and receives the coverage note`);
-    assert.match(note!, /said little about A and D/);
+    assert.match(note!, /from their own notes about A and D/);
     assert.match(note!, /B, C/);
     // The Judge is handed the reading, never the arithmetic — the brief rules
     // forbid a count reaching the writer, and a Judge given integers can leak one.
@@ -689,11 +693,14 @@ assert.match(
     conditionCode: "C2",
     revealStats: boardOnBandC,
   });
-  assert.match(leaderPrompt, /Moves available on this turn:[\s\S]*- Coverage: The group has said little about A and D/);
+  assert.match(
+    leaderPrompt,
+    /Moves available on this turn:[\s\S]*- Coverage: Nobody has brought anything from their own notes about A and D/,
+  );
   // No board, no sentence about the board. `revealStats` has been documented as
   // "absent means no note is added" since it was added and did not do it:
-  // coverage zero for all four candidates reads as "the group has said little
-  // about every candidate", so an absent board produced a fabrication rather
+  // an empty pooled count for all four candidates reads as "nobody has brought
+  // anything of their own", so an absent board produced a fabrication rather
   // than a silence. The offline replay eval is the caller that passes nothing —
   // its corpus records no surfaced ids on any of its 1451 messages — and it is
   // the instrument these notes are measured with.
@@ -721,19 +728,33 @@ assert.match(
   assert.doesNotMatch(peerPrompt, /- Coverage:/, "the peer's Judge never sees a coverage line");
   // Every candidate covered is a state with its own reading, not an empty string
   // that would read as a missing input.
+  // One human-only trait per candidate and nothing else is needed: `A_n1`,
+  // `B_n3`, `C_p2`, `D_n4` each sit on exactly one participant's card.
   const fullBoard = {
-    byCandidate: Object.fromEntries(
-      (["A", "B", "C", "D"] as const).map((c) => [
-        c,
-        { revealedIds: [`${c}_p1`, `${c}_p2`, `${c}_p3`, `${c}_p4`] },
-      ]),
-    ),
+    byCandidate: {
+      A: { revealedIds: ["A_p1", "A_p2", "A_p3", "A_n1"] },
+      B: { revealedIds: ["B_p1", "B_p2", "B_p3", "B_n3"] },
+      C: { revealedIds: ["C_p1", "C_n1", "C_n2", "C_p2"] },
+      D: { revealedIds: ["D_p1", "D_p2", "D_p3", "D_n4"] },
+    },
     aiSurfacedIds: ["A_n5", "B_n5", "C_n1", "D_n5"],
   };
   assert.match(
     leaderCoverageNote("C4", fullBoard)!,
     /no coverage gap to name/,
     "an exhausted list says so rather than going quiet",
+  );
+  // [ADR 0011] Alex cannot empty the list by itself. Every trait Alex holds for
+  // every candidate, said by Alex, retires nobody — which is the whole of the
+  // change, and the state T-C2-051 reached at seq 17 and never left.
+  const alexSaidEverythingItHolds = {
+    byCandidate: { A: { revealedIds: [] }, B: { revealedIds: [] }, C: { revealedIds: [] }, D: { revealedIds: [] } },
+    aiSurfacedIds: ALEX_Z_IDS,
+  };
+  assert.match(
+    leaderCoverageNote("C2", alexSaidEverythingItHolds)!,
+    /Nobody has brought anything from their own notes about any candidate so far: A, B, C, D/,
+    "Alex emptying its own card leaves every candidate where it was",
   );
 }
 

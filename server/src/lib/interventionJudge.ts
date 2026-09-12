@@ -1120,6 +1120,14 @@ export interface LedgerJudgeCallInput {
  * say what the team has pooled, and it does not raise a shortfall at the close.
  * Those are separate moves and separate measurements.
  *
+ * **"Thin" now means the humans have said nothing of their own.** Under the
+ * coverage bar this replaced (`docs/adr/0011`), Alex's own disclosures retired
+ * candidates from the list, so the sentence went quiet on the one thing a leader
+ * can act on. T-C2-051 seq 23 is the case: the Judge was told every candidate
+ * was covered, and told the group so, while all four of the pooled answer's
+ * human-only traits were still unsaid — and they were still unsaid when the
+ * session ended.
+ *
  * **Peer conditions get null.** Owning the discussion procedure is the status
  * manipulation (`.scratch/leader-decision-frame/spec.md`, "Receives the live
  * candidate list: leader yes / peer no"). The gate is here, in one function, so
@@ -1136,12 +1144,12 @@ export function leaderCoverageNote(
   if (!isLeaderCondition(conditionCode)) return null;
   const { live, covered } = computeCandidateList(revealStats);
   if (!live.length) {
-    return "Every candidate now has something on the table. There is no coverage gap to name.";
+    return "Every candidate now has something on the table that a participant brought from their own notes. There is no coverage gap to name.";
   }
   if (!covered.length) {
-    return `The group has said little about every candidate so far: ${live.join(", ")}.`;
+    return `Nobody has brought anything from their own notes about any candidate so far: ${live.join(", ")}.`;
   }
-  return `The group has said little about ${live.join(" and ")} so far, next to ${covered.join(", ")}.`;
+  return `Nobody has brought anything from their own notes about ${live.join(" and ")} so far, next to ${covered.join(", ")}.`;
 }
 
 /**
