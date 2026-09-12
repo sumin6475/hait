@@ -25,7 +25,7 @@ import {
   type ResponseOpportunity,
   type OpportunityKind,
 } from "./conversationLedger.js";
-import { isLeaderCondition } from "./routeContext.js";
+import { decidePreferenceFromKnownCoverage, isLeaderCondition } from "./routeContext.js";
 
 const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiApiBase });
 // The Judge now reads the message for what it asks, decides the subject, names
@@ -636,6 +636,8 @@ discloseTraitIds is exactly what Alex may put on the board this turn, chosen fro
 
 brief is one sentence of ordinary language telling the writer what this turn has to accomplish. Say what the person asked for and what the turn owes them - "they asked for a summary and told you not to ask anything back, so give the recap and stop", "they just answered your question about D, so take that up", "they want the full list for C". Write it as you would tell a colleague. Never describe how Alex should sound, never name the role, the strategy, the condition, or a style, and never mention ids, counts, scores, thresholds, opportunities, routes or anything else from this input. How Alex sounds is decided elsewhere. Keep it under 300 characters.
 
+A line giving your own read of the candidates may appear beside the moves. It is what your card and the board come to with every requirement weighing the same, and it is Alex's honest standing view rather than an instruction to announce it. State it when somebody asks what you think or which one you would pick, and when your role's goal makes offering it the move. When the group has narrowed to some of the candidates, answer inside that set and read the order for which of those you are closer to; do not reopen the ones they set aside in order to answer. Never explain the read by weighing one requirement against another, and never put a count, a ratio or a score in the brief.
+
 Every requirement in this task counts the same, and it is not yours to change. Never write a brief that proposes a rule, a criterion, a threshold, a cutoff, or a way of grouping traits into kinds, and never write one that assumes any trait outweighs, offsets, or disqualifies another. When the group asks how they should decide, that is a real question and the brief must not duck it. Alex's honest position is that it is worth looking at the candidates properly before choosing, and that how the group goes about it is up to them. Say that much and let the writer put it in its own words. Do not turn it into a procedure: no rule to apply, no bar to clear, no instruction to lay everything out or to count anything, and no naming of what "properly" would consist of. What matters here is which facts reach the table, not how they are scored.
 
 Read the person's message for what it actually asks. A request does not have to be a question, a request for everything Alex has is different from a request for one more fact, and a request you cannot carry out - a table, a chart, a compilation of what everybody else holds - is still a request whose shape the brief must name so the writer can decline it plainly.
@@ -1153,6 +1155,65 @@ export function leaderCoverageNote(
 }
 
 /**
+ * Alex's own read of the candidates, as one sentence with no numbers in it.
+ *
+ * [T-C2-051 seq 24-25] A participant asked "Alex, why do you think D is the
+ * best?". Alex had never said D was best. It answered "My current read is
+ * Candidate D" — taking the lean from the question's premise — while the server
+ * computing the same thing from Alex's card and the board had A and D level at
+ * that moment and A ahead by seq 37. The same thing happened again at seq 38.
+ *
+ * The computation was not wrong and did not disagree with the turn. It was
+ * **absent**: the preference cue reaches the generator only when the turn's
+ * request is classified as one of four kinds, and seq 24 was classified as no
+ * request at all, so nothing carried a lean into that turn and the model filled
+ * the gap. Across the whole of T-C2-051 the cue never fired once.
+ *
+ * So the lean is given to the Judge on every turn instead, beside the other turn
+ * facts, the way the coverage note is. The Judge decides whether the turn
+ * expresses it; the generator's cue still carries the wording deterministically
+ * on the turns it fires, and both read the same function on the same board, so
+ * they cannot name different candidates.
+ *
+ * **The whole order, not the top of it.** Narrowing is the Judge's call
+ * (`.scratch/leader-decision-frame/spec.md`), and a group that has narrowed to
+ * two candidates Alex does not lead with cannot be answered from the leader
+ * alone. T-C2-051 seq 27 narrowed to A and B; the top of the order says nothing
+ * about which of those two Alex is closer to.
+ *
+ * **Condition-blind.** Having a view of the candidates is not owning the
+ * discussion procedure; the role goal already decides whether Alex volunteers it
+ * or waits to be asked. Contrast `leaderCoverageNote`, which is the leader's
+ * alone.
+ *
+ * **No numbers, for the third time in this file.** A count reads as a budget,
+ * and every requirement weighing the same is the study's control — a sentence
+ * carrying ratios invites a brief that argues from them.
+ */
+export function alexPreferenceNote(revealStats: unknown): string | null {
+  if (!revealStats) return null;
+  const decision = decidePreferenceFromKnownCoverage(revealStats);
+  const opening = "Weighing every requirement the same, your card plus what is on the board";
+  if (!decision.eligible || !decision.ranking.length) {
+    return `${opening} does not yet separate the candidates.`;
+  }
+  const name = (group: Candidate[]) =>
+    group.length === 1
+      ? `Candidate ${group[0]}`
+      : `${group.slice(0, -1).map((candidate) => `Candidate ${candidate}`).join(", ")} and Candidate ${group.at(-1)} together`;
+  const qualifier =
+    decision.scope === "partial"
+      ? `, among the ones there is enough on both sides to compare`
+      : "";
+  const groups = decision.ranking;
+  if (groups.length === 1) {
+    return `${opening}${qualifier} leaves ${name(groups[0]!)} level.`;
+  }
+  const middle = groups.slice(1, -1).map((group) => `then ${name(group)}`);
+  return `${opening}${qualifier} puts ${name(groups[0]!)} first, ${[...middle, `and ${name(groups.at(-1)!)} last`].join(", ")}.`;
+}
+
+/**
  * Which candidates in this thread's scope Alex has nothing further to say
  * about, stated rather than left to be inferred from an absence.
  *
@@ -1238,6 +1299,10 @@ export function buildLedgerJudgeUserMessage(
     input.conditionCode === undefined || !boardKnown
       ? null
       : leaderCoverageNote(input.conditionCode, input.revealStats);
+  // Condition-blind, and gated on the same board the other two sentences are:
+  // an absent board reads as "nothing separates them", which is a claim, not a
+  // silence.
+  const preferenceNote = boardKnown ? alexPreferenceNote(input.revealStats) : null;
   const decisionState = conversationLedgerDecisionProjection(input.state, {
     cooldownAvailable: input.cooldownAvailable,
   });
@@ -1274,7 +1339,7 @@ export function buildLedgerJudgeUserMessage(
   const cardNote = liveThread
     ? exhaustedCandidateNote(input.eligibleTraitIds, candidateSalienceOrder(liveThread))
     : null;
-  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}${preferenceNote ? `\n- Your read: ${preferenceNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
 }
 
 export async function judgeConversationLedgerTurn(

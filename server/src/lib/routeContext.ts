@@ -436,6 +436,13 @@ export interface PreferenceDecision {
   eligible: boolean;
   scope: "none" | "partial" | "full";
   comparedCandidates: Cand[];
+  /**
+   * Every compared candidate, best first, tied candidates grouped together.
+   * `leaders` is its first group; nothing reads past that group today except
+   * the Judge's own-read sentence, which needs the order to answer a narrowing
+   * the humans made ("between B and D, which?").
+   */
+  ranking: Cand[][];
   leaders: Cand[];
   candidate: Cand | null;
   reason: "insufficient_comparable_coverage" | "top_ratio_tie" | "unique_top_ratio";
@@ -474,11 +481,23 @@ export function decidePreferenceFromKnownCoverage(revealStats: any): PreferenceD
       eligible: false,
       scope: "none",
       comparedCandidates,
+      ranking: [],
       leaders: [],
       candidate: null,
       reason: "insufficient_comparable_coverage",
       rows,
     };
+  }
+
+  // The full order, by the same exact-fraction comparison as the leaders below,
+  // so the two can never disagree about who is ahead of whom.
+  const ahead = (left: Cand, right: Cand) =>
+    rows[left].matches * rows[right].misses - rows[right].matches * rows[left].misses;
+  const ranking: Cand[][] = [];
+  for (const candidate of [...comparedCandidates].sort((left, right) => ahead(right, left))) {
+    const last = ranking.at(-1);
+    if (last && ahead(candidate, last[0]!) === 0) last.push(candidate);
+    else ranking.push([candidate]);
   }
 
   // Compare fractions exactly so floating-point rounding cannot create or hide a tie.
@@ -500,6 +519,7 @@ export function decidePreferenceFromKnownCoverage(revealStats: any): PreferenceD
       eligible: true,
       scope: comparedCandidates.length === CANDIDATES.length ? "full" : "partial",
       comparedCandidates,
+      ranking,
       leaders,
       candidate: null,
       reason: "top_ratio_tie",
@@ -510,6 +530,7 @@ export function decidePreferenceFromKnownCoverage(revealStats: any): PreferenceD
     eligible: true,
     scope: comparedCandidates.length === CANDIDATES.length ? "full" : "partial",
     comparedCandidates,
+    ranking,
     leaders,
     candidate: leaders[0]!,
     reason: "unique_top_ratio",

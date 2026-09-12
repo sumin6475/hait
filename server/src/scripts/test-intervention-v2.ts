@@ -1606,6 +1606,23 @@ assert.match(fullBoardSummary, /Candidate C — 7 matches · 3 misses/);
 assert.match(fullBoardSummary, /Candidate D — 4 matches · 6 misses/);
 assert.match(fullBoardSummary, /All candidates have at least one confirmed point on the table/);
 assert.ok(fullBoardSummary.length > 800);
+// The full order and the leaders come from one comparison, so they cannot
+// disagree about who is ahead of whom. The Judge's own-read sentence reads the
+// order; the generator's cue reads the leaders.
+for (const stats of [revealStats, separatedInformationStats]) {
+  const decided = decidePreferenceFromKnownCoverage(stats);
+  assert.deepEqual(
+    decided.ranking[0] ?? [],
+    decided.leaders,
+    "the first group of the order is the leaders",
+  );
+  assert.deepEqual(
+    decided.ranking.flat().sort(),
+    [...decided.comparedCandidates].sort(),
+    "every compared candidate is placed exactly once",
+  );
+}
+
 assert.equal(preferredCandidateFromKnownCoverage(separatedInformationStats), null);
 assert.equal(decidePreferenceFromKnownCoverage(separatedInformationStats).reason, "top_ratio_tie");
 assert.equal(decidePreferenceFromKnownCoverage(separatedInformationStats).scope, "full");

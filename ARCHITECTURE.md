@@ -214,6 +214,34 @@ fires, `reservation` clears and `busy` is set, and the turn is committed to
 generation. This is what makes a consecutive AI turn structurally impossible
 rather than merely improbable.
 
+#### Where Alex's lean is decided
+
+Alex's read of the candidates is computed from Alex's whole card plus the board,
+every requirement weighing the same (`decidePreferenceFromKnownCoverage`). It
+reaches two places, and they read the same function on the same board, so they
+cannot name different candidates:
+
+| reader | what it gets | when |
+|---|---|---|
+| the Judge's turn facts | the whole order, tied candidates grouped, no numbers | every turn a board exists, every condition |
+| the generator's preference cue | the leaders, with wording | closing; address/followup on four request kinds; peer build-on |
+
+**The Judge's line was added because the cue's gate is narrow.** In T-C2-051 seq
+24 a participant asked *"Alex, why do you think D is the best?"*. Alex had never
+said D was best. It answered "My current read is Candidate D", taking the lean
+from the question's premise, while the server had A and D level at that moment
+and A ahead by seq 37. The cue did not disagree with that turn — it was absent:
+the turn was classified as no request at all, and across the whole session the
+cue fired zero times. Nothing carried a lean, so the model supplied one.
+
+**The whole order, not the top of it,** because narrowing is the Judge's call. At
+seq 27 the group narrowed to A and B; the leader alone says nothing about which
+of those two Alex is closer to.
+
+Condition-blind, unlike the coverage note. Holding a view of the candidates is
+not owning the discussion procedure — the role goal already decides whether Alex
+offers it unasked or waits to be asked.
+
 #### What the leader's list counts
 
 A candidate leaves the live list when a **human** has put something about it on

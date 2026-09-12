@@ -32,6 +32,7 @@ import {
   canonicalizeConversationLedgerJudgeDecision,
   buildLedgerJudgeUserMessage,
   currentRequiredOpportunityIdsFor,
+  alexPreferenceNote,
   exhaustedCandidateNote,
   leaderCoverageNote,
   LEDGER_JUDGE_TRAIT_RETRY_RULE_CODES,
@@ -756,6 +757,107 @@ assert.match(
     /Nobody has brought anything from their own notes about any candidate so far: A, B, C, D/,
     "Alex emptying its own card leaves every candidate where it was",
   );
+}
+
+// ── Alex's own read of the candidates ──────────────────────────────────────
+// [T-C2-051 seq 24-25] "Alex, why do you think D is the best?" — Alex had never
+// said D was best, and answered "My current read is Candidate D" off the
+// question's premise. The server computes that read from Alex's card and the
+// board, and it reached nothing on that turn: the generator's cue is gated on
+// four request kinds and the turn was classified as no request at all. It never
+// fired once in the whole session. The Judge now holds the read on every turn.
+{
+  const board = (human: string[], ai: string[] = []) => ({
+    byCandidate: Object.fromEntries(
+      (["A", "B", "C", "D"] as const).map((candidate) => [
+        candidate,
+        { revealedIds: human.filter((id) => id.startsWith(`${candidate}_`)) },
+      ]),
+    ),
+    aiSurfacedIds: ai,
+  });
+
+  // The read is over Alex's whole card plus the board, not the board alone, so
+  // an empty board already has a shape: A, B and D level on four matches and two
+  // misses each, C last on three and three. That is the hidden profile stated as
+  // a sentence, and it is the inversion `docs/adr/0009` is about.
+  const emptyBoard = board([]);
+  assert.match(
+    alexPreferenceNote(emptyBoard)!,
+    /puts Candidate A, Candidate B and Candidate D together first, and Candidate C last/,
+    "before anybody speaks, Alex's own card ranks the pooled answer last",
+  );
+
+  // Two misses only the humans hold, and A separates from B and D. Every
+  // human-only trait for A, B and D is a miss and every one for C is a match, so
+  // the board can only ever move in that direction — which is the design.
+  const leaning = board(["B_n1", "D_n1"]);
+  const note = alexPreferenceNote(leaning)!;
+  assert.match(note, /puts Candidate A first/);
+  assert.match(note, /Candidate C last/);
+  assert.doesNotMatch(note, /\d/, "the read carries no number");
+  assert.doesNotMatch(note, /ratio|score|match(es)?\b|miss(es)?\b/i, "nor the arithmetic in words");
+
+  // The whole order, not the top of it. A group that narrows to two candidates
+  // Alex does not lead with has to be answerable from this sentence alone —
+  // T-C2-051 seq 27 narrowed to A and B.
+  assert.match(note, /Candidate B and Candidate D together/, "every compared candidate is placed");
+
+  // Ties are grouped rather than broken, because breaking one here would be the
+  // server choosing a candidate. Three of C's four human-only matches bring it
+  // level with the other three.
+  assert.match(
+    alexPreferenceNote(board(["C_p2", "C_p3", "C_p4"]))!,
+    /leaves Candidate A, Candidate B, Candidate C and Candidate D together level/,
+  );
+
+  // The pooled answer reaching the front is the state the whole task is built to
+  // produce, and the read says so plainly when it arrives.
+  assert.match(
+    alexPreferenceNote(board(["C_p2", "C_p3", "C_p4", "C_p5", "A_n1", "B_n1", "D_n1"]))!,
+    /puts Candidate C first/,
+  );
+
+  // Condition-blind. Holding a view of the candidates is not owning the
+  // discussion procedure; the role goal decides whether Alex offers it unasked.
+  // Contrast `leaderCoverageNote` directly above, which is the leader's alone.
+  const prompts = (["C1", "C2", "C3", "C4"] as const).map((conditionCode) =>
+    buildLedgerJudgeUserMessage({
+      messages: [{ seq: 2, senderRole: "humanY" as const, speaker: "Participant Y", content: "m2" }],
+      state: twoRequests,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode,
+      revealStats: leaning,
+    }),
+  );
+  for (const prompt of prompts) {
+    assert.match(prompt, /- Your read: Weighing every requirement the same/);
+  }
+  assert.equal(
+    new Set(prompts.map((prompt) => prompt.match(/- Your read: [^\n]+/)![0])).size,
+    1,
+    "all four conditions receive the identical read",
+  );
+  // No board, no sentence — the same rule the other two follow. "Nothing
+  // separates them" is a claim about a board, and the replay eval has none.
+  assert.doesNotMatch(
+    buildLedgerJudgeUserMessage({
+      messages: [{ seq: 2, senderRole: "humanY" as const, speaker: "Participant Y", content: "m2" }],
+      state: twoRequests,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode: "C2",
+    }),
+    /- Your read:/,
+    "a Judge with no board is told nothing about the read, not told it is level",
+  );
+  // And the rule that tells the Judge what it may do with the line.
+  assert.match(LEDGER_JUDGE_SYSTEM, /your own read of the candidates/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /answer inside that set/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /never put a count, a ratio or a score in the brief/);
 }
 
 // ── A candidate Alex has nothing further on is named, not left blank ────────
