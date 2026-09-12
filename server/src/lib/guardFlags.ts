@@ -27,16 +27,19 @@ export type GuardFlagName =
   /** The human-floor veto. Off: Alex may speak while a human still holds the floor. */
   | "humanFloor"
   /** Rejecting a Judge decision because its brief is missing or too long. Off: the decision stands and the brief is used as-is. */
-  | "judgeBrief";
+  | "judgeBrief"
+  /** Refusing to open a request addressed to Alex from an implicit proposal. Off: an ordinary opinion opens one, as before. */
+  | "implicitRequest";
 
 const ENV_KEY: Record<GuardFlagName, string> = {
   outputScope: "HAIT_GUARD_OUTPUT_SCOPE",
   cooldown: "HAIT_GUARD_COOLDOWN",
   humanFloor: "HAIT_GUARD_HUMAN_FLOOR",
   judgeBrief: "HAIT_GUARD_JUDGE_BRIEF",
+  implicitRequest: "HAIT_GUARD_IMPLICIT_REQUEST",
 };
 
-const ALL: GuardFlagName[] = ["outputScope", "cooldown", "humanFloor", "judgeBrief"];
+const ALL: GuardFlagName[] = ["outputScope", "cooldown", "humanFloor", "judgeBrief", "implicitRequest"];
 
 // "off", "0", "false", "no" all disable. Anything else — including an unset
 // variable — leaves the guard on.

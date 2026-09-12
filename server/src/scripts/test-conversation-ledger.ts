@@ -328,6 +328,93 @@ assert.equal(
   "a request put to the room is not a request put to Alex, and still waits",
 );
 
+// --- Issue 28: an opinion is not a request ---------------------------------
+//
+// T-C2-051 seq 29. "being moody in that situation when he is responsible for
+// people's lives is not something that you can neglect it easy" — an opinion
+// about D, read by the Observer as a proposal that names Alex, and marked
+// `implicit`. The branch above ignored that mark and minted an invitation, so
+// the Judge had to write what the request wanted and produced "They asked why D
+// would be the best". Nobody asked that. Five turns across T-C2-051 and
+// T-C2-050 were built this way.
+//
+// The mark is now read. A question is untouched: T-C2-050 seq 37 asked what
+// happens if A reacts poorly to criticism and carries the same `implicit`, and
+// killing that turn would cost Alex an answer somebody actually wanted.
+const opinionNamingAlex = (over: Partial<ObservedTurnForLedger> = {}) =>
+  reduceConversationLedger(
+    null,
+    observerDeltaFromTurn({
+      sessionKey: "T-C2-051-OPINION",
+      observerVersion: "test-observer",
+      roster,
+      sourceRole: "humanX",
+      currentTriggerSeq: 29,
+      contextThroughSeq: 29,
+      observation: observation({
+        speechAct: "proposal",
+        addressees: ["humanY", "alex"],
+        requestExplicitness: "implicit",
+        alexRelation: "explicit_addressee",
+        ...over,
+      }),
+    }),
+  ).state;
+
+assert.deepEqual(
+  opinionNamingAlex().opportunities,
+  [],
+  "an implicit proposal that names Alex is an opinion, not a request",
+);
+assert.deepEqual(
+  opinionNamingAlex({ addressees: ["group"], alexRelation: "group_participant" }).opportunities,
+  [],
+  "and the same opinion put to the room opens nothing either",
+);
+assert.equal(
+  opinionNamingAlex({ requestExplicitness: "explicit" }).opportunities[0]?.kind,
+  "invitation",
+  "an explicit proposal is still a request",
+);
+assert.equal(
+  opinionNamingAlex({ speechAct: "question" }).opportunities[0]?.kind,
+  "direct_question",
+  "a question is a request however the Observer marked its explicitness",
+);
+// The turn still answers Alex when it answers Alex. Removing the request must
+// not remove the uptake underneath it — that is the whole of issue 12.
+assert.equal(
+  reduceConversationLedger(
+    null,
+    observerDeltaFromTurn({
+      sessionKey: "T-C2-051-OPINION-UPTAKE",
+      observerVersion: "test-observer",
+      roster,
+      sourceRole: "humanX",
+      currentTriggerSeq: 29,
+      contextThroughSeq: 29,
+      alexQuestionAwaitingReplySeq: 28,
+      observation: observation({
+        speechAct: "proposal",
+        addressees: ["alex"],
+        requestExplicitness: "implicit",
+        alexRelation: "explicit_addressee",
+      }),
+    }),
+  ).state.opportunities[0]?.kind,
+  "uptake",
+  "an opinion that answers Alex is still reachable as an uptake",
+);
+// And the comparison build still runs the old reading, so the two transcripts
+// differ in this and nothing else.
+process.env.HAIT_GUARD_IMPLICIT_REQUEST = "off";
+assert.equal(
+  opinionNamingAlex().opportunities[0]?.kind,
+  "invitation",
+  "with the guard off an implicit proposal opens a request again",
+);
+delete process.env.HAIT_GUARD_IMPLICIT_REQUEST;
+
 // --- Issue 13 half B: an unanswered request survives the turn it was made on -
 //
 // The same T-C2-045 stretch, one layer down. Half A got seq 17 past the

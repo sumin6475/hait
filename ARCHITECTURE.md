@@ -96,10 +96,11 @@ handler for a human message, or on a timer armed by it.**
 
 ## Comparison-run guard flags
 
-Four checks that can cost Alex a turn can be switched off for a paired run, via
-`server/.env` — `HAIT_GUARD_OUTPUT_SCOPE`, `HAIT_GUARD_COOLDOWN`,
-`HAIT_GUARD_HUMAN_FLOOR`, `HAIT_GUARD_JUDGE_BRIEF`, all defaulting to on
-(`server/src/lib/guardFlags.ts`). T-C4-023 lost seven of twenty-nine turns to
+Five checks that change what a turn may be can be switched off for a paired run,
+via `server/.env` — `HAIT_GUARD_OUTPUT_SCOPE`, `HAIT_GUARD_COOLDOWN`,
+`HAIT_GUARD_HUMAN_FLOOR`, `HAIT_GUARD_JUDGE_BRIEF`, `HAIT_GUARD_IMPLICIT_REQUEST`,
+all defaulting to on (`server/src/lib/guardFlags.ts`). The first four each cost
+Alex a turn; the fifth costs it a *reason* to take one. T-C4-023 lost seven of twenty-nine turns to
 four different vetoes; which of them earn their cost is a measurement, not an
 argument. Whatever is off is written to every intervention row as
 `disabledGuards` and printed at startup, so a comparison transcript always says
@@ -210,6 +211,33 @@ the turn is still retractable (`ai-typing` is already true); when the timer
 fires, `reservation` clears and `busy` is set, and the turn is committed to
 generation. This is what makes a consecutive AI turn structurally impossible
 rather than merely improbable.
+
+#### What opens a request
+
+A question addressed to Alex or to the room opens one. A proposal opens one only
+when the Observer marked it an **explicit** request; an implicit proposal is an
+opinion and opens nothing (`proposalOpensRequest`). Both readers now agree — the
+Observer's own obligation snapshot has always required `explicit`
+(`pendingAlexObligationFromObservation`), and only the ledger branch did not.
+
+The drift was not cosmetic. At T-C2-051 seq 29 a participant said that being
+moody is not something you can neglect when lives are at stake; the turn minted
+an invitation, and because the Judge must say what a selected request wants, the
+brief read *"They asked why D would be the best"* — a question nobody asked.
+Replaying both sessions' recorded observations through the reducer, the rule
+removes four requests from T-C2-051 (seqs 18, 21, 29, 33) and three from
+T-C2-050 (seqs 19, 30, 36) and adds none; every one of the seven is a statement
+of opinion or of the speaker's own choice.
+
+**The cost is the act, not the wording.** Five turns were built on a request
+nobody made (T-C2-051 seqs 23, 31, 34; T-C2-050 seqs 20, 31) and in all five the
+writer dropped or repaired the false half on its own, because the generator is
+handed the source utterance rather than the brief alone — `requestedAction` was
+removed from both the opportunity block and the Judge's prose situation for that
+reason. What does not repair is the choice: a listed request outranks every
+voluntary act, so while one stands the Judge cannot take up what the humans just
+said. At T-C2-051 seq 22 a participant argued that A's danger-recognition matches
+B's composure, and the reply engaged with none of it.
 
 #### What the Judge is told about Alex's own card
 

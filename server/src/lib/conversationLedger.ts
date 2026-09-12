@@ -421,6 +421,36 @@ export function createConversationLedgerState(input: {
   };
 }
 
+/**
+ * Whether a proposal is somebody asking Alex for something.
+ *
+ * A question always is. A proposal is only when the Observer read it as an
+ * explicit request. Without that second half an ordinary opinion opened a
+ * request addressed to Alex: at T-C2-051 seq 29 a participant said that being
+ * moody is not something you can neglect when lives are at stake, and the turn
+ * minted an invitation. The Judge must then say what the request wants, so the
+ * brief read "They asked why D would be the best" — a question nobody had asked.
+ * Five turns across two sessions were built on a request nobody made
+ * (T-C2-051 seqs 23, 31, 34; T-C2-050 seqs 20, 31), and in all five the writer
+ * quietly dropped or repaired the false half, because it is handed the source
+ * utterance and not the brief alone. The wording survived; the decision did not.
+ *
+ * The cost is the act. A listed request outranks every voluntary act, so while
+ * one stands Alex cannot take up what the humans just said. At T-C2-051 seq 22 a
+ * participant argued that A's danger-recognition matches B's composure, and the
+ * reply engaged with none of it — it answered a request from seq 21 instead.
+ *
+ * The Observer already draws this line for its own obligation snapshot, which
+ * requires `explicit` (`pendingAlexObligationFromObservation`). This is the same
+ * rule on the other reader, which is where the two had drifted apart.
+ */
+export function proposalOpensRequest(
+  requestExplicitness: ObservedTurnForLedger["requestExplicitness"],
+): boolean {
+  if (!guardEnabled("implicitRequest")) return true;
+  return requestExplicitness === "explicit";
+}
+
 export function observerDeltaFromTurn(input: {
   sessionKey: string;
   observerVersion: string;
@@ -496,7 +526,9 @@ export function observerDeltaFromTurn(input: {
     input.observation.addressees.includes("alex") || explicitAlexRelationOnly;
   const addressesGroup = input.observation.addressees.includes("group");
   const requestsAction =
-    input.observation.speechAct === "question" || input.observation.speechAct === "proposal";
+    input.observation.speechAct === "question" ||
+    (input.observation.speechAct === "proposal" &&
+      proposalOpensRequest(input.observation.requestExplicitness));
   let opportunity: OpportunityProposal | null = null;
   if (directlyAddressesAlex && requestsAction) {
     opportunity = {
