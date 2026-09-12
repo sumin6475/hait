@@ -98,11 +98,13 @@ handler for a human message, or on a timer armed by it.**
 
 ## Comparison-run guard flags
 
-Five checks that change what a turn may be can be switched off for a paired run,
+Six checks that change what a turn may be can be switched off for a paired run,
 via `server/.env` — `HAIT_GUARD_OUTPUT_SCOPE`, `HAIT_GUARD_COOLDOWN`,
 `HAIT_GUARD_HUMAN_FLOOR`, `HAIT_GUARD_JUDGE_BRIEF`, `HAIT_GUARD_IMPLICIT_REQUEST`,
-all defaulting to on (`server/src/lib/guardFlags.ts`). The first four each cost
-Alex a turn; the fifth costs it a *reason* to take one. T-C4-023 lost seven of twenty-nine turns to
+`HAIT_GUARD_OBSERVER_BOARD_RECAP`, all defaulting to on
+(`server/src/lib/guardFlags.ts`). The first four each cost Alex a turn; the fifth
+costs it a *reason* to take one, and the sixth decides which of two answers the
+turn gives. T-C4-023 lost seven of twenty-nine turns to
 four different vetoes; which of them earn their cost is a measurement, not an
 argument. Whatever is off is written to every intervention row as
 `disabledGuards` and printed at startup, so a comparison transcript always says
@@ -213,6 +215,33 @@ the turn is still retractable (`ai-typing` is already true); when the timer
 fires, `reservation` clears and `busy` is set, and the turn is committed to
 generation. This is what makes a consecutive AI turn structurally impossible
 rather than merely improbable.
+
+#### Who decides a turn is the board, rendered whole
+
+The exact board recap is assembled from `revealStats` rather than written, so
+something has to authorise it. Three readers claimed to, and T-C2-050 and
+T-C2-051 — the same script, run twice — measured which is stable:
+
+| | 050 | 051 |
+|---|---|---|
+| the Observer's `kind` label | `complete_all_candidates` | `new_information_request` |
+| its `requestedScope` / `source` / `countKind` | whole_board / visible_board / all | identical |
+
+Same words, same prompt, different run, on both summary requests. The label is
+the unstable part of the Observer's output; the scope fields are not. The word
+list was a third reader patching the label, and in 051 it rescued "the whole
+summary … for each candidate" and had no word for "can you give us a summary?" —
+so seq 47 fell through to generation, the model wrote the recap from the
+transcript, `A_n4` went missing though it had been on the board since seq 39, and
+the whole-board answer opened with "You meant Candidate B".
+
+`observerAskedForTheWholeBoard` now decides it from the scope fields alone, and
+the word list no longer has to agree. `source` is what keeps it narrow, and it is
+the Observer's own documented distinction: rendering what the group has said is
+`visible_board`, while "do you have any new insight" is `known_profile` and never
+reaches the recap. Across the fifteen requests in the two sessions it fires on
+four, and on exactly the four that asked for the board. Behind
+`HAIT_GUARD_OBSERVER_BOARD_RECAP`; `test:intervention-v2` pins all fifteen.
 
 #### Where Alex's lean is decided
 

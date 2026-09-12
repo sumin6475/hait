@@ -6,7 +6,63 @@ made. Today that decision is taken twice — once by the Observer, once by a set
 regular expressions — and the deterministic board recap fires only when the two
 agree.
 
-**Status:** needs-triage
+**Status:** ready-for-human — built 2026-09-12 behind
+`HAIT_GUARD_OBSERVER_BOARD_RECAP`, but **not the way this issue proposed**. The
+premise below turned out to be wrong; see the correction.
+
+## Correction, 2026-09-12: there are three readers, and the label is the loose one
+
+This issue was written believing the Observer read the request correctly and the
+word list did not. T-C2-051 disproved the first half.
+
+T-C2-050 and T-C2-051 ran the same script. On both summary requests the
+Observer's `kind` label came back differently between the two runs, while the
+three fields describing the same request were identical in both:
+
+| message | 050 label | 051 label | scope / source / count, both runs |
+| --- | --- | --- | --- |
+| "the whole summary we've discussed for each candidate?" | `complete_all_candidates` | `new_information_request` | whole_board / visible_board / all |
+| "Alex can you give us a summary?" | `complete_all_candidates` | `new_information_request` | whole_board / visible_board / all |
+
+So the structure is not "two readers, one of which is a word list". It is **one
+stable signal with an unstable label on top of it and a word list on top of
+that**. The word list was patching the label, which is why every patch bought one
+session: it was never the reading that was wrong.
+
+**T-C2-051 seq 47** is what the gap costs when nothing rescues the label. "Alex
+can you give us a summary?" has no word the list carries, the bypass refused, and
+the turn went to generation. The model wrote the recap from the transcript:
+`A_n4` is missing, though it entered the board at seq 39, and the whole-board
+answer opens with "You meant Candidate B" from the request-scope block. Fifteen
+messages earlier the same participant asked the same thing in more words and got
+the exact board.
+
+## What was built instead
+
+`observerAskedForTheWholeBoard` reads the Observer's own scope fields —
+`requestedScope: whole_board`, `source: visible_board`, `countKind: all` — and
+the word list no longer has to agree for the recap to fire. The scope now travels
+inside `requestIntent` so the stage that reads the intent has the scope and the
+source on one object.
+
+The brake this issue said must be replaced is already inside those fields, and it
+is the Observer's own documented distinction rather than a new rule: rendering
+what the group has said is `visible_board`; "do you have any new insight" is
+`known_profile` and never reaches the recap. `requestedScope` separates the
+remaining case, "is there information that either of you have that I don't" —
+`visible_board`, but scoped to `multiple_candidates`.
+
+Across the fifteen requests in the two sessions it fires on four, and on exactly
+the four that asked for the board. All fifteen are pinned in
+`test:intervention-v2`.
+
+**Not built: the Judge naming the shape.** The plan below asked for a new Judge
+output field, on the reasoning that the Judge reads the message and a word list
+does not. That reasoning still holds against the *word list*. It does not hold
+against the scope fields, because the Judge is the same kind of reader as the
+label that flipped, and nothing has measured its stability. If the scope fields
+turn out to drift the way the label did, the Judge is the next move and this
+section is the evidence it would need.
 
 ## The defect, as observed
 

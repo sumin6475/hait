@@ -188,11 +188,22 @@ type ParsedObservation = z.infer<typeof CONVERSATION_OBSERVER_OUTPUT_SCHEMA>;
  * unbounded accumulator.
  */
 // Older saved observations and replay fixtures predate these semantic fields.
+/**
+ * The Observer's reading of the request, carrying the scope it reported for the
+ * same turn. The model does not emit `requestedScope` inside the intent — the
+ * schema above is unchanged — it is attached during normalization from the
+ * observation's own field, so that the stage reading the intent has the scope
+ * and the source on one object. `observerAskedForTheWholeBoard` needs both.
+ */
+export type ObservedRequestIntent = NonNullable<ParsedObservation["requestIntent"]> & {
+  requestedScope?: ParsedObservation["requestedScope"];
+};
+
 export type ConversationObserverResult = Omit<
   ParsedObservation,
   "requestIntent" | "opportunityTransitions"
-> &
-  Partial<Pick<ParsedObservation, "requestIntent" | "opportunityTransitions">>;
+> & { requestIntent?: ObservedRequestIntent | null } &
+  Partial<Pick<ParsedObservation, "opportunityTransitions">>;
 export type ObserverRequestedScope = ConversationObserverResult["requestedScope"];
 export type ObserverRequestExplicitness = ConversationObserverResult["requestExplicitness"];
 
@@ -503,7 +514,14 @@ export function normalizeConversationObservation(
     focusBasis: threadScope.includes(focusCandidate as Candidate) ? focusBasis : "none",
     requestedScope: normalizedRequestedScope,
     requestExplicitness,
-    requestIntent,
+    // The scope travels inside the intent as well as beside it, because the
+    // intent is what an opportunity carries forward and what later stages read.
+    // `observerAskedForTheWholeBoard` needs the scope on the same object as the
+    // source, and reading it off two places is how the `kind` label and the word
+    // list came to disagree in the first place.
+    requestIntent: requestIntent
+      ? { ...requestIntent, requestedScope: normalizedRequestedScope }
+      : requestIntent,
     // Holding the next human floor and declaring a transition at the same time
     // are structurally incompatible. Resolve this deterministically instead of
     // letting a probabilistic observer create an unsafe opening.

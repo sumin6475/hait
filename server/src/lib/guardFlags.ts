@@ -1,7 +1,9 @@
 /**
  * Guards that can be switched off for a comparison run.
  *
- * Every flag here silences a check that can cost Alex a turn. They exist so a
+ * Every flag here silences something that changes what a turn may be — four of
+ * them a check that can cost Alex a turn, and the last two a reading that
+ * decides what the turn is for. They exist so a
  * session can be run twice — once with a check on, once with it off — and the
  * two transcripts compared, instead of arguing from one session about whether a
  * check earns its cost. T-C4-023 lost seven of twenty-nine turns to four
@@ -29,7 +31,9 @@ export type GuardFlagName =
   /** Rejecting a Judge decision because its brief is missing or too long. Off: the decision stands and the brief is used as-is. */
   | "judgeBrief"
   /** Refusing to open a request addressed to Alex from an implicit proposal. Off: an ordinary opinion opens one, as before. */
-  | "implicitRequest";
+  | "implicitRequest"
+  /** Reading the Observer's own scope fields to authorise the exact board recap. Off: the word list has to agree, as before. */
+  | "observerBoardRecap";
 
 const ENV_KEY: Record<GuardFlagName, string> = {
   outputScope: "HAIT_GUARD_OUTPUT_SCOPE",
@@ -37,9 +41,17 @@ const ENV_KEY: Record<GuardFlagName, string> = {
   humanFloor: "HAIT_GUARD_HUMAN_FLOOR",
   judgeBrief: "HAIT_GUARD_JUDGE_BRIEF",
   implicitRequest: "HAIT_GUARD_IMPLICIT_REQUEST",
+  observerBoardRecap: "HAIT_GUARD_OBSERVER_BOARD_RECAP",
 };
 
-const ALL: GuardFlagName[] = ["outputScope", "cooldown", "humanFloor", "judgeBrief", "implicitRequest"];
+const ALL: GuardFlagName[] = [
+  "outputScope",
+  "cooldown",
+  "humanFloor",
+  "judgeBrief",
+  "implicitRequest",
+  "observerBoardRecap",
+];
 
 // "off", "0", "false", "no" all disable. Anything else — including an unset
 // variable — leaves the guard on.

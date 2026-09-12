@@ -36,6 +36,7 @@ import {
   widenRequestIntent,
   buildRouteUserContext,
   classifyRequestIntent,
+  observerAskedForTheWholeBoard,
   forbidsQuestionOutput,
   decidePreferenceFromKnownCoverage,
   deriveFocusDepthState,
@@ -2406,6 +2407,100 @@ assert.equal(
   "internal_metadata_leak",
   "a metadata leak still leads, because it is the class that makes a message unusable",
 );
+
+// [Issue 27] Who decides that a turn is the board, rendered whole.
+//
+// Three readers claimed to: the Observer's `kind` label, a list of regular
+// expressions, and the Observer's scope fields. T-C2-050 and T-C2-051 ran the
+// same script, and measured which of them is stable. On both summary requests
+// the label came back `complete_all_candidates` in 050 and
+// `new_information_request` in 051 — same words, same prompt, different run —
+// while `requestedScope`, `source` and `countKind` were identical across both.
+//
+// In 051 the word list rescued the first request ("each candidate" matches) and
+// had no word for the second, so seq 47 fell through to generation and the model
+// wrote the recap from the transcript: `A_n4` went missing, though it had been
+// on the board since seq 39, and the whole-board answer opened with "You meant
+// Candidate B". A recap is assembled from the board because it has to be exact.
+//
+// Every request from both sessions is below, with the reading each was recorded
+// with. Four are the board; the other eleven are not, and `source` and
+// `requestedScope` are what separate them.
+{
+  const observed = (
+    kind: string,
+    requestedScope: string,
+    source: string,
+  ) => ({ kind, candidate: null, source, countKind: "all", requestedScope }) as any;
+
+  const cases: [string, string, ReturnType<typeof observed>, boolean][] = [
+    // T-C2-051
+    ["051 seq 16", "Alex- Do you have any new insight?", observed("new_information_request", "whole_board", "known_profile"), false],
+    ["051 seq 19", "Alex - I want you to add about A", observed("new_information_request", "single_candidate", "known_profile"), false],
+    ["051 seq 35", "the whole summary we've discussed for each candidate?", observed("new_information_request", "whole_board", "visible_board"), true],
+    ["051 seq 37", "why do you think D is the best?", observed("new_information_request", "single_candidate", "visible_board"), false],
+    ["051 seq 45", "is there information that either of you have that I don't have", observed("new_information_request", "multiple_candidates", "visible_board"), false],
+    ["051 seq 47", "Alex can you give us a summary?", observed("new_information_request", "whole_board", "visible_board"), true],
+    // T-C2-050 — the same script, the label different on the two that matter
+    ["050 seq 14", "Alex- Do you have any new insight?", observed("new_information_request", "whole_board", "known_profile"), false],
+    ["050 seq 32", "the whole summary we've discussed for each candidate?", observed("complete_all_candidates", "whole_board", "visible_board"), true],
+    ["050 seq 34", "why do you think D is the best?", observed("compare_request", "multiple_candidates", "visible_board"), false],
+    ["050 seq 42", "is there information that either of you have that I don't have", observed("new_information_request", "multiple_candidates", "visible_board"), false],
+    ["050 seq 44", "Alex can you give us a summary?", observed("complete_all_candidates", "whole_board", "visible_board"), true],
+  ];
+  for (const [where, message, intent, expected] of cases) {
+    assert.equal(
+      observerAskedForTheWholeBoard(intent),
+      expected,
+      `${where}: "${message}"`,
+    );
+  }
+  // The label is not read. Both summary requests fire on either label, which is
+  // the whole point — the two runs disagreed about the label and agreed about
+  // everything else.
+  assert.equal(
+    observerAskedForTheWholeBoard(observed("new_information_request", "whole_board", "visible_board")),
+    observerAskedForTheWholeBoard(observed("complete_all_candidates", "whole_board", "visible_board")),
+    "the same request fires the same way under either label the Observer gave it",
+  );
+  // "Do you have any new insight" is whole_board too, and must never reach the
+  // recap. `source` is the Observer's own documented separator: a request to
+  // render what the group has said is visible_board; a request for what Alex
+  // knows is known_profile.
+  assert.equal(
+    observerAskedForTheWholeBoard(observed("complete_all_candidates", "whole_board", "known_profile")),
+    false,
+    "asking what Alex knows is not asking for the board",
+  );
+  // A count request for one side of the board is not the board.
+  assert.equal(
+    observerAskedForTheWholeBoard({
+      kind: "known_count_request",
+      candidate: null,
+      source: "visible_board",
+      countKind: "misses",
+      requestedScope: "whole_board",
+    } as any),
+    false,
+  );
+  assert.equal(observerAskedForTheWholeBoard(null), false);
+  assert.equal(observerAskedForTheWholeBoard(undefined), false);
+  // A lexical reading carries no scope, so it can never authorise the recap on
+  // its own — which is the reader being retired from this decision.
+  assert.equal(
+    observerAskedForTheWholeBoard(classifyRequestIntent("Alex can you give us a summary?")),
+    false,
+    "the word list does not decide this any more, in either direction",
+  );
+  // And the comparison build still requires the word list to agree.
+  process.env.HAIT_GUARD_OBSERVER_BOARD_RECAP = "off";
+  assert.equal(
+    observerAskedForTheWholeBoard(observed("new_information_request", "whole_board", "visible_board")),
+    false,
+    "with the guard off the Observer's scope fields authorise nothing",
+  );
+  delete process.env.HAIT_GUARD_OBSERVER_BOARD_RECAP;
+}
 
 // [RequestIntent] 분류기 단위 판정표 — 표면 문장 추가가 아니라 카테고리 흡수 확인.
 assert.deepEqual(classifyRequestIntent("Can you give me all traits of Candidate B?"), {

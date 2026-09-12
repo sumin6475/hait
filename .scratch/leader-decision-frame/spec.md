@@ -147,6 +147,19 @@ nothing computes that.
 - **What must not move.** The same fixed points as everything else here: no
   change to when Alex speaks, and the peer receives none of it.
 
+**Ask Sumin before building any of it.** "Moving the group toward a decision" is
+a treatment, and whether to add it is not a call to make from the code. The
+question to put, in these terms: *the Chair's role goal already says "guide the
+group toward a well-considered collective decision", but no move implements it —
+do we build moves for it and declare it as a treatment the way issue 05 is
+declared, or do we leave the goal without moves and let the Chair's difference
+stay in what it says rather than in what it does?* Raised 2026-09-12 and deferred
+to the session after T-C2-052.
+
+The empty slot is observable: T-C2-051 seq 41 and 34 read "state a clear ranking
+or pick between A and B now". With no facts left and a goal to reach a decision,
+an imperative is the only move the design leaves.
+
 **Not scheduled.** No session has yet run long past `live` emptying, so the late
 gap is derived from the shape of the code rather than from an observed failure.
 Measure it first: on the next session, read what Alex does on the turns after the

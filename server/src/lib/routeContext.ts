@@ -1,4 +1,5 @@
 import { contributesToBoard, type CommunicativeAct, type ConditionCode, type RouteKind } from "../types.js";
+import { guardEnabled } from "./guardFlags.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { currentTopicCandidate } from "./poolingTally.js";
@@ -1024,6 +1025,13 @@ export type RequestIntentKind =
 // ALEX_Z_IDS. Status manipulation must not change factual answer competence.
 export type RequestSource = "alex_notes" | "visible_board" | "known_profile";
 export type RequestCountKind = "matches" | "misses" | "all";
+/** How wide the request is, as the Observer reported it. Absent on a lexical reading. */
+export type RequestScopeReading =
+  | "none"
+  | "single_point"
+  | "single_candidate"
+  | "multiple_candidates"
+  | "whole_board";
 
 export interface RequestIntent {
   kind: RequestIntentKind;
@@ -1031,6 +1039,49 @@ export interface RequestIntent {
   candidates?: Cand[];
   source: RequestSource;
   countKind?: RequestCountKind;
+  requestedScope?: RequestScopeReading;
+}
+
+/**
+ * Whether the Observer itself said this turn asks for the whole board as it
+ * stands — the request the exact recap exists to answer.
+ *
+ * Read from the Observer's scope fields rather than from its `kind` label,
+ * because the label is the unstable part of its output. T-C2-050 and T-C2-051
+ * ran the same script, and on both of these messages the label came back
+ * different between the two runs while the three fields below were identical:
+ *
+ * | message | 050 | 051 |
+ * | --- | --- | --- |
+ * | "the whole summary we've discussed for each candidate?" | complete_all_candidates | new_information_request |
+ * | "Alex can you give us a summary?" | complete_all_candidates | new_information_request |
+ *
+ * In T-C2-051 a word list rescued the first (it matches "each candidate") and
+ * could not rescue the second, so seq 47 fell through to generation and the
+ * model wrote the recap from the transcript: it dropped `A_n4`, which had been
+ * on the board since seq 39, and prefixed the whole-board answer with "You meant
+ * Candidate B". A recap has to be exact, which is why it is assembled from the
+ * board rather than written.
+ *
+ * `source` is what keeps this narrow, and it is the Observer's own documented
+ * distinction: a request to render what the group has said is `visible_board`,
+ * while "do you have any new insight" is `known_profile` and must not reach the
+ * recap. `requestedScope` is what separates a whole-board ask from
+ * "is there information either of you have that I don't", which the Observer
+ * read as `visible_board` but scoped to `multiple_candidates`. Across the
+ * sixteen requests in the two sessions this fires on four and only on the four
+ * that asked for the board.
+ */
+export function observerAskedForTheWholeBoard(
+  intent: RequestIntent | null | undefined,
+): boolean {
+  if (!guardEnabled("observerBoardRecap")) return false;
+  if (!intent) return false;
+  return (
+    intent.requestedScope === "whole_board" &&
+    intent.source === "visible_board" &&
+    (intent.countKind ?? "all") === "all"
+  );
 }
 
 export const NO_REQUEST_INTENT: RequestIntent = {
@@ -2029,9 +2080,22 @@ export function buildRouteUserContext(input: {
           : NO_REQUEST_INTENT,
       )
     : (input.requestIntentOverride ?? lexicalIntent);
-  const requestIntent = requestReadable
+  // The Observer's own scope fields decide a whole-board recap, over its `kind`
+  // label and over the word list — see `observerAskedForTheWholeBoard` for the
+  // two runs that measured which of the three is stable.
+  const observerWholeBoard =
+    requestReadable && observerAskedForTheWholeBoard(input.selectedOpportunity?.requestIntent);
+  const widenedIntent = requestReadable
     ? widenRequestIntent(observedIntent, lexicalIntent)
     : NO_REQUEST_INTENT;
+  const requestIntent: RequestIntent = observerWholeBoard
+    ? {
+        ...widenedIntent,
+        kind: "complete_all_candidates",
+        candidate: null,
+        candidates: [...CANDIDATES],
+      }
+    : widenedIntent;
   const focusControlOverridden = Boolean(input.selectedOpportunity) || requestOverridesFocusControl(
     input.routeKind,
     anchor,
@@ -2121,7 +2185,10 @@ export function buildRouteUserContext(input: {
     // no list request at all — routed to the board recap. The deterministic
     // bypass now requires both readings to agree; disagreement falls through to
     // generation, never to a wider template.
-    (!declineTakesPrecedence && lexicalIntent.kind === requestIntent.kind
+    // The agreement check stands for every other reading. It does not stand over
+    // the Observer's scope fields, because agreement with a word list is not
+    // evidence about a message the word list has no word for.
+    (!declineTakesPrecedence && (observerWholeBoard || lexicalIntent.kind === requestIntent.kind)
       ? deterministicCompleteResponse({
           language: input.language,
           intent: requestIntent,
