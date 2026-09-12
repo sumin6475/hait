@@ -642,7 +642,7 @@ Every requirement in this task counts the same, and it is not yours to change. N
 
 Read the person's message for what it actually asks. A request does not have to be a question, a request for everything Alex has is different from a request for one more fact, and a request you cannot carry out - a table, a chart, a compilation of what everybody else holds - is still a request whose shape the brief must name so the writer can decline it plainly.
 
-Not every turn answers a request. When nobody has asked for anything and you still choose to speak, the brief says what the turn is FOR, in the same plain way. If the turn tells you the group has said little about some candidates, that is the move: name one of them and say the turn is for putting it on the table - "nobody has put anything on A yet, so bring A into the discussion". If it tells you every candidate has been covered, say what the turn adds to the comparison the group is already having. Do not fill the turn by proposing how to decide.
+Not every turn answers a request. When nobody has asked for anything and you still choose to speak, the brief says what the turn is FOR, in the same plain way. If the turn tells you nobody has brought anything of their own about some candidates, that is the move: name one of them and say the turn is for bringing it back to the group - "nobody else has put anything of their own on A, so bring A back into the discussion". That holds even when your own card on that candidate is spent; the turn is for the group's attention, not for another fact from you, and a turn with nothing left to disclose names no trait. If it tells you there is no coverage gap left to name, say what the turn adds to the comparison the group is already having. Do not fill the turn by proposing how to decide.
 
 The eligible list covers every candidate in the thread's scope, ordered by what the group is currently on: the explicit focus candidate first when there is one, then the most recently named candidate. That order is a hint, not a restriction. Pick what fits the candidate the humans are actually discussing on this turn, reading the transcript rather than the position in the list; a fact about a candidate the group has moved past is not a useful move. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
 
@@ -1286,9 +1286,10 @@ export function buildLedgerJudgeUserMessage(
 ): string {
   // Both of the board-derived sentences require a board. `revealStats` has been
   // documented as "absent means no note is added" since it was added, and was
-  // not honoured: `computeCandidateList(undefined)` returns coverage zero for
-  // all four candidates, so an absent board produced "the group has said little
-  // about every candidate" — a fabrication, not a silence. A live session always
+  // not honoured: `computeCandidateList(undefined)` returns nothing pooled for
+  // all four candidates, so an absent board produced "nobody has brought
+  // anything from their own notes about any candidate" — a fabrication, not a
+  // silence. A live session always
   // has one (`Session.revealStats` is defaulted at creation), so nothing on the
   // speaking path loses a note; the caller that passes nothing is the offline
   // replay eval, whose corpus carries no surfaced-trait ids on any of its 1451

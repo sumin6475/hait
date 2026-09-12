@@ -1079,8 +1079,59 @@ assert.match(
 );
 assert.match(
   LEDGER_JUDGE_SYSTEM,
-  /nobody has put anything on A yet, so bring A into the discussion/,
+  /nobody else has put anything of their own on A, so bring A back into the discussion/,
 );
+// The example has to say "of their own", because the sentence it answers does.
+// Since `docs/adr/0011` a candidate stays on the list until a human pools
+// something about it, so Alex can have emptied its whole card on a candidate the
+// list still names — T-C2-051 said everything it held about A at seq 17 and A
+// stayed live to seq 39. A brief reading "nobody has put anything on A yet"
+// would be false on that turn, and a Judge acting on it would look for a trait
+// to disclose and find none, which is the T-C2-050 seq 19 failure the card note
+// exists for. So the rule says the turn is for the group's attention and names
+// no trait.
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /even when your own card on that candidate is spent/,
+);
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /a turn with nothing left to disclose names no trait/,
+);
+// And the wording tracks what the server actually sends. The coverage sentence
+// says "Nobody has brought anything from their own notes about …"; a rule
+// describing a different sentence is a rule about a build nobody ships.
+{
+  const boardWithOnePooled = {
+    byCandidate: {
+      A: { revealedIds: [] },
+      B: { revealedIds: ["B_n1"] },
+      C: { revealedIds: [] },
+      D: { revealedIds: [] },
+    },
+    aiSurfacedIds: [] as string[],
+  };
+  const sentence = leaderCoverageNote("C2", boardWithOnePooled)!;
+  assert.match(sentence, /Nobody has brought anything from their own notes about/);
+  assert.match(
+    LEDGER_JUDGE_SYSTEM,
+    /nobody has brought anything of their own about some candidates/,
+    "the rule names the reading the sentence gives",
+  );
+  assert.match(LEDGER_JUDGE_SYSTEM, /no coverage gap left to name/);
+  assert.match(
+    leaderCoverageNote("C2", {
+      byCandidate: Object.fromEntries(
+        (["A", "B", "C", "D"] as const).map((candidate) => [
+          candidate,
+          { revealedIds: [candidate === "C" ? "C_p2" : `${candidate}_n1`] },
+        ]),
+      ),
+      aiSurfacedIds: [],
+    })!,
+    /There is no coverage gap to name/,
+  );
+}
 assert.match(
   LEDGER_JUDGE_SYSTEM,
   /Do not fill the turn by proposing how to decide/,
