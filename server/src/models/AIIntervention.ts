@@ -280,6 +280,10 @@ const aiInterventionSchema = new mongoose.Schema(
     // this one did not, because the message was already out.
     postBroadcastViolation: { type: String },
     candidateList: { type: candidateListSchema, default: undefined },
+    // The candidates the last stretch of human messages named, absent while the
+    // group still has the whole field in view. Recorded so a completed session
+    // can be re-read against a different window (`interventionJudge`).
+    narrowedCandidates: { type: [String], default: undefined },
     // Internal subject-control audit. These fields are never included in the visible message.
     focusCandidate: { type: String, enum: ["A", "B", "C", "D"] },
     focusBasis: { type: String },

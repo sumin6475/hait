@@ -321,6 +321,7 @@ sessionsRouter.get("/:code/export", requireAdmin, async (req, res) => {
         // The board this turn was taken against. Shadow only: nothing reads it
         // at runtime, and it is here so a session can be read against the bar.
         candidateList: i.candidateList,
+        narrowedCandidates: i.narrowedCandidates,
         // [Issue 17] What the group was still waiting for when this turn went
         // silent. The largest silence class recorded none of it before.
         owedRequestIds: i.owedRequestIds,

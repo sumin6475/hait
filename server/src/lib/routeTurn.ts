@@ -34,6 +34,7 @@ import { contributesToBoard } from "../types.js";
 import { log } from "./log.js";
 import { allSurfacedIds } from "./informationPools.js";
 import { computeCandidateList } from "./candidateList.js";
+import { humanNarrowedCandidates } from "./interventionJudge.js";
 import {
   generateScopedRouteMessage,
   outputScopeViolation,
@@ -355,6 +356,17 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   // by nothing — see the shadow-only assertion in test-intervention-v2.
   const candidateListAudit = {
     candidateList: computeCandidateList((session as any).revealStats),
+    // What the humans had been naming lately, recorded so a session can be
+    // re-read against a different window than the one the Judge was given.
+    narrowedCandidates:
+      humanNarrowedCandidates(
+        docs.map((message: any) => ({
+          seq: message.seq,
+          senderRole: message.senderRole,
+          speaker: message.sender,
+          content: message.content ?? "",
+        })),
+      ) ?? undefined,
   };
   const focusDepthAudit = {
     focusCandidate: context.focusDepthState.candidate ?? undefined,

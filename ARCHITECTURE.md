@@ -243,6 +243,42 @@ reaches the recap. Across the fifteen requests in the two sessions it fires on
 four, and on exactly the four that asked for the board. Behind
 `HAIT_GUARD_OBSERVER_BOARD_RECAP`; `test:intervention-v2` pins all fifteen.
 
+#### What the group has narrowed to
+
+`humanNarrowedCandidates` reports which candidates the last five human messages
+named, and returns nothing until every candidate has been named by a human at
+least once. Alex's own messages are not counted. It reaches the Judge as one line
+beside the other turn facts, in every condition, and is recorded on every turn as
+`narrowedCandidates`.
+
+**It reads attention, not intent.** Deciding *why* a candidate left the
+conversation would mean recognising "let's drop C", "it's between A and B" and "C
+is weak so I'd rather not" as one move — a sentence-shape problem with no end,
+and the one this repository has patched a word list three times to learn. What it
+reports instead cannot be wrong: these were named lately and those were not.
+T-C2-051's Candidate C was forgotten rather than rejected, and the leader's move
+is the same either way.
+
+The precondition is what makes it mean narrowing rather than "the discussion has
+not started". All three Chair sessions cross it within two messages of each other
+(seqs 22, 24, 25) and read identically after it: three candidates, then two.
+
+| | first narrowing | second |
+|---|---|---|
+| T-C2-050 | seq 27 → A, B, D | seq 42 → A, B |
+| T-C2-051 | seq 30 → A, B, D | seq 45 → A, B |
+| T-C2-052 | seq 31 → A, B, D | seq 47 → A, B |
+
+The window is chosen, not derived: at four the reading flickers, at five and six
+it does not and the two agree on every transition. It is recorded per turn for the
+same reason `coverage` still is — so a completed session can be re-read against a
+different one.
+
+Paired with the coverage sentence, this is the leader move
+`.scratch/leader-decision-frame/issues/04` left unbuilt: when the group has
+stopped naming a candidate nobody has pooled anything about, the Chair may say so
+once and then accept their answer.
+
 #### The Chair's board recap
 
 `recap` is a communicative act in the leader schema and not in the member one, the

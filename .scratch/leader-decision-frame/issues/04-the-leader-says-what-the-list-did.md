@@ -4,7 +4,9 @@
 
 **Blocked by:** 03.
 
-**Status:** needs-triage
+**Status:** ready-for-human — the second move landed 2026-09-13. The first
+(naming an uncovered candidate) landed 2026-09-10; the third (raising a shortfall
+at the close) is not built.
 
 ## The three moves
 
@@ -60,3 +62,29 @@ the manipulation check reads that number.
 - [ ] The shortfall is raised once per narrowing and once per close attempt, and not repeated when the group proceeds
 - [ ] No generated message states or implies that a candidate is out of contention
 - [ ] No peer route gains any of the three
+
+
+## Move 2, built 2026-09-13
+
+**Raising the shortfall once, when the group narrows.**
+
+The blocker was that nothing computed "the group has narrowed" — the concept
+existed only as a sentence in the Judge's prompt and a comment saying the model
+should read it off the transcript. `humanNarrowedCandidates` now derives it from
+the last five human messages, deterministically, and it reaches the Judge as
+`- Where the group is: …`.
+
+Paired with the coverage sentence, the move is: when the group has stopped naming
+a candidate nobody has brought anything of their own about, say so once, plainly,
+as a fact about what is still unheard — and then accept their answer. The bound is
+in the prompt beside the move: "a second turn spent on the same candidate is
+pushing, not leading."
+
+**Not enforced in code.** "Once" is a prompt rule here, unlike the recap's
+once-a-session, which is a whole turn and is tracked. A clause inside a turn is
+not, and whether the model keeps to it is the thing the next session measures.
+
+On the three completed Chair sessions the first narrowing lands at seq 27/30/31
+(C drops out) and the second at 42/45/47 (D drops out). In all three, C is the
+pooled answer and nobody had brought anything of their own about it — so all three
+would have had exactly one legitimate move at the first narrowing.

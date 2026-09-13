@@ -36,6 +36,9 @@ import {
   currentRequiredOpportunityIdsFor,
   alexPreferenceNote,
   exhaustedCandidateNote,
+  groupNarrowingNote,
+  humanNarrowedCandidates,
+  NARROWING_WINDOW_HUMAN_MESSAGES,
   leaderCoverageNote,
   LEDGER_JUDGE_TRAIT_RETRY_RULE_CODES,
   ledgerJudgeRetryMessage,
@@ -759,6 +762,121 @@ assert.match(
     /Nobody has brought anything from their own notes about any candidate so far: A, B, C, D/,
     "Alex emptying its own card leaves every candidate where it was",
   );
+}
+
+// ── What the group has narrowed to ─────────────────────────────────────────
+// Nothing computed this. The concept lived in the Judge's prompt as a sentence
+// and in a comment saying it was the model's to read off the transcript, and the
+// leader frame's late-half moves all hang on it
+// (`.scratch/leader-decision-frame/spec.md`).
+{
+  const human = (seq: number, content: string, who: "humanX" | "humanY" = "humanY") =>
+    ({ seq, senderRole: who, speaker: who, content }) as const;
+  const alex = (seq: number, content: string) =>
+    ({ seq, senderRole: "ai" as const, speaker: "Alex", content }) as const;
+
+  assert.equal(NARROWING_WINDOW_HUMAN_MESSAGES, 5);
+
+  // Until every candidate has been in view, "only B and C have been named" is
+  // the discussion not having started. That early reading is the one that would
+  // have made the note dangerous, so it is a precondition rather than a filter.
+  assert.equal(
+    humanNarrowedCandidates([
+      human(1, "I like Candidate B"),
+      human(2, "Candidate C is weak"),
+      human(3, "B again for me"),
+    ]),
+    null,
+    "two candidates named at the start is not a narrowing",
+  );
+
+  const wholeField = [
+    human(1, "Candidate A looks strong"),
+    human(2, "Candidate B keeps a cool head"),
+    human(3, "Candidate C is not verbally skillful"),
+    human(4, "Candidate D is very resilient"),
+  ];
+  // All four in view and all four still being named: nothing to report.
+  assert.equal(humanNarrowedCandidates(wholeField), null);
+
+  // Five more human messages naming only A and B, and the last stretch is A, B.
+  const narrowed = [
+    ...wholeField,
+    human(5, "I think it is between Candidate A and Candidate B"),
+    human(6, "Candidate A's organisation matters"),
+    human(7, "Candidate B is more reliable"),
+    human(8, "still Candidate B for me"),
+    human(9, "Candidate A though"),
+  ];
+  assert.deepEqual(humanNarrowedCandidates(narrowed), ["A", "B"]);
+  assert.equal(
+    groupNarrowingNote(narrowed),
+    "The last stretch of the discussion has named only Candidate A and Candidate B.",
+  );
+  assert.doesNotMatch(groupNarrowingNote(narrowed)!, /\d/, "no number reaches the Judge");
+
+  // Alex naming a candidate does not keep it in the room. A group has not stayed
+  // wide because Alex kept talking about D.
+  assert.deepEqual(
+    humanNarrowedCandidates([
+      ...narrowed,
+      alex(10, "Candidate C and Candidate D are still on the table"),
+      alex(11, "Candidate D can concentrate very well"),
+    ]),
+    ["A", "B"],
+    "Alex's own messages are not the group's attention",
+  );
+
+  // It reads attention, not intent. A candidate that was forgotten reads the
+  // same as one that was argued away, and the leader's move is the same — that
+  // is the whole reason this is not a sentence matcher.
+  assert.deepEqual(
+    humanNarrowedCandidates([
+      ...wholeField,
+      human(5, "Candidate A is organised"),
+      human(6, "Candidate B is reliable"),
+      human(7, "Candidate A again"),
+      human(8, "Candidate B's tone is a problem"),
+      human(9, "I still prefer Candidate A"),
+    ]),
+    ["A", "B"],
+    "nobody said 'let us drop C' and it makes no difference",
+  );
+
+  // Condition-blind, and it needs no board. Which candidates the room is talking
+  // about is visible to every condition's Alex in the transcript already.
+  for (const conditionCode of ["C1", "C2", "C3", "C4"] as const) {
+    assert.match(
+      buildLedgerJudgeUserMessage({
+        messages: narrowed as any,
+        state: twoRequests,
+        cooldownAvailable: true,
+        backchannelAvailable: true,
+        eligibleTraitIds: [],
+        conditionCode,
+      }),
+      /- Where the group is: The last stretch of the discussion has named only Candidate A and Candidate B\./,
+    );
+  }
+  // And nothing is said while the group still has the whole field in view.
+  assert.doesNotMatch(
+    buildLedgerJudgeUserMessage({
+      messages: wholeField as any,
+      state: twoRequests,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode: "C2",
+    }),
+    /- Where the group is:/,
+  );
+
+  // The rule that pairs it with the coverage sentence — this is the leader move
+  // issue 04 left unbuilt, and the bound on it is the half that matters.
+  assert.match(LEDGER_JUDGE_SYSTEM, /which candidates the last stretch of the discussion has named/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /has not been ruled out by anybody/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /Say it once and accept their answer/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /pushing, not leading/);
 }
 
 // ── The Chair's board recap is an act, not a timer ─────────────────────────
