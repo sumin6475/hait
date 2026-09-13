@@ -1780,7 +1780,7 @@ const standingOpportunity = observerDeltaFromTurn({
 assert.equal(
   standingOpportunity.opportunityProposals.length,
   1,
-  "an unserved persistent thread participation requirement creates a stable opportunity",
+  "a persistent thread still creates one stable opportunity",
 );
 assert.deepEqual(
   standingOpportunity.opportunityProposals[0] && {
@@ -1817,7 +1817,21 @@ const requiredStandingSelection = validateConversationLedgerJudgeDecision({
   transcriptSeqs: new Set([1, 4, 9, 12]),
 });
 assert.equal(requiredStandingSelection.ok, true);
-assert.ok(
+// The opportunity stands and is selectable. What it is not is an obligation.
+// `alexParticipation: "required"` used to make this one, and with it came the
+// strongest powers in the ledger: bypass the cooldown unconditionally, never
+// expire, never be swept, and the Judge may not stay silent on it. The field is
+// a coin flip — the same script gave "invited" against "required" 8:19 in
+// T-C2-050, 19:9 in T-C2-051 and 2:27 in T-C2-052 — and this branch mints from a
+// thread being open rather than from anybody asking. An obligation to answer
+// comes from somebody asking Alex, which the speech act and the addressee
+// settle. Staying silent here is now a choice the Judge is allowed to make.
+assert.equal(
+  standingReduced.state.opportunities.find((item) => item.id === standingId)!.expectation,
+  "invited",
+  "a thread does not oblige Alex to speak, however involved a model thinks Alex is",
+);
+assert.equal(
   validateConversationLedgerJudgeDecision({
     decision: {
       decision: "silent",
@@ -1833,6 +1847,17 @@ assert.ok(
     eligibleTraitIds: [],
     transcriptSeqs: new Set([1, 4, 9, 12]),
   }).ruleCodes.includes("current_required_opportunity_not_selected"),
+  false,
+);
+// And it no longer speaks through the cooldown. A request put to the room waits
+// its turn, which is what the group-request assertions above already said for
+// the branch that reads an explicit address.
+assert.equal(
+  opportunityMayBypassCooldown(
+    { ...standingReduced.state, foregroundThreadId: "candidate-comparison" },
+    standingReduced.state.opportunities.find((item) => item.id === standingId)!,
+  ),
+  false,
 );
 const standingConsumed = withOpportunityTransition(standingReduced.state, {
   opportunityId: standingId,

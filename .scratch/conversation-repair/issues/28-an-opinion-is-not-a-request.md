@@ -109,3 +109,37 @@ should come back as `follow`, and the question is whether they take up the human
 point. The guard also does not reach the Judge's serialized ledger, which still
 carries the thread's requested action as a field — worth reading in the new
 briefs.
+
+## Follow-on, 2026-09-13: an obligation is not a guess either
+
+The same shape one field over. `alexParticipation` on the thread decided whether a
+group request was `required`, and `required` carries the strongest powers in the
+ledger — unconditional cooldown bypass, no expiry, never swept, and the Judge may
+not stay silent on one opened this turn.
+
+The field is noise. The same script across three runs:
+
+| | invited | required |
+| --- | ---: | ---: |
+| T-C2-050 | 8 | 19 |
+| T-C2-051 | 19 | 9 |
+| T-C2-052 | 2 | 27 |
+
+Across all three it minted three `required` opportunities in total (050 seq 36,
+052 seqs 1 and 13). Every other `required` in those sessions came from a
+`direct_question`, which reads the speech act and the addressee.
+
+**T-C2-052 seq 2 is what it cost.** Alex's own greeting opened a thread the
+Observer happened to read as `required` that run, so the opportunity bypassed the
+cooldown and Alex spoke one message after its own greeting. T-C2-051 read the same
+thread as `invited` and waited. Nothing in the transcript differed. Intervention
+timing is held constant across conditions, so a coin flip deciding it is not a
+limitation to record — it breaks the comparison's premise.
+
+Group requests are now always `invited`. An obligation to answer comes from
+somebody asking Alex.
+
+**No guard flag.** The other pacing changes get one so a paired run can measure
+them; this one cannot be measured that way, because the build it would be measured
+against decides by coin flip. T-C2-050, 051 and 052 are the baseline, and what
+changes is three opportunities across them.

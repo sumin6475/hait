@@ -346,6 +346,24 @@ the Chair's Judge input; peers receive null from the same function, which is the
 status manipulation and not an optimisation. `test:intervention-v2` pins the set
 of files allowed to read the list at all.
 
+#### What obliges Alex to answer
+
+A `required` opportunity is the strongest object in the ledger: it bypasses the
+cooldown unconditionally, never expires, is never swept by the supersede-on-answer
+rule, and the Judge may not stay silent on one opened this turn.
+
+**Only a question addressed to Alex produces one.** It used to also come from the
+Observer's `alexParticipation` on the thread, and that field is a coin flip — the
+same script gave "invited" against "required" 8:19 in T-C2-050, 19:9 in T-C2-051
+and 2:27 in T-C2-052. Across those three sessions it minted exactly three
+`required` opportunities; every other one came from the speech act. T-C2-052 seq 2
+is the visible cost: Alex answered one message after its own greeting, where
+T-C2-051 waited on the cooldown, and nothing in the transcript differed.
+
+A request put to the room is an `invitation` and waits its turn. That was already
+the tested behaviour for the branch reading an explicit address; it now holds for
+the group and thread-continuation branches too.
+
 #### What opens a request
 
 A question addressed to Alex or to the room opens one. A proposal opens one only

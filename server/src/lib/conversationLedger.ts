@@ -551,8 +551,18 @@ export function observerDeltaFromTurn(input: {
     opportunity = {
       threadId,
       kind: "group_request",
-      expectation:
-        observedThread?.alexParticipation === "required" ? "required" : "invited",
+      // Invited, always. An obligation to answer comes from somebody asking
+      // Alex, which the speech act and the addressee already settle above; it
+      // does not come from a model's guess at how involved Alex is in a thread.
+      // `alexParticipation` was that guess and it is a coin flip: the same
+      // script gave "invited" 8 times against "required" 19 in T-C2-050, 19
+      // against 9 in T-C2-051, and 2 against 27 in T-C2-052. What it bought was
+      // the strongest powers in the ledger - a `required` opportunity bypasses
+      // the cooldown unconditionally, cannot expire, is never swept, and the
+      // Judge may not stay silent on one opened this turn. T-C2-052 seq 2 is the
+      // visible cost: Alex answered one message after its own greeting, where
+      // T-C2-051 waited, and nothing in the transcript differed.
+      expectation: "invited",
       sourceRole: input.sourceRole,
       opportunitySourceSeq: input.currentTriggerSeq,
       originActor: input.sourceRole,
@@ -606,7 +616,10 @@ export function observerDeltaFromTurn(input: {
     opportunity = {
       threadId,
       kind: "group_request",
-      expectation: observedThread.alexParticipation === "required" ? "required" : "invited",
+      // Same rule, and this branch needs it more: it mints an opportunity from a
+      // thread being open rather than from anybody asking, so an obligation here
+      // would be the system's strongest claim resting on its weakest evidence.
+      expectation: "invited",
       sourceRole: input.sourceRole,
       opportunitySourceSeq: originSeq,
       originActor: input.threadOriginActor ?? (originSeq < input.currentTriggerSeq ? "alex" : input.sourceRole),
