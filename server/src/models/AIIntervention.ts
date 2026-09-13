@@ -188,7 +188,7 @@ const aiInterventionSchema = new mongoose.Schema(
     judgeEvidence: { type: String },
     communicativeAct: {
       type: String,
-      enum: ["answer", "participate", "follow", "contribute", "acknowledge", "mediate"],
+      enum: ["answer", "participate", "follow", "contribute", "acknowledge", "mediate", "recap"],
     },
     judgeEvidenceSeqs: { type: [Number], default: undefined },
     controllerMode: {

@@ -26,7 +26,9 @@ import {
 } from "../lib/conversationLedger.js";
 import {
   eligibleTraitIdsForLedgerState,
+  ledgerRouteKindForAct,
   ledgerSpeechBlockedByHumanFloor,
+  recapAvailableFor,
 } from "../lib/interventionEngine.js";
 import {
   canonicalizeConversationLedgerJudgeDecision,
@@ -756,6 +758,141 @@ assert.match(
     leaderCoverageNote("C2", alexSaidEverythingItHolds)!,
     /Nobody has brought anything from their own notes about any candidate so far: A, B, C, D/,
     "Alex emptying its own card leaves every candidate where it was",
+  );
+}
+
+// ── The Chair's board recap is an act, not a timer ─────────────────────────
+// [Issue 26 / ADR 0012] `armSummaryIfEligible` set `summaryStatus: "pending"` on
+// five thresholds and the two gates that consumed it were unreachable under the
+// shipped controller. T-C2-052 logged "summary armed" at seq 46 and never
+// summarised. The arming was also arithmetic about *when* Alex speaks, decided
+// outside the Judge and only in leader conditions — the one thing ADR 0001 holds
+// constant. What is left is a move offered on the turns it is Alex's to take.
+{
+  const board = {
+    byCandidate: {
+      A: { revealedIds: ["A_p1"] },
+      B: { revealedIds: [] },
+      C: { revealedIds: [] },
+      D: { revealedIds: [] },
+    },
+    humanConfirmedIds: ["A_p1"],
+    aiSurfacedIds: [] as string[],
+  };
+  // No clock and no message count. A board, a leader, and a recap not yet spent.
+  assert.equal(recapAvailableFor({ conditionCode: "C2", summaryStatus: "not_eligible" }, { revealStats: board }), true);
+  assert.equal(recapAvailableFor({ conditionCode: "C4", summaryStatus: "not_eligible" }, { revealStats: board }), true);
+  // A Member reciting the group's board is the status being contrasted against.
+  assert.equal(recapAvailableFor({ conditionCode: "C1", summaryStatus: "not_eligible" }, { revealStats: board }), false);
+  assert.equal(recapAvailableFor({ conditionCode: "C3", summaryStatus: "not_eligible" }, { revealStats: board }), false);
+  // Once a session. That is a bound on repetition, not on timing.
+  assert.equal(recapAvailableFor({ conditionCode: "C2", summaryStatus: "done" }, { revealStats: board }), false);
+  assert.equal(recapAvailableFor({ conditionCode: "C2", summaryStatus: "generating" }, { revealStats: board }), false);
+  // Nothing to recite is not a recap.
+  assert.equal(recapAvailableFor({ conditionCode: "C2", summaryStatus: "not_eligible" }, { revealStats: undefined }), false);
+
+  // The move is listed beside the others, and only when it is on offer.
+  const promptWith = buildLedgerJudgeUserMessage({
+    messages: [{ seq: 2, senderRole: "humanY" as const, speaker: "Participant Y", content: "m2" }],
+    state: twoRequests,
+    cooldownAvailable: true,
+    backchannelAvailable: true,
+    eligibleTraitIds: [],
+    conditionCode: "C2",
+    recapAvailable: true,
+  });
+  assert.match(promptWith, /- recap: available/);
+  assert.match(
+    buildLedgerJudgeUserMessage({
+      messages: [{ seq: 2, senderRole: "humanY" as const, speaker: "Participant Y", content: "m2" }],
+      state: twoRequests,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode: "C2",
+      recapAvailable: false,
+    }),
+    /- recap: not available/,
+  );
+  // A recap is a voluntary act, so the cooldown governs it like the others.
+  assert.match(
+    buildLedgerJudgeUserMessage({
+      messages: [{ seq: 2, senderRole: "humanY" as const, speaker: "Participant Y", content: "m2" }],
+      state: twoRequests,
+      cooldownAvailable: false,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode: "C2",
+      recapAvailable: true,
+    }),
+    /- recap: not available/,
+  );
+  // A caller that says nothing about the recap is told nothing about it.
+  assert.doesNotMatch(
+    buildLedgerJudgeUserMessage({
+      messages: [{ seq: 2, senderRole: "humanY" as const, speaker: "Participant Y", content: "m2" }],
+      state: twoRequests,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode: "C2",
+    }),
+    /- recap:/,
+  );
+
+  // The schema is the first lock: a Member cannot express the act at all.
+  const asRecap = {
+    decision: "speak",
+    act: "recap",
+    selectedOpportunityId: null,
+    evidence: "conversation_grounded_synthesis",
+    discloseTraitIds: [],
+    focusCandidate: null,
+    brief: "put the board back in front of them",
+    evidenceSeqs: [2],
+  };
+  assert.equal(
+    ledgerJudgeSchemaFor("C1").safeParse(asRecap).success,
+    false,
+    "a Member's schema cannot express recap",
+  );
+  assert.equal(ledgerJudgeSchemaFor("C3").safeParse(asRecap).success, false);
+  assert.equal(ledgerJudgeSchemaFor("C2").safeParse(asRecap).success, true);
+  assert.equal(ledgerJudgeSchemaFor("C4").safeParse(asRecap).success, true);
+  // The routing seam is the second, for any path that hands over a wide decision.
+  assert.equal(ledgerRouteKindForAct("recap", "C2"), "summary");
+  assert.equal(ledgerRouteKindForAct("recap", "C4"), "summary");
+  assert.equal(ledgerRouteKindForAct("recap", "C1"), "build_on");
+  assert.equal(ledgerRouteKindForAct("recap", "C3"), "build_on");
+
+  const recapDecision = {
+    decision: "speak" as const,
+    act: "recap" as const,
+    selectedOpportunityId: null,
+    evidence: "conversation_grounded_synthesis" as const,
+    discloseTraitIds: [] as string[],
+    focusCandidate: null,
+    brief: "put the board back in front of them as it stands",
+    evidenceSeqs: [2],
+  };
+  const validate = (over: Record<string, unknown>, recapAvailable: boolean) =>
+    validateConversationLedgerJudgeDecision({
+      decision: { ...recapDecision, ...over } as any,
+      state: { ...twoRequests, currentTriggerSeq: 2, contextThroughSeq: 2 },
+      eligibleTraitIds: ["A_p1"],
+      transcriptSeqs: new Set([1, 2]),
+      cooldownAvailable: true,
+      recapAvailable,
+    });
+  assert.equal(validate({}, true).ok, true, "an offered recap is accepted");
+  assert.ok(
+    validate({}, false).ruleCodes.includes("recap_unavailable_this_turn"),
+    "a recap nobody offered is rejected",
+  );
+  // The board is recited, never written. A recap that also names a fact would
+  // not contain it — the message is assembled from the board.
+  assert.ok(
+    validate({ discloseTraitIds: ["A_p1"] }, true).ruleCodes.includes("recap_names_a_trait"),
   );
 }
 
@@ -2962,6 +3099,35 @@ assert.equal(
     unflagged,
     [],
     `these modules read the floor without the guard flag: ${unflagged.join(", ")}`,
+  );
+}
+
+// The cooldown had the same shape and nobody had checked it. `guardEnabled` was
+// imported into `interventionEngine.ts` and never called, so the flag reached the
+// veto before the Judge and not the one after it: a run with
+// `HAIT_GUARD_COOLDOWN=off` would have lost turns to a check its own record said
+// was disabled. An import with no call is the tell.
+{
+  const libDir = new URL("../lib/", import.meta.url);
+  const engine = readFileSync(new URL("interventionEngine.ts", libDir), "utf8");
+  assert.match(
+    engine,
+    /guardEnabled\("cooldown"\)/,
+    "interventionEngine reads the cooldown flag rather than only importing it",
+  );
+  // Every module that vetoes on the cooldown asks the flagged question. The
+  // check is the pairing: a file that tests `!cooldownAvailable` must also name
+  // the flag.
+  const unflagged = readdirSync(libDir)
+    .filter((name) => name.endsWith(".ts"))
+    .filter((name) => {
+      const body = readFileSync(new URL(name, libDir), "utf8");
+      return /!\s*cooldownAvailable/.test(body) && !/guardEnabled\("cooldown"\)/.test(body);
+    });
+  assert.deepEqual(
+    unflagged,
+    [],
+    `these modules veto on the cooldown without the guard flag: ${unflagged.join(", ")}`,
   );
 }
 

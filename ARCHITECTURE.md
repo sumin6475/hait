@@ -243,6 +243,24 @@ reaches the recap. Across the fifteen requests in the two sessions it fires on
 four, and on exactly the four that asked for the board. Behind
 `HAIT_GUARD_OBSERVER_BOARD_RECAP`; `test:intervention-v2` pins all fifteen.
 
+#### The Chair's board recap
+
+`recap` is a communicative act in the leader schema and not in the member one, the
+same construction as `mediate`. It routes to the `summary` route, whose message is
+assembled from `revealStats` with no model call.
+
+It is offered as a move when the condition is a leader's, the board is non-empty,
+the Chair has not already recapped, and the cooldown is available. **No clock and
+no message count** — the five thresholds that used to arm it are gone
+(`docs/adr/0012`). They had two problems: the gate that consumed the armed state
+was unreachable under the shipped controller, so T-C2-052 logged `summary armed`
+at seq 46 and never summarised; and the arming was arithmetic about *when* Alex
+speaks, decided outside the Judge and only for leaders, which is the line
+`docs/adr/0001` holds.
+
+`aiState.summaryStatus` now means: `not_eligible` the Chair has not recapped,
+`generating` in flight, `done` spent. Nothing writes `pending`.
+
 #### Where Alex's lean is decided
 
 Alex's read of the candidates is computed from Alex's whole card plus the board,
@@ -747,6 +765,7 @@ class of bug in §7:
 | 0009 | The list measures attention, not merit |
 | 0010 | The Judge owns what a turn may spend |
 | 0011 | The list counts what the humans pooled |
+| 0012 | The Chair recaps as an act, not on a timer |
 
 ---
 

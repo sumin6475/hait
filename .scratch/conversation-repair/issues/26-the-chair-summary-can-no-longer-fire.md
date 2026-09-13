@@ -5,7 +5,25 @@ controller, and whether that is a loss depends on whether the Chair's mid-discus
 recap is part of the manipulation or a leftover. Only after that is settled is
 there code to write.
 
-**Status:** needs-triage
+**Status:** done — 2026-09-13. The question below was answered "part of the
+manipulation", and shape 2 was built. See `docs/adr/0012`.
+
+## The answer, 2026-09-13
+
+**Part of the manipulation.** Organising what the group has said is one of the
+two facilitation acts the study wants a Chair to have, and without it a Chair
+whose card is spent has only instruction left — which is what the imperatives in
+the late half of T-C2-051 and T-C2-052 are.
+
+**Shape 2, not shape 1.** The objection recorded below against restoring the gate
+stands and decided it: a route that fires because ten minutes elapsed is
+arithmetic about *when*, which `docs/adr/0001` forbids a role to reach. As an act
+the recap costs a voluntary turn the cooldown already permits, so a Chair does not
+speak sooner for having it.
+
+Built as `recap`: leader schema only, offered while the board is non-empty and the
+Chair has not yet spent it, no clock and no message count. The arming is gone, so
+`summaryStatus` can no longer reach a state nothing consumes.
 
 ## The defect, as observed
 

@@ -49,7 +49,14 @@ export type CommunicativeAct =
   | "follow"
   | "contribute"
   | "acknowledge"
-  | "mediate";
+  | "mediate"
+  /**
+   * Put the board back in front of the group, as it stands, adding nothing.
+   *
+   * Leader conditions only, and at most once a session. It replaces the timer
+   * that used to schedule the same recap — see `docs/adr/0012`.
+   */
+  | "recap";
 // Where a turn was decided. Keep this separate from the Main Judge result so
 // cooldown, timer, priority, and route-gate suppressions remain distinguishable.
 export type InterventionDecisionStage =

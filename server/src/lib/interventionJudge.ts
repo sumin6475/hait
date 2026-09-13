@@ -388,8 +388,8 @@ const LEDGER_JUDGE_EVIDENCE = [
 
 /**
  * Two schemas, because orthogonality belongs in the action space rather than in
- * a prompt rule. A Member's schema has no `mediate`, so the act is
- * unrepresentable instead of merely forbidden — a rule the schema enforces
+ * a prompt rule. A Member's schema has no `mediate` and no `recap`, so the acts
+ * are unrepresentable instead of merely forbidden — a rule the schema enforces
  * cannot be talked out of, and this repair has watched prose rules fail at this
  * class of problem repeatedly.
  *
@@ -400,7 +400,7 @@ const LEDGER_JUDGE_EVIDENCE = [
 const ConversationLedgerJudgeSchema = z.object({
   decision: z.enum(["speak", "silent", "reobserve"]),
   act: z
-    .enum(["answer", "participate", "follow", "contribute", "acknowledge", "mediate"])
+    .enum(["answer", "participate", "follow", "contribute", "acknowledge", "mediate", "recap"])
     .nullable(),
   selectedOpportunityId: z.string().nullable(),
   evidence: z.enum(LEDGER_JUDGE_EVIDENCE),
@@ -538,11 +538,11 @@ export function ledgerJudgeRetryMessage(input: {
   } Correct the rejected output fields while keeping the transcript and ledger facts fixed. For a selected opportunity, evidence must be selected_open_opportunity.`;
 }
 
-export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v7";
+export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v8";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v11";
+  "conversation-ledger-judge-prompt-v12";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
-  "conversation-ledger-judge-schema-v4";
+  "conversation-ledger-judge-schema-v5";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
 const LEDGER_JUDGE_REQUEST_PARAMS = modelRequestParams(JUDGE_MODEL, 700);
 export const CONVERSATION_LEDGER_JUDGE_PARAMETERS = Object.freeze({
@@ -622,6 +622,7 @@ Voluntary acts have no selectedOpportunityId:
 - follow takes up the point the humans just made and carries it one step further. Use it, with evidence=conversation_grounded_synthesis, when the useful move is to build directly on what was just said rather than to introduce a new fact. It needs no opportunity: follow is the act for the uptake opportunity kind when one is open, and is also available voluntarily when none is.
 - acknowledge is brief social uptake without a new fact or agenda change.
 - mediate is reserved for an explicit unresolved process blockage.
+- recap puts the board back in front of the group exactly as it stands. It writes nothing itself: the message is assembled from what has actually been said, so it adds no fact, names no trait and states no preference. Take it when the turn is better spent showing the group where the comparison currently stands than adding to it - the discussion has covered enough to be worth seeing whole, or people are weighing candidates against a picture they are holding in their heads. It is listed as available only while it is yours to take, and it is worth taking once.
 
 Each turn lists the moves available on it. A move listed as not available is not a choice, and selecting it is invalid. Availability is a fact about this turn's options, never a budget to spend or save. Choose reobserve only for a material conflict affecting target, opportunity identity/lifecycle, thread assignment, or floor. Low confidence alone is not enough.
 When an open required opportunity was opened on the current trigger and no human floor is held, select it. Remaining silent in that state is invalid.
@@ -720,6 +721,8 @@ export function validateConversationLedgerJudgeDecision(input: {
   eligibleTraitIds: readonly string[];
   transcriptSeqs: ReadonlySet<number>;
   cooldownAvailable?: boolean;
+  /** Whether `recap` is one of this turn's moves. Absent reads as not offered. */
+  recapAvailable?: boolean;
 }): ConversationLedgerJudgeValidation {
   const { decision, state } = input;
   const ruleCodes: string[] = [];
@@ -815,7 +818,7 @@ export function validateConversationLedgerJudgeDecision(input: {
           ].includes(decision.evidence)
         : decision.act === "acknowledge"
           ? decision.evidence === "social_uptake"
-          : decision.act === "mediate"
+          : decision.act === "mediate" || decision.act === "recap"
             ? decision.evidence === "conversation_grounded_synthesis"
             : decision.act === "follow"
               // A voluntary follow still has to earn the floor with something
@@ -837,6 +840,19 @@ export function validateConversationLedgerJudgeDecision(input: {
     if (input.cooldownAvailable === false) {
       ruleCodes.push("voluntary_act_unavailable_this_turn");
     }
+    // A recap is offered on the turns it is Alex's to take and on no others: a
+    // Member's schema cannot express it, and a Chair that has already recapped
+    // has spent it. Stated as a move rather than enforced only in prose, so the
+    // turn facts and the validator cannot disagree about what was on offer.
+    if (decision.act === "recap" && input.recapAvailable !== true) {
+      ruleCodes.push("recap_unavailable_this_turn");
+    }
+  }
+  // The board is recited, never written. A recap that also names a fact is a
+  // contribution wearing a recap's name, and the message it produces would not
+  // contain the named fact anyway - the text is assembled from the board.
+  if (decision.act === "recap" && decision.discloseTraitIds.length) {
+    ruleCodes.push("recap_names_a_trait");
   }
   // What the Judge named must be Alex's to name. `eligibleTraitIds` is the
   // unsurfaced part of Alex's own card inside the thread's scope, so anything
@@ -1103,6 +1119,8 @@ export interface LedgerJudgeCallInput {
   eligibleTraitIds: string[];
   /** The board, for the leader's coverage note. Absent means no note is added. */
   revealStats?: unknown;
+  /** Whether `recap` is one of this turn's moves. Absent reads as not offered. */
+  recapAvailable?: boolean;
 }
 
 /**
@@ -1282,7 +1300,7 @@ export function buildLedgerJudgeUserMessage(
     LedgerJudgeCallInput,
     "messages" | "state" | "cooldownAvailable" | "backchannelAvailable" | "eligibleTraitIds"
   > &
-    Partial<Pick<LedgerJudgeCallInput, "conditionCode" | "revealStats">>,
+    Partial<Pick<LedgerJudgeCallInput, "conditionCode" | "revealStats" | "recapAvailable">>,
 ): string {
   // Both of the board-derived sentences require a board. `revealStats` has been
   // documented as "absent means no note is added" since it was added, and was
@@ -1340,7 +1358,7 @@ export function buildLedgerJudgeUserMessage(
   const cardNote = liveThread
     ? exhaustedCandidateNote(input.eligibleTraitIds, candidateSalienceOrder(liveThread))
     : null;
-  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}${preferenceNote ? `\n- Your read: ${preferenceNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${input.recapAvailable === undefined ? "" : `\n- recap: ${availability(input.cooldownAvailable && input.recapAvailable)}`}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}${preferenceNote ? `\n- Your read: ${preferenceNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
 }
 
 export async function judgeConversationLedgerTurn(
@@ -1427,6 +1445,7 @@ export async function judgeConversationLedgerTurn(
         eligibleTraitIds: input.eligibleTraitIds,
         transcriptSeqs: new Set(input.messages.map((message) => message.seq)),
         cooldownAvailable: input.cooldownAvailable,
+        recapAvailable: input.recapAvailable,
       });
       if (validation.ok && validation.value) {
         attempts.push({

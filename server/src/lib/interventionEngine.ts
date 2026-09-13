@@ -305,7 +305,7 @@ export function eligibleTraitIdsForLedgerState(
 export function ledgerRouteKindForAct(
   act: CommunicativeAct,
   conditionCode?: ConditionCode,
-): "address" | "followup" | "build_on" | "backchannel" | "mediation" {
+): "address" | "followup" | "build_on" | "backchannel" | "mediation" | "summary" {
   if (act === "follow") return "followup";
   if (act === "answer" || act === "participate") return "address";
   if (act === "acknowledge") return "backchannel";
@@ -315,6 +315,14 @@ export function ledgerRouteKindForAct(
   if (act === "mediate") {
     return conditionCode === undefined || isLeaderCondition(conditionCode)
       ? "mediation"
+      : "build_on";
+  }
+  // Same boundary, same reason. A Member's schema cannot express `recap`, so
+  // this is the second lock rather than the first — the legacy wide schema and
+  // any future path still cannot route a Peer into the leader's board recap.
+  if (act === "recap") {
+    return conditionCode === undefined || isLeaderCondition(conditionCode)
+      ? "summary"
       : "build_on";
   }
   return "build_on";
@@ -400,6 +408,7 @@ async function judgeLiveLedgerTurn(input: {
   eligibleTraitIdsForState: (state: ConversationLedgerState) => string[];
   /** The board. Reaches the Judge only for the leader's coverage note. */
   revealStats: unknown;
+  recapAvailable: boolean;
   messagesSinceAlex: number;
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
@@ -444,6 +453,7 @@ async function judgeLiveLedgerTurn(input: {
     backchannelAvailable: input.backchannelAvailable,
     eligibleTraitIds: input.eligibleTraitIdsForState(state),
     revealStats: input.revealStats,
+    recapAvailable: input.recapAvailable,
   });
   const attempts = [...judged.attempts];
   if (judged.decision?.decision === "reobserve" && !reobserved) {
@@ -466,6 +476,7 @@ async function judgeLiveLedgerTurn(input: {
         backchannelAvailable: input.backchannelAvailable,
         eligibleTraitIds: input.eligibleTraitIdsForState(state),
         revealStats: input.revealStats,
+        recapAvailable: input.recapAvailable,
       });
       attempts.push(...judged.attempts);
     }
@@ -561,19 +572,11 @@ async function runLegacyObserverFallback(input: {
     });
     return;
   }
-  if (runtime.summaryStatus === "pending") {
-    await reserveTurn(runtime, {
-      anchorSeq: input.messageSeq,
-      routeKind: "summary",
-      priorityRoute: null,
-      mainJudgeDecision: null,
-      decisionStage: "summary",
-      routeReason: "observer_fallback_summary",
-      floorMs: TRIGGER_CONFIG.MAIN_ROUTE_DELAY_MS,
-      source: "summary",
-    });
-    return;
-  }
+  // The two route gates that turned `summaryStatus: "pending"` into a summary
+  // turn stood here. Both were unreachable under the shipped controller, which
+  // returns before either — a Chair logged "summary armed" and never
+  // summarised. The state that fed them is gone with `docs/adr/0012`; the recap
+  // is an act the Judge takes on the one decision path.
   if (sinceAI < TRIGGER_CONFIG.COOLDOWN_MIN_MSGS) {
     await recordSilence({ runtime, anchorSeq: input.messageSeq, reason: "cooldown" });
     return;
@@ -763,10 +766,11 @@ async function cancelReservation(runtime: RuntimeState, reason: string) {
   reservation.releaseFloor();
   emitTyping(runtime, reservation.id, false);
   if (reservation.routeKind === "summary") {
-    runtime.summaryStatus = "pending";
+    // A cancelled recap was never spoken, so it is still Alex's to take.
+    runtime.summaryStatus = "not_eligible";
     await Session.updateOne(
       { _id: runtime.sessionId, "aiState.summaryStatus": { $ne: "done" } },
-      { $set: { "aiState.summaryStatus": "pending" } },
+      { $set: { "aiState.summaryStatus": "not_eligible" } },
     );
   }
   await AIIntervention.create({
@@ -879,33 +883,34 @@ async function updateMediationState(runtime: RuntimeState, docs: any[]) {
   );
 }
 
-async function armSummaryIfEligible(runtime: RuntimeState, session: any, docs: any[]) {
-  if (!isLeader(runtime.conditionCode) || runtime.summaryStatus !== "not_eligible") return;
-  const elapsed = Date.now() - runtime.startedAt;
-  const timeLeft = runtime.startedAt + TRIGGER_CONFIG.DISCUSSION_DURATION_MS - Date.now();
-  const coverage = surfacedCoverage(session.revealStats);
-  const eligible =
-    elapsed >= TRIGGER_CONFIG.SUMMARY_MIN_ELAPSED_MS &&
-    humanCount(docs) >= TRIGGER_CONFIG.SUMMARY_MIN_HUMAN_MESSAGES &&
-    coverage.total >= TRIGGER_CONFIG.SUMMARY_MIN_SURFACED &&
-    coverage.candidates >= TRIGGER_CONFIG.SUMMARY_MIN_CANDIDATES &&
-    timeLeft > TRIGGER_CONFIG.SUMMARY_LATEST_BEFORE_END_MS;
-  if (!eligible) return;
-
-  runtime.summaryStatus = "pending";
-  await Session.updateOne(
-    {
-      _id: runtime.sessionId,
-      "aiState.summaryStatus": { $nin: ["pending", "generating", "done"] },
-    },
-    {
-      $set: {
-        "aiState.summaryStatus": "pending",
-        "aiState.summaryEligibleAt": new Date(),
-      },
-    },
-  );
-  log.info(`[intervention-v2] summary armed (session=${runtime.sessionCode})`);
+/**
+ * Whether the Chair may take a board recap on this turn.
+ *
+ * This replaces a timer. The recap used to be armed by five thresholds — ten
+ * minutes elapsed, twelve human messages, eight traits on the board, two
+ * candidates covered, five minutes still left — and then reserved as a route of
+ * its own. Two things were wrong with that. The consumer sat on a code path the
+ * shipped controller returns before reaching, so a Chair session logged "summary
+ * armed" and never summarised (T-C2-052 seq 46 is one). And the arming itself
+ * was arithmetic about *when* Alex speaks, decided outside the Judge and
+ * condition-dependent — the one thing `docs/adr/0001` holds constant.
+ *
+ * What is left is a move, offered on the turns it is Alex's to take. No clock,
+ * no message count: the board must exist, the condition must be a leader's, and
+ * the Chair must not have recapped already. `docs/adr/0012`.
+ *
+ * Once a session is a bound on repetition, not on timing. A Member has no
+ * equivalent because a Member reciting the group's board is the status being
+ * contrasted against, which is the same reason the route was leader-only when a
+ * timer scheduled it.
+ */
+export function recapAvailableFor(
+  runtime: Pick<RuntimeState, "conditionCode" | "summaryStatus">,
+  session: any,
+): boolean {
+  if (!isLeader(runtime.conditionCode)) return false;
+  if (runtime.summaryStatus !== "not_eligible") return false;
+  return surfacedCoverage(session?.revealStats).total > 0;
 }
 
 function scheduleLongSilence(runtime: RuntimeState) {
@@ -985,7 +990,7 @@ async function runReservation(runtime: RuntimeState, reservation: Reservation) {
   if (reservation.routeKind === "summary") {
     runtime.summaryStatus = "generating";
     await Session.updateOne(
-      { _id: runtime.sessionId, "aiState.summaryStatus": "pending" },
+      { _id: runtime.sessionId, "aiState.summaryStatus": { $nin: ["generating", "done"] } },
       { $set: { "aiState.summaryStatus": "generating" } },
     );
   }
@@ -1096,10 +1101,10 @@ async function runReservation(runtime: RuntimeState, reservation: Reservation) {
       // it started, which is now inside the floor pause, so it must be released
       // whether or not this turn also owns the audit record.
       if (reservation.routeKind === "summary") {
-        runtime.summaryStatus = "pending";
+        runtime.summaryStatus = "not_eligible";
         await Session.updateOne(
           { _id: runtime.sessionId, "aiState.summaryStatus": "generating" },
-          { $set: { "aiState.summaryStatus": "pending" } },
+          { $set: { "aiState.summaryStatus": "not_eligible" } },
         );
       }
       // A turn cancelled during the floor pause has already been recorded and
@@ -1579,7 +1584,11 @@ async function initializeRuntime(runtime: RuntimeState) {
   runtime.conversationEpoch = state.conversationEpoch ?? 0;
   runtime.interactionServedThroughEpoch = state.interactionServedThroughEpoch ?? 0;
   runtime.latestPushSeq = Math.max(runtime.latestPushSeq, (latestHuman as any)?.seq ?? 0);
-  runtime.summaryStatus = state.summaryStatus ?? "not_eligible";
+  // `pending` was the timer's state and nothing sets it now. A session recorded
+  // before `docs/adr/0012` can still carry it; reading it as "the recap has not
+  // happened" is what it always meant.
+  runtime.summaryStatus =
+    !state.summaryStatus || state.summaryStatus === "pending" ? "not_eligible" : state.summaryStatus;
   runtime.mediationLatched = state.mediationLatched ?? false;
   runtime.mediationEvidence = state.mediationEvidence ?? [];
   runtime.mediationLatchedAt = state.mediationLatchedAt?.getTime?.();
@@ -1867,7 +1876,6 @@ export async function onHumanMessage(input: {
   }
 
   await updateMediationState(runtime, docs);
-  await armSummaryIfEligible(runtime, session, docs);
   if (runtime.latestPushSeq !== input.messageSeq) {
     finishSupersededTurnTrace(runtime, input.messageSeq);
     return;
@@ -1925,6 +1933,7 @@ export async function onHumanMessage(input: {
       eligibleTraitIdsForLedgerState(state, surfaced);
     const ledgerResult = await judgeLiveLedgerTurn({
       runtime,
+      recapAvailable: recapAvailableFor(runtime, session),
       messageSeq: input.messageSeq,
       conversationEpoch: input.conversationEpoch,
       content: input.content,
@@ -2032,7 +2041,13 @@ export async function onHumanMessage(input: {
         await recordLedgerSilence("ledger_router_human_floor_held");
         return;
       }
+      // The flag has to reach every site of its check. It did not: this reader
+      // had none, so `HAIT_GUARD_COOLDOWN=off` switched off the veto before the
+      // Judge and left this one standing, and a comparison run would have lost
+      // the same turns while reporting the guard disabled. That is the shape
+      // that cost T-C2-050 three turns on the human floor, one layer down.
       if (
+        guardEnabled("cooldown") &&
         !cooldownAvailable &&
         (!selectedOpportunity ||
           !opportunityMayBypassCooldown(ledgerResult.state, selectedOpportunity))
@@ -2047,7 +2062,8 @@ export async function onHumanMessage(input: {
 
       const routeKind = ledgerRouteKindForAct(decision.act, runtime.conditionCode);
       const communicativeAct: CommunicativeAct =
-        decision.act === "mediate" && !isLeaderCondition(runtime.conditionCode)
+        (decision.act === "mediate" || decision.act === "recap") &&
+        !isLeaderCondition(runtime.conditionCode)
           ? "contribute"
           : decision.act;
       const selectedThread = selectedOpportunity
@@ -2297,20 +2313,6 @@ export async function onHumanMessage(input: {
     return;
   }
 
-  if (runtime.summaryStatus === "pending") {
-    await reserveTurn(runtime, {
-      anchorSeq: input.messageSeq,
-      routeKind: "summary",
-      priorityRoute: null,
-      mainJudgeDecision: null,
-      decisionStage: "summary",
-      routeReason: "summary",
-      floorMs: TRIGGER_CONFIG.MAIN_ROUTE_DELAY_MS,
-      source: "summary",
-      postGenerationReevaluation: input.postGenerationReevaluation,
-    });
-    return;
-  }
 
   if (decision.decision === "silent" || !decision.act) {
     await recordSilence({
