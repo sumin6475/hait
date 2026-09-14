@@ -1073,13 +1073,33 @@ export interface RequestIntent {
  * read as `visible_board` but scoped to `multiple_candidates`. Across the
  * sixteen requests in the two sessions this fires on four and only on the four
  * that asked for the board.
+ *
+ * **The label is read for one thing: whether the request asks for information at
+ * all.** A summary request has come back under three labels —
+ * `complete_all_candidates` (T-C2-050), `new_information_request` (T-C2-051),
+ * `scoped_information_request` (T-C2-052 seqs 37 and 49) — and the wobble the
+ * scope fields were chosen to survive is among those three. A question asking
+ * for a judgment reads the same scope. [T-C3-012, 2026-09-14] Seq 24 ("what's
+ * your preferred candidate") and seq 34 ("can we finally agree on our preferred
+ * candidate then and exit") were `preference_request` over the whole visible
+ * board, and both were answered with the board recap in place of the turn the
+ * Judge had decided. The rule reads no condition, so a Chair asked for its pick
+ * got the same table. A judgment question goes to the route that carries Alex's
+ * read.
  */
+const BOARD_RECAP_KINDS: ReadonlySet<RequestIntentKind> = new Set([
+  "complete_all_candidates",
+  "new_information_request",
+  "scoped_information_request",
+]);
+
 export function observerAskedForTheWholeBoard(
   intent: RequestIntent | null | undefined,
 ): boolean {
   if (!guardEnabled("observerBoardRecap")) return false;
   if (!intent) return false;
   return (
+    BOARD_RECAP_KINDS.has(intent.kind) &&
     intent.requestedScope === "whole_board" &&
     intent.source === "visible_board" &&
     (intent.countKind ?? "all") === "all"

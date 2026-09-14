@@ -234,13 +234,23 @@ so seq 47 fell through to generation, the model wrote the recap from the
 transcript, `A_n4` went missing though it had been on the board since seq 39, and
 the whole-board answer opened with "You meant Candidate B".
 
-`observerAskedForTheWholeBoard` now decides it from the scope fields alone, and
-the word list no longer has to agree. `source` is what keeps it narrow, and it is
-the Observer's own documented distinction: rendering what the group has said is
+`observerAskedForTheWholeBoard` decides it from the scope fields, and the word
+list no longer has to agree. `source` is what keeps it narrow, and it is the
+Observer's own documented distinction: rendering what the group has said is
 `visible_board`, while "do you have any new insight" is `known_profile` and never
 reaches the recap. Across the fifteen requests in the two sessions it fires on
-four, and on exactly the four that asked for the board. Behind
-`HAIT_GUARD_OBSERVER_BOARD_RECAP`; `test:intervention-v2` pins all fifteen.
+four, and on exactly the four that asked for the board.
+
+**The label is read for one thing: whether the request asks for information**
+(2026-09-14). A summary request has come back as `complete_all_candidates`,
+`new_information_request` or `scoped_information_request` (T-C2-052 seqs 37 and
+49), and only those three authorise the recap. A judgment question reads the same
+scope: in T-C3-012, "what's your preferred candidate" (seq 24) and "can we finally
+agree on our preferred candidate then and exit" (seq 34) were `preference_request`
+over the whole visible board, and both got the board table in place of the turn
+the Judge had decided. The rule reads no condition, so a Chair would have done the
+same. Behind `HAIT_GUARD_OBSERVER_BOARD_RECAP`; `test:intervention-v2` pins the
+fifteen, the two 052 summaries and the three T-C3-012 requests.
 
 #### What a turn replies to
 

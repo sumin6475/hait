@@ -2399,6 +2399,13 @@ assert.equal(
     ["050 seq 34", "why do you think D is the best?", observed("compare_request", "multiple_candidates", "visible_board"), false],
     ["050 seq 42", "is there information that either of you have that I don't have", observed("new_information_request", "multiple_candidates", "visible_board"), false],
     ["050 seq 44", "Alex can you give us a summary?", observed("complete_all_candidates", "whole_board", "visible_board"), true],
+    // T-C2-052 — the third label a summary request came back with
+    ["052 seq 37", "the whole summary we've discussed for each candidate?", observed("scoped_information_request", "whole_board", "visible_board"), true],
+    ["052 seq 49", "Alex can you give us a summary?", observed("scoped_information_request", "whole_board", "visible_board"), true],
+    // T-C3-012 — questions asking for a judgment read the same scope
+    ["012 seq 3", "what do think about the candidates presented here", observed("none", "whole_board", "visible_board"), false],
+    ["012 seq 24", "what's your preferred candidate if I may ask.?", observed("preference_request", "whole_board", "visible_board"), false],
+    ["012 seq 34", "can we finally agree on our preferred candidate then and exit .?", observed("preference_request", "whole_board", "visible_board"), false],
   ];
   for (const [where, message, intent, expected] of cases) {
     assert.equal(
@@ -2407,9 +2414,9 @@ assert.equal(
       `${where}: "${message}"`,
     );
   }
-  // The label is not read. Both summary requests fire on either label, which is
-  // the whole point — the two runs disagreed about the label and agreed about
-  // everything else.
+  // The label is read only to tell an information request from a judgment. Both
+  // summary requests fire on either information label, which is the whole point
+  // — the two runs disagreed about the label and agreed about everything else.
   assert.equal(
     observerAskedForTheWholeBoard(observed("new_information_request", "whole_board", "visible_board")),
     observerAskedForTheWholeBoard(observed("complete_all_candidates", "whole_board", "visible_board")),
@@ -2452,6 +2459,51 @@ assert.equal(
     "with the guard off the Observer's scope fields authorise nothing",
   );
   delete process.env.HAIT_GUARD_OBSERVER_BOARD_RECAP;
+}
+
+// [T-C3-012 seqs 24, 34] A judgment question over the whole visible board keeps
+// its own route: no board table replaces the turn. A summary request under the
+// third label still gets the table.
+{
+  const board = {
+    byCandidate: { A: { revealedIds: ["A_p1"] }, B: { revealedIds: [] }, C: { revealedIds: [] }, D: { revealedIds: [] } },
+    humanConfirmedIds: ["A_p1"],
+    aiSurfacedIds: [],
+  };
+  const askedWith = (content: string, kind: string) =>
+    buildRouteUserContext({
+      routeKind: "address",
+      conditionCode: "C2",
+      messages: [{ seq: 34, senderRole: "humanY", speaker: "Participant Y", content }],
+      revealStats: board,
+      language: "en",
+      anchorSeq: 34,
+      selectedOpportunity: {
+        id: "opp:34:direct_question:alex",
+        kind: "direct_question",
+        expectation: "required",
+        sourceSeq: 34,
+        currentTriggerSeq: 34,
+        threadId: "thread-1",
+        targets: ["alex"],
+        requestedAction: "discuss candidates",
+        sourceContent: content,
+        evidenceSeqs: [34],
+        requestIntent: {
+          kind,
+          candidate: null,
+          candidates: ["A", "B", "C", "D"],
+          source: "visible_board",
+          countKind: "all",
+          requestedScope: "whole_board",
+        } as any,
+      },
+    });
+  const decide = askedWith("Yes, so can we finally agree on our preferred candidate then and exit .?", "preference_request");
+  assert.equal(decide.deterministicResponse, undefined, "a judgment question is not answered with the board table");
+  assert.equal(decide.requestIntent.kind, "preference_request");
+  const summary = askedWith("Alex can you give us a summary?", "scoped_information_request");
+  assert.match(summary.deterministicResponse ?? "", /^Here is what is on the table so far:/);
 }
 
 // [RequestIntent] 분류기 단위 판정표 — 표면 문장 추가가 아니라 카테고리 흡수 확인.
