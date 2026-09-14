@@ -7,6 +7,11 @@ it needs already exists.
 
 **Status:** ready-for-human
 
+**Premise correction, 2026-09-14.** `splitAiContribution` was deleted on 2026-09-08
+and nothing replaced it. `revealStats.firstBy` still records who surfaced each trait
+first, so the split is derivable, but the function has to be written again: "nothing
+in the server" is no longer true.
+
 ## The question
 
 `computePoolingDV` derives `byProfile.Z` — "how much of its own profile Alex put

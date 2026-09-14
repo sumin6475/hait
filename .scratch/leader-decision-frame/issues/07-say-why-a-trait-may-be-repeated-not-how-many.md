@@ -7,6 +7,14 @@ does not move.
 
 **Status:** ready-for-agent
 
+**Premise correction, 2026-09-14.** The bound this issue protects no longer exists:
+`docs/adr/0010` removed `maxRestatedTraitIds` and the reveal budget, and
+`withRouteRevealBudget` is gone. The property-shaped sentence it asks for is already
+in `formatAlreadyStatedByYou`, but that block lists only Alex's own disclosures, so
+the T-C3-003 seq 47 case — traits a *human* said, offered as Alex's notes — is still
+uncovered. The fix is a sentence about information already on the board from anyone,
+not a change to a bound. The "What must not regress" items about the bound are void.
+
 ## The defect, as observed
 
 **T-C3-003, seq 47–48.** A participant asked, "Alex, what **other** negatives do

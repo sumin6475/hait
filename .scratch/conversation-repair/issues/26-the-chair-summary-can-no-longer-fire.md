@@ -121,12 +121,13 @@ consumed is the defect regardless of which behaviour wins.
 
 ## Acceptance
 
-- [ ] The question above is answered and recorded — an ADR if the answer is
+- [x] The question above is answered and recorded — an ADR if the answer is
       "retire", a line in this issue if it is "restore"
-- [ ] `aiState.summaryStatus` can no longer reach a state nothing consumes
+- [x] `aiState.summaryStatus` can no longer reach a state nothing consumes
 - [ ] A Chair session on the live controller either produces the recap, or
-      records no summary state at all
-- [ ] `npm run test:intervention-v2` covers whichever outcome was chosen,
+      records no summary state at all (awaits the next Chair session)
+- [x] `npm run test:intervention-v2` covers whichever outcome was chosen (the recap
+      tests live in `test:conversation-ledger`),
       including that peer conditions are unaffected
 
 ## Comments

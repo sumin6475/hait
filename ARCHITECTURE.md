@@ -10,7 +10,7 @@ file is stale.
 
 Read §7 before changing anything that counts traits.
 
-**Audited at** `07b0728`, 2026-09-09. Prompt snapshot `1.10.0`.
+**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.11.0`.
 
 ---
 
@@ -51,8 +51,8 @@ returns early.
 
 **Condition orthogonality is the property every change must preserve.** If a
 mechanism fires more often in one condition than another for a reason that is
-not the manipulation, the comparison is gone. Concretely: the reveal budget,
-the extractors, the board, and the candidate list must all be
+not the manipulation, the comparison is gone. Concretely: the facts a turn may
+disclose, the extractors, the board, and the candidate list must all be
 condition-invariant, and several tests assert exactly that by comparing C1 and
 C2 byte for byte.
 
@@ -84,7 +84,6 @@ handler for a human message, or on a timer armed by it.**
 | `Message` | sockets, `routeTurn`, `interventionEngine`, `conversationObserver`, `routes/sessions` |
 | `AIIntervention` | `interventionEngine`, `routeTurn`, `routes/sessions` |
 | `ConversationObservation` | `conversationObserver`, `interventionEngine`, `routes/sessions` |
-| `Condition`, `InfoItem` | **nothing** — see §8 |
 
 ### Language models
 
@@ -201,9 +200,9 @@ onHumanMessage
   ├ superseded?                    latestPushSeq moved on → drop
   ├ busy?                          queue as pendingPostGenerationSeq → re-enter later
   ├ waitForConversationObservation  gpt-5-mini, serial per session (~7 s)
-  ├ updateMediationState / armSummaryIfEligible
+  ├ updateMediationState
   ├ task-grounding drift + Chair → mediation, and return
-  └ judgeLiveLedgerTurn
+  └ judgeLiveLedgerTurn              recapAvailable = recapAvailableFor(runtime, session)
         ├ observerDeltaFromTurn      threads + opportunities, deterministic
         ├ deterministic veto         human floor held | cooldown   (ADR 0001)
         └ ledger judge               act + evidence + selectedOpportunityId
@@ -438,8 +437,9 @@ condition — 30 in total — because `mediation`, `summary` and `closing` exist
 only for C2 and C4. The boundary is re-established at three separate places so
 a peer can never reach them:
 
-- `armSummaryIfEligible` returns immediately unless the condition is a Chair
-- `ledgerRouteKindForAct` maps a `mediate` act to `build_on` for a peer, with
+- only the leader Judge schema has the `mediate` and `recap` acts, and
+  `recapAvailableFor` returns false for a Member
+- `ledgerRouteKindForAct` maps a `mediate` or `recap` act to `build_on` for a peer, with
   the comment that the Judge is deliberately condition-neutral and the boundary
   belongs at the routing seam
 - `triggerClosing` sends a Chair through `executeRouteTurn` and a peer through
@@ -456,9 +456,12 @@ Not every turn comes from a human message:
 
 - **long silence timer** — `scheduleLongSilence`, capped at 3 broadcasts and 5
   minutes apart
-- **summary** — armed by elapsed time, human-message count and surfaced count
 - **closing** — deadline or manual `stop-ai`, with `broadcastClosingFallback`
   and `broadcastPeerClosing` as deterministic fallbacks that bypass generation
+
+The Chair's board recap used to be a third, armed by a timer. It is now the
+`recap` act the Judge may take on an ordinary turn, once a session
+(`docs/adr/0012`).
 
 ---
 
@@ -471,7 +474,7 @@ board in the live system. In order:
   session / lifecycle / anti-double-post checks
   buildRouteUserContext            → developerPrompt + transcriptPrompt + guard
   previouslySurfacedTraitIds       revealStats ∪ every message's sharedInfoIds
-  candidateListAudit               computed, recorded, read by nothing (ADR 0009)
+  candidateListAudit               computed and recorded; the Chair's coverage note reads it (ADR 0011)
   deterministic response?          → skip the model entirely
   generateScopedRouteMessage       ≤1 repair attempt
   commitGuard / lifecycle re-check
@@ -517,21 +520,22 @@ comparable.**
 this precedence:
 
 ```
-requestScope.guard                          an explicit request sets its own scope
-  ?? withRouteRevealBudget(
-       selectedContributionGuard            build_on with a chosen note
-       ?? routeSinglePointGuard             build_on under focus depth
-       ?? mediationNoNewTraitsGuard         mediation introduces nothing
-       ?? focusGuard)                       stay on the focus candidate
+selectedContributionGuard          build_on with a chosen note
+  ?? routeSinglePointGuard         build_on under focus depth
+  ?? mediationNoNewTraitsGuard     mediation introduces nothing
+  ?? judgeNamedGuard               the facts the Judge named (ADR 0010)
+  ?? requestScope.guard            an explicit request's candidate
+  ?? focusGuard                    stay on the focus candidate
 ```
 
-`ROUTE_REVEAL_BUDGET` is `maxTraitIds 1 · maxRestatedTraitIds 2 ·
-maxSentences 3 · maxWords 80`, applied only to `address`/`followup` turns whose
-request intent is `none` — an ordinary turn nobody asked anything on.
+Nothing counts traits, restatements, sentences or words (`docs/adr/0010`).
+`outputScopeViolation` asks two things: did the draft introduce a fact outside
+the Judge's list, and, when the Judge named exactly one, did it say that one. A
+guard that carries only a candidate bounds nothing at this check; its candidate
+reaches the repair prose and the audit record.
 
-`outputScopeViolation` is checked against the draft; a violation triggers one
-repair attempt, and a second failure **costs the turn** rather than broadcasting
-an oversized message.
+A violation triggers one repair attempt, and a second failure **costs the turn**
+rather than broadcasting a message outside the list.
 
 ---
 
@@ -649,8 +653,8 @@ places spelled it out again: `countSurfaced`, `surfacedByCandidate`, `floorMet`,
 were not wrong — they were the shape that cost T-C2-047 turn 9, one edit away
 from being wrong.
 
-All six now read `allSurfacedIds`, `humanSurfacedIds`, `aiSurfacedIds` or the
-new `coverageByCandidate`. A test refuses any file outside `informationPools.ts`
+Five of the six have since gone with the dead `aiTurn` path; `computePoolingDV`,
+the one left, reads `humanSurfacedIds` and `aiSurfacedIds` by name. A test refuses any file outside `informationPools.ts`
 that reads `revealStats.aiSurfacedIds` or `revealStats.byCandidate` off a plain
 object, and checks every reader agrees on a board where a human and Alex have
 both said the same trait.
@@ -712,17 +716,19 @@ and a second assertion forbids it computing one.
 ### 7i. `Session.metadata` counters — **open**
 
 `totalTurns` / `humanTurns` / `aiTurns` / `durationSeconds` exist on the schema
-as cached counters. They are a second copy of what counting `Message` rows
-gives, and the legacy `candidateStats.positiveRevealed` / `negativeRevealed`
-next to them are already marked as no longer written. Read carefully before
-trusting either in an analysis.
+as cached counters, and nothing on the server writes them; the client dashboard
+still reads the shape, so they read as zero. Counting `Message` rows is the
+source. The legacy `candidateStats.positiveRevealed` / `negativeRevealed` next
+to them are likewise not written. Do not use either in an analysis.
 
 ---
 
 ## 8. Code that is not used
 
-Ten files and about twenty exports were deleted on 2026-09-08 (`-786` lines).
-What remains is listed here so the next reader does not have to re-derive it.
+Ten files and about twenty exports were deleted on 2026-09-08 (`-786` lines),
+and a second sweep on 2026-09-14 removed what ADR 0010 and ADR 0012 had left
+unreachable. What remains is listed here so the next reader does not have to
+re-derive it.
 
 ### Deleted
 
@@ -736,12 +742,28 @@ What remains is listed here so the next reader does not have to re-derive it.
 Deleting `aiTurn.ts` orphaned a second layer, which is the point: half of
 `poolingTally` was alive only because the dead path called it.
 
-### Still present and not reached from `index.ts`
+### Deleted on 2026-09-14
+
+| What | Why it was misleading |
+|---|---|
+| Six builders in `lib/prompts.ts` with their constants, and the commented-out June prompt block | Nothing called them; the live system prompt comes from the snapshot. |
+| Nine `TRIGGER_CONFIG` keys | No reader. Five were the summary timer `docs/adr/0012` removed. |
+| `candidateLetterAddressSignal` and the JSDoc of the decline detectors | Their callers went with `docs/adr/0010`. |
+| `TurnMeta`, `TurnReservation`, a second `Valence`, `Tally`, `candidatesForIds`, `explicitCandidateLabels`, `surfacedCoverage` | No reader. |
+| Seven `VIOLATION_LEAD` entries, `sentenceCount`, `wordCount`, `verbosity` | The checks and bounds they served are gone; nothing could produce or read them. |
+| Union members nothing writes: `"summary"` as a decision stage and reservation source, the `"optional"` expectation, `"ambiguous"`, `"humans_carrying_thread"` | Declared vocabulary nobody writes reads as live. |
+| Nine test assertions against a candidate-only guard | They passed whatever the draft said while their comments claimed a violation. |
+
+Mongo fields that only past sessions carry were kept, each with a comment:
+removing their export mapping would drop them from those sessions' exports.
+
+### Still present, and reached only by eval or only in part
 
 | File | Why it stays |
 |---|---|
 | `lib/questionUptakeJudge.ts` | Not wired into the controller, but `npm run uptake:cases` and `uptake_cases.yaml` exercise it. Deleting it would delete a working measurement, which is a different decision from removing dead code. |
-| `lib/prompts.ts` | The pre-snapshot prompt system. Three eval harnesses still import from it — `eval-scenarios`, `test-prompts`, `run-golden` — so it is quarantined rather than dead. Six of its exports (`buildNaturalPrompt`, `buildLeaderDepth`, `buildPeerDepth`, `buildCalloutTail`, `buildSummaryPrompt`, `buildUserPrompt`) are referenced by nothing and can go with the goldens whenever those are retired. |
+| `lib/prompts.ts` | Partly live: the fixed opening and closing lines are sent from here. The rest is the pre-snapshot prompt system, read only by `eval-scenarios`, `test-prompts` and `run-golden`, so it is quarantined rather than dead. Its six unreferenced builders were deleted on 2026-09-14. |
+| `lib/computeCue.ts` | Read only by `run-golden`. It goes when the golden set is retired. |
 
 ### Exported for tests only — intentional, not dead
 
@@ -752,7 +774,7 @@ so a test can pin it. `NON_CONTRIBUTING_ROUTES`, `POOLED_ENOUGH`,
 the judge validators are all in this group and should stay exported.
 
 A further handful — `FOLLOWUP_WINDOW`, `PARTICIPANT_LABEL`, `deterministicRateGate`,
-`isRedundantRejection`, `buildCueSnippet`, `wordCount`, `knownTraitIds`,
+`isRedundantRejection`, `buildCueSnippet`, `knownTraitIds`,
 `NO_REQUEST_INTENT` — are used only inside their own file. Over-exported, not
 unused. (`ledgerSpeechBlockedByHumanFloor` left this group when the floor flag
 reached it: `test:conversation-ledger` now pins both sides of that flag.)
@@ -777,10 +799,11 @@ Offline, no network, no database:
 
 | Command | Locks |
 |---|---|
-| `npm run test:intervention-v2` | 5 184 lines. Routing, guards, the trait-wording three-way comparison, the candidate list and who may read it, broadcast ordering, the non-contributing route list, transcript replays of real sessions |
+| `npm run test:intervention-v2` | 5 372 lines. Routing, guards, the trait-wording three-way comparison, the candidate list and who may read it, broadcast ordering, the non-contributing route list, transcript replays of real sessions |
 | `npm run test:pooling-extractor` | The fast matcher against pinned real messages |
 | `npm run test:conversation-ledger` | The deterministic reducer |
 | `npm run test:conversation-gold` | Gold-corpus schema and attribution |
+| `npm run test:conversation-recovery` | Observer normalization and recovery |
 | `npm run docs:check` | Cross-references resolve; the glossary is well-formed |
 | `npx tsc --noEmit` | |
 
@@ -789,8 +812,12 @@ Network or corpus:
 `npm run eval:traits:corpus` · `judge:cases` · `observer:cases` ·
 `uptake:cases` · `eval:followup` · `golden` · `eval:conversation:smoke`
 
-Reporting: `npm run report:budget` — reveal-budget violations per session and
-per condition, ids and counts only.
+Reporting: `npm run report:budget` — output-guard violations per session and
+per condition, ids and counts only. Rows from before ADR 0010 still carry the
+retired count names.
+
+Before a session: `npm run build:id` says whether this checkout is the build the
+session is meant to measure.
 
 Three source-level assertions in `test-intervention-v2` deserve naming, because
 they lock *structure* rather than behaviour and are the only defence against the
@@ -825,9 +852,9 @@ class of bug in §7:
 
 ## 12. Open threads
 
-- **Nothing since prompt 1.10.0 has been observed in a live session.** The trait
-  wording, the closed-question accounting, the unsaid-notes block and the
-  record/evidence split are all locked by offline tests only.
+- **Prompt 1.11.0 has run live** (T-C2-050 to 052). The 2026-09-13 leader work —
+  the `recap` act, the narrowing line, the pooled list — is locked by offline
+  tests only until the next Chair session.
 - Seams §7f and §7i above.
 - `.scratch/conversation-repair/issues/` and `.scratch/leader-decision-frame/`
   hold the open work items; `docs/measurements.md` holds what has actually been

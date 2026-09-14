@@ -53,6 +53,8 @@ steer it. `poolingTally.ts` already computes on exactly this basis.
 - `score(X)` — matches minus misses on the board for X. Recorded, and **not an
   input to the list**.
 - **X leaves the live list when `coverage(X) >= 5`, and for no other reason.**
+  > Outdated (2026-09-13): ADR 0011 replaced coverage with pooling — X leaves once
+  > a human has put something of their own about X on the board.
 
 Five is derived, not chosen. Every candidate carries exactly four traits that all
 three profiles can see, so coverage 4 can be reached on nothing the group did not
@@ -114,6 +116,11 @@ observation. **No code reads it.** T-C4-024 and T-C2-049 both sat on
 `exploration` for their whole length, so the field has never been checked against
 a session either.
 
+> **Outdated (2026-09-14).** The next two paragraphs describe the summary timer ADR
+> 0012 removed (the Chair now recaps as a Judge act) and a coverage note ADR 0011
+> rewrote. The narrowing signal this section calls missing now exists: the Judge is
+> told what the group narrowed to.
+
 **The summary arms once, on five thresholds, and changes nothing after it fires.**
 `armSummaryIfEligible` needs 10 minutes elapsed, 12 human messages, 8 traits on
 the board, 2 candidates covered, and 5 minutes still left. That is the only "the
@@ -174,4 +181,5 @@ list empties.
 - **Loosening the restated-trait bound to fire only on a message with no new
   information.** Issue 17 of the repair records two wrong fixes at this exact
   spot. Issues 18 and 20 changed the input it was reacting to; whether it still
-  bites is a question for issue 01's sessions.
+  bites is a question for issue 01's sessions. (Moot: `docs/adr/0010` removed the
+  bound, 2026-09-14.)

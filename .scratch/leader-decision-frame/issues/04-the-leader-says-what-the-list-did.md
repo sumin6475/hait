@@ -4,9 +4,9 @@
 
 **Blocked by:** 03.
 
-**Status:** ready-for-human — the second move landed 2026-09-13. The first
-(naming an uncovered candidate) landed 2026-09-10; the third (raising a shortfall
-at the close) is not built.
+**Status:** ready-for-human — move 1 (naming an uncovered candidate) landed
+2026-09-10. Move 2 (saying what the humans pooled) landed 2026-09-13 with ADR 0011.
+Move 3 landed for narrowing on 2026-09-13 and is not built for the close.
 
 ## The three moves
 
@@ -65,6 +65,9 @@ the manipulation check reads that number.
 
 
 ## Move 2, built 2026-09-13
+
+_Numbering note, 2026-09-14: this section is the narrowing half of move 3 in the
+list above. Move 2, saying what the humans pooled, landed the same day with ADR 0011._
 
 **Raising the shortfall once, when the group narrows.**
 

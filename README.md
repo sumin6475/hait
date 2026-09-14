@@ -65,6 +65,7 @@ Session and participant code issuance, chat + AI-intervention logging, researche
 - Runtime model responses are constrained with **Zod schemas and structured outputs**, rather than parsed from free-form text.
 - Admin routes protected by a token-matched middleware.
 - The four condition prompts are **intentionally duplicated**, not refactored into shared modules — so an edit to one condition can never silently change another.
+  > ⚠️ Outdated (2026-09-14): the live prompts are composed from six shared blocks plus two per-condition blocks, so an edit to a shared block changes all four by design.
 
 ---
 
@@ -126,6 +127,8 @@ HAIT/
 └── docs/                      # Study decisions, snapshots, pilot records
 ```
 
+> ⚠️ **Outdated (2026-09-14).** This flow, the model table and the prompt-routing paragraph further down describe the pre-ledger build. The live path is Observer → ledger → Judge (names the act and the facts) → generator from a compiled prompt snapshot, on `gpt-5-mini`. `INTERVENTION_LOGIC.md` is an untracked June document. See sections 3–5 of `ARCHITECTURE.md`.
+
 **The core flow — when Alex speaks:**
 
 1. A participant message arrives over Socket.IO and is persisted with an atomic sequence number.
@@ -166,6 +169,8 @@ Scout → Grounder → [Architect → Critic → deterministic Supervisor]
 
 The four experimental conditions converge independently so one condition cannot silently affect another. The approved YAML files are then validated and compiled in a separate export step into `server/src/lib/compiled-prompts.json`, the frozen artifact consumed by the live server.
 
+> ⚠️ Outdated (2026-09-14): the live server reads `server/src/prompts/route-prompts.snapshot.v1.json`, compiled from `server/src/prompts/blocks/`. `compiled-prompts.json` is read only by the eval harnesses and an admin audit field.
+
 <details>
 <summary><b>Enforcing schemas and structured outputs</b> — how every model boundary is validated</summary>
 
@@ -188,6 +193,8 @@ Schema tests cover the condition files and model configuration; separate checks 
 <br/>
 
 Model selection follows the job each call performs:
+
+> ⚠️ Outdated (2026-09-14): the live Judge, Observer and Alex generation all run on `gpt-5-mini`, and the `prompts.ts` routing described below is retired (section 5 of `ARCHITECTURE.md`).
 
 | Path                             | Model                          | Responsibility                                  |
 | -------------------------------- | ------------------------------ | ----------------------------------------------- |

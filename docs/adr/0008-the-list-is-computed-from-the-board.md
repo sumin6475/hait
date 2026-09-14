@@ -22,8 +22,9 @@ once Alex has said it, which is also the moment the pooling DV records it. Alex
 may push a candidate up, but only by paying for it in a measurable disclosure.
 
 This property was already present in the code and is now depended on:
-`surfacedByCandidate` reads human `revealedIds` ∪ `aiSurfacedIds`, and
-`poolingTally.ts:125` notes that unspoken Z is in neither.
+`allSurfacedIds` in `informationPools.ts` reads human `revealedIds` ∪
+`aiSurfacedIds`, and unspoken Z is in neither. (Until 2026-09-14 this sentence cited
+`surfacedByCandidate` and `poolingTally.ts:125`; both are gone.)
 
 ## The removal rule below is superseded
 
@@ -36,6 +37,9 @@ the answer's shape produces it — is what `0009` argues from.
 
 The decision this ADR exists for is unaffected: the list is computed from the
 board and never from Alex's unspoken profile.
+
+**Amendment, 2026-09-13.** `0011` withdraws coverage as well: a candidate leaves
+once a human has pooled something of their own about it.
 
 ## The removal rule, and the clause that matters
 

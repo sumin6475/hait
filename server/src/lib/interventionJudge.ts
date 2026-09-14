@@ -1137,9 +1137,10 @@ export interface LedgerJudgeCallInput {
  * that weighted trait categories — the one thing the equal-weight task standard
  * forbids. Naming the uncovered candidates gives that turn a legitimate move.
  *
- * Issue 04's first two moves are built: this sentence says what the humans have
- * pooled, and `groupNarrowingNote` lets the Judge raise a shortfall once when the
- * group narrows. A shortfall at the close is not built.
+ * Issue 04's first two moves are built — naming an uncovered candidate, and saying
+ * what the humans have pooled — and so is the narrowing half of the third:
+ * `groupNarrowingNote` lets the Judge raise a shortfall once when the group
+ * narrows. A shortfall at the close is not built.
  *
  * **"Thin" now means the humans have said nothing of their own.** Under the
  * coverage bar this replaced (`docs/adr/0011`), Alex's own disclosures retired

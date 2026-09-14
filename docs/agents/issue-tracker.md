@@ -35,9 +35,9 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
   per open gate item, each written to stand alone — the defect as observed, the
   session that evidenced it, and the constraints it must not violate. Do not send
   a reader to the checkpoint to understand an issue.
-- `CONVERSATION-REPAIR-CHECKPOINT.md` (root) still holds the measurement history
-  and the completed gates, and is being rewritten to hold only that. It is no
-  longer the place to track open work. A settled decision belongs in
+- `CONVERSATION-REPAIR-CHECKPOINT.md` (root) was rewritten on 2026-09-08 to hold
+  the working rules and invariants; the measurement history is in
+  `docs/measurements.md`. It is not the place to track open work. A settled decision belongs in
   `docs/adr/`, a term in `CONTEXT.md`, and open work in the tracker; if you are
   about to add any of the three to the checkpoint, it goes in one of those
   instead.

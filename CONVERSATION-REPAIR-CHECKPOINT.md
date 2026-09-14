@@ -42,6 +42,11 @@ time because every assertion called the predicate directly. The honest decline
 and the request scope behind it are built but have never been seen in a live
 session.
 
+> **Outdated (2026-09-14).** The next paragraphs are a 2026-09-08 snapshot. There
+> are now 28 repair issues; issue 26 was decided and built (ADR 0012), and issue
+> 10 closed as wontfix when the Observer moved to `gpt-5-mini`. Read the tracker,
+> not this count.
+
 **What is open.** Twenty-six issues in `.scratch/conversation-repair/issues/`.
 Nothing is blocked on code. The three that remain are blocked on a measurement:
 issue 10 needs a live Observer latency figure, issue 16 needs a frequency count
@@ -141,6 +146,10 @@ ten turns to `output_violation_after_repair` against seven to the cooldown, and
 eight of the ten were one question repeated. Do not reason about Alex's speech
 volume from the cooldown alone.
 
+> **Outdated (2026-09-14).** `docs/adr/0010` removed the reveal budget,
+> `ROUTE_REVEAL_BUDGET` and `maxRestatedTraitIds`. The paragraph below argues for a
+> bound that no longer exists.
+
 **The budget was not the fault, and issue 17 records two wrong fixes for it.**
 `maxRestatedTraitIds` is reachable only through `ROUTE_REVEAL_BUDGET`, which
 applies **only when the turn carries no request** — a turn with nothing to
@@ -158,8 +167,7 @@ the cooldown is not.
 
 **The golden set does not cover the live prompts, and never did.** `run-golden`
 builds its prompt through `buildSystemPromptForTask`, which reads
-`compiled-prompts.json` — the legacy path `aiTurn.ts` uses, and `aiTurn.ts` says
-of itself "LEGACY EVALUATION PATH ONLY". Live turns read
+`compiled-prompts.json` — the legacy path the deleted `aiTurn.ts` used. Live turns read
 `route-prompts.snapshot.v1.json` through `getRoutePrompt`. The two prompt systems
 share no text: the 1.9.0 edit appears in all 30 route keys and nowhere in
 `prompts.ts`. **A route-prompt version bump is not a reason to re-run the golden
@@ -232,6 +240,10 @@ derivation, `unansweredRequestsForAlex`, is asserted directly; the line in
 tested, wiring untested — that hid the reveal budget for the whole of gate A.
 
 ## 0. Branch and safety rules
+
+> **Outdated (2026-09-14).** The first four rules describe the 2026-09-08 setup.
+> Work now happens on `develop`, committed. The rules about secrets, raw
+> participant text and the gitignored `docs/` still hold.
 
 - **`origin/main` is production and must never be touched.** Do not push. Do not
   merge into it. Local `main` stays at `5263f0f`.

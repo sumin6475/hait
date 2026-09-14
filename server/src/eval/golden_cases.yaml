@@ -494,6 +494,8 @@ cases:
     blocked_by: null
 
   # ── A9-CLOSING — leader wrap-up (info pooled; preference SHOWN; frozen_closing) ──
+  # OUTDATED (2026-09-14): expects one stated preference at the close. buildClosingPrompt,
+  # which this harness uses, says "Do NOT pick a winner", and no live turn uses that prompt.
   - id: A9-CLOSING
     intent: "At the end, with C's hidden positives pooled, the leader synthesizes the now-complete picture, commits to ONE preferred candidate (the current top-ratio candidate), and signals the team to decide. Runs under frozen_closing; condition tone preserved; direction IS shown (not withheld)."
     bucket: new-behavior

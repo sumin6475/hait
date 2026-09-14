@@ -44,7 +44,7 @@ choose who to defend, and may never read it to choose who to drop.
 
 ## What must not regress
 
-- `newTraitIds` for this turn is empty; a non-empty one fails the turn
+- `discloseTraitIds` for this turn is empty; a non-empty one fails the turn
 - Exactly one occurrence per session, recorded whether or not it fired
 - The group may ignore it entirely; Alex accepts and proceeds to close
 - No peer condition has any path to it

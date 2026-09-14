@@ -7,7 +7,13 @@ runs off the decision path and merges into the ledger before the next turn.
 **Blocked by:** 01 — this is the second of the two decided steps, and it must not
 be designed against a latency budget nobody has re-measured.
 
-**Status:** needs-info
+**Status:** wontfix
+
+**Closed, 2026-09-14 (decided 2026-09-09).** The alternative recorded below as
+rejected is the one taken: the Observer and the Judge moved to `gpt-5-mini`. A
+measurement first found the research-only fields were 7.7% of the Observer's output,
+so a split would have saved under half a second, and T-C4-023 and T-C2-050 ran at a
+median of 1.6 s and 2.1 s a turn. `docs/adr/0005` is superseded.
 
 ## Why the split exists
 

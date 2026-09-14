@@ -199,13 +199,15 @@ whole board, a preference, a count. Read from the message itself.
 _Avoid_: bare "scope", which is ambiguous between this and the reveal budget
 
 **Reveal budget**:
-How many traits Alex may introduce, and how many already-said ones it may repeat,
-in a single message. A property of the turn, set by the request scope.
+Retired. It was how many traits Alex could introduce, and how many already-said
+ones it could repeat, in a single message. ADR 0010 replaced it with the facts the
+Judge names for the turn; the word survives in older issues and session records.
 _Avoid_: bare "scope"
 
 **Output scope guard**:
-The limit checked against what was generated, before it is broadcast. It fails
-closed: a message over budget costs the turn rather than going out oversized.
+The check made against what was generated, before it is broadcast: nothing
+outside the facts the Judge named. It fails closed — a message that breaks it
+costs the turn rather than going out.
 
 ### The manipulation
 

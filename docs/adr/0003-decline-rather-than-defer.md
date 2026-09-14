@@ -13,6 +13,13 @@ it cannot lay it out that way and gives what it has in sentences. Separately, in
 the Member conditions it declines to compile what the group has posted, on the
 honest ground that it holds only its own card.
 
+**Amendment, 2026-09-14.** The two enforcement sections below are superseded by
+`0010`. The server-derived detectors were deleted, so both refusals now live in the
+frozen prompts only: the layout refusal in every condition's output discipline,
+the collation refusal in the Member refinements. There is no detected refusal for
+the complete-list template to step aside for; it steps aside for the Judge's named
+facts instead. The decision itself stands.
+
 ## Why the second refusal is not a matter of tone
 
 Assembling the board is a Chair behaviour. A Member that produces the group's

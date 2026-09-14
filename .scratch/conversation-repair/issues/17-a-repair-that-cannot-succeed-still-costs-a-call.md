@@ -7,6 +7,11 @@ turn does not pay for a second generation to find that out.
 
 **Status:** done — the premise was wrong; see below for what shipped
 
+**Premise correction, 2026-09-14.** The analysis below describes
+`ROUTE_REVEAL_BUDGET` and `maxRestatedTraitIds`, both removed by `docs/adr/0010`. It
+is the record of why the count was not retired earlier; do not cite it as a reason to
+leave a bound in place — there is no bound.
+
 ## The defect, as filed
 
 **T-C1-021, eight turns.** A participant asked for one candidate's misses. That

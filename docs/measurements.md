@@ -6,6 +6,10 @@ from, the seven measured rounds of the repair, one partial session run after
 them, and one full baseline session run before the 2026-09-08 issues landed. One
 further entry records a golden baseline, which is not a session.
 
+> **Count out of date (2026-09-14).** The entries run past T-C2-045, and this
+> paragraph and the summary table were not kept up with them. T-C2-051 and
+> T-C2-052 are not recorded here.
+
 One further entry, T-C3-003, is a message export rather than a measured session
 and is the only aci material in this record. T-C2-047 is the first Chair session
 run on a repaired build, and it did not reach its closing.

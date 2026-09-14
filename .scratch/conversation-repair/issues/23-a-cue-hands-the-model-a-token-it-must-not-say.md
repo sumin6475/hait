@@ -8,6 +8,11 @@ repeated.
 
 **Status:** needs-info — the detector gap is closed; the rename is not.
 
+**Premise correction, 2026-09-14.** The cost estimate below is stale:
+`route-prompts.source.json` no longer exists (the source is
+`server/src/prompts/blocks/`), and the snapshot is at 1.11.0. Check where the cue
+tokens are emitted today before sizing the rename.
+
 ## The defect, as observed
 
 **T-C1-023 seq 23.** A repaired draft read:

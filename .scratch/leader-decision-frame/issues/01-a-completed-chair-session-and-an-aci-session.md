@@ -86,8 +86,8 @@ messages contain a question mark; the deferred item in `spec.md` is about the ac
 conditions and still needs the aci session.
 
 **Two defects came out of it**, both new and both filed against the repair rather
-than this effort: `.scratch/conversation-repair/issues/22` (Alex disclosed one of
-the eight traits only it holds) and `.scratch/conversation-repair/issues/23` (the
+than this effort: `.scratch/conversation-repair/issues/24` (Alex disclosed one of
+the eight traits only it holds) and `.scratch/conversation-repair/issues/25` (the
 reveal budget and the board are read from different extractors).
 
 **And one behaviour cleared the two-session bar.** The group eliminated the

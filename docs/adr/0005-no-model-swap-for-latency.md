@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded
 date: 2026-09-07
 ---
 
@@ -10,6 +10,12 @@ faster model. We are not taking it. Latency will be bought by taking the Observe
 off the critical path instead — deciding the deterministic vetoes before paying
 for it, and later splitting the call — because which models produced the observed
 behaviour is part of the study's record.
+
+**Superseded, 2026-09-14.** On 2026-09-09 the Observer and the Judge were both
+moved to `gpt-5-mini` — the remedy this record refused — after a measurement showed
+a split would save under half a second, and the owner confirmed the change clears
+the IRB record. Kept for the reasoning, which applies to the next model change: it
+is a research decision with a re-run cost, not an optimisation.
 
 ## Why the obvious option is the expensive one
 

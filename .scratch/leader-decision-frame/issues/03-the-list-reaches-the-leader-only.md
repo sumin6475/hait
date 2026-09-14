@@ -19,7 +19,9 @@ count reaching the writer and a Judge given integers can leak one.
 
 Only issue 04's first move — naming a candidate the group has not covered — is
 served. The list still says nothing about what the team has pooled, and raises no
-shortfall at the close.
+shortfall at the close. (**Updated 2026-09-14:** since 2026-09-13 the sentence says
+what the humans have pooled, ADR 0011, and the shortfall is raised once when the
+group narrows. Only the shortfall at the close is unbuilt.)
 
 **Why the Judge and not the generator.** The leader's generator already receives
 the whole board and the "Still to cover" line. The Judge did not, so it wrote the

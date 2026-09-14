@@ -34,6 +34,9 @@ leaves on coverage alone, and "announce that one is being set aside" is now
 one". The move is still the leader's and still absent from the peer; it can no
 longer carry a verdict.
 
+**Amendment, 2026-09-13.** Coverage is withdrawn too: `0011` has a candidate leave
+once a human has pooled something of their own about it.
+
 ## Three things this decision refuses
 
 **It does not mint turns.** The originating proposal had the leader speak on

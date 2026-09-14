@@ -2,7 +2,7 @@
 
 `blocks/` is the human-editable prompt source: one file per block. Six `common.*.ts` blocks are
 shared byte-for-byte by all four conditions; `c1..c4.behavioral.ts` and `c1..c4.refinement.ts`
-carry everything that differs between them, which is 15–19% of a compiled prompt.
+carry everything that differs between them, which was 15–19% of a compiled prompt before 1.11.0 (outdated; not re-measured).
 `route-contracts.ts` holds the legacy RouteKind map that preserves the 30 registry keys.
 `blocks/index.ts` is what the compiler reads.
 
@@ -16,7 +16,7 @@ that JSON as a second source of truth.
 
 The compiler emits one unified system prompt per condition. Every RouteKind in a condition therefore has the same prompt text and hash, while its existing `promptKey`, `routeKind`, intervention row, and analytics metadata remain unchanged. The legacy route strings remain in the editable source for data lineage and key enumeration but are not appended to runtime prompts.
 
-The fixed condition prompt is sent in the system role and is never rebuilt per turn. `conversationObserver.ts` reads the complete transcript on every human epoch, updates cumulative thread/addressee/floor/Alex-relation state, and deterministically renders that state into plain English. `interventionJudge.ts` receives that state plus the complete transcript and chooses whether to speak and the communicative act. Exact-name address remains a deterministic fast path; if Observer is unavailable, the frozen pre-Observer pipeline is used as a degraded-mode rollback instead of making the system globally silent.
+The fixed condition prompt is sent in the system role and is never rebuilt per turn. `conversationObserver.ts` reads the complete transcript on every human epoch, updates cumulative thread/addressee/floor/Alex-relation state, and deterministically renders that state into plain English. `interventionJudge.ts` receives that state plus the complete transcript and chooses whether to speak and the communicative act. Exact-name address remains a deterministic fast path; if Observer is unavailable, the frozen pre-Observer pipeline is used as a degraded-mode rollback instead of making the system globally silent. **Outdated (2026-09-14):** in the default `ledger_active` mode an unavailable Observer, after one re-observe, makes that turn silent, and the exact-name fast path is acted on only in `legacy` mode.
 
 The unified generator receives a versioned dynamic input contract. Server-authored current situation, communicative act, evidence sequence numbers, request scope, and exact factual bounds are sent in the developer role. The complete raw transcript is sent separately in the user role. This separation prevents transcript text from masquerading as server control while preserving exact candidate letters, numbers, and message evidence. For audit/test compatibility, `buildRouteUserContext` also exposes a combined view, but live model calls use the separated fields. Address, follow-up, build-on, mediation, backchannel, and long-silence are analytics route names around this one generator, not separate condition prompts.
 
@@ -36,7 +36,7 @@ XAI remains declarative on discretionary contributions, and ACI remains grounded
 
 Leader mediation is a global cadence: after two successful C2/C4 build-ons, the next non-priority human turn receives mediation. Candidate changes, summaries, direct answers, and failed generations do not reset the count; only a successfully broadcast mediation does. Mediation summarizes the discussion state and gives one useful direction, without requiring conflict or a candidate switch.
 
-Each condition behavioral block carries explicit manipulation markers, prohibitions against the opposite status/strategy, and placeholder-based general style examples — three in C1–C3, eight in C4, where the leader's question is the manipulation and one example per situation was not enough. Examples are patterns only; dynamic Turn Metadata supplies the function. The intervention V2 test suite checks condition orthogonality, same-condition prompt identity, routing cadence, request scope, factual ledger validation, and output guards.
+Each condition behavioral block carries explicit manipulation markers, prohibitions against the opposite status/strategy, and placeholder-based general style examples — three in C1–C3, nine in C4, where the leader's question is the manipulation and one example per situation was not enough. Examples are patterns only; dynamic Turn Metadata supplies the function. The intervention V2 test suite checks condition orthogonality, same-condition prompt identity, routing cadence, request scope, factual ledger validation, and output guards.
 
 After editing the source, run:
 
@@ -46,7 +46,7 @@ npm run prompts:compile
 npm run test:intervention-v2
 ```
 
-To re-import the original spreadsheet before compiling, run `npm run prompts:import -- "/absolute/path/to/prompt.csv"`. Re-importing replaces the source JSON, so use it only when the spreadsheet is intentionally authoritative.
+(Outdated, 2026-09-14: `prompts:import` is disabled and the source JSON it replaced no longer exists; see the top of this file.)
 
 The 30-entry registry is intentionally asymmetric: peer conditions have 6 routes, while leader
 conditions additionally have mediation, summary, and closing. **The asymmetry is in which routes
