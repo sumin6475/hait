@@ -1322,3 +1322,49 @@ plain cooldown silence, and its one rejected trait choice (seq 12) emitted the
 literal placeholder strings `"C_p?"` and `"C_n?"`. The ids and the seqs were
 right and the session was wrong. Comments and `ARCHITECTURE.md` were corrected
 before the fixes were finished.
+
+---
+
+## Judge replay — 2026-09-14, prompt v12 against v13 on recorded turns
+
+**What was run.** The live Judge function, offline, on 27 human turns rebuilt from
+the T-C2-050 to 053 exports: the transcript to that seq, the ledger state the turn
+saw (the post-broadcast consumption the export stores was undone), the board
+rebuilt from `sharedInfoIds`, and the eligible list recomputed. Fifteen are turns
+where Alex spoke past what the humans had just said; twelve are questions it
+answered in the right shape. Prompt v12 once each, v13 three times each.
+`gpt-5-mini`, no database writes, a one-off script not kept in the repository.
+
+**The rebuilt inputs reproduce the failures.** v12 wrote a brief that passed over
+what the humans had just said on 14 of the 15 — "bring new facts about A, B, and
+D" after X's clarification (053 seq 12), a brief asking how to weigh teamwork
+against safety (052 seq 23) — and selected the recorded request on all 12
+answered questions.
+
+**Request turns did not move.** v13 selected the same opportunity with the same
+act on 36 of 36 runs of the answered questions. Failed Judge attempts: 3 in 12
+runs on v12, 7 in 36 on v13; none lost a decision.
+
+**Voluntary turns now start from what was said.** On the eight problem turns with
+no request to answer, v12's brief took up the humans' point on 1 of 8 and v13's
+on 13 of 24 runs, by a reading of each brief. Clearest: 052 seqs 23 and 29 and
+051 seq 27, 3 of 3 each.
+
+**What v13 did not fix.**
+- 053 seq 27 and 050 seq 28, 0 of 3: with Alex's card empty on the candidate being
+  discussed, the turn still added facts about other candidates.
+- 053 seq 33: 3 of 3 named the room's question for top choices (seq 32, never
+  observed) and 0 of 3 answered it; each added A and B traits instead.
+- 051 seq 45 and 052 seq 47: answers to "could anything change my mind?" still
+  steer back to deciding between A and B, and one run of 051 seq 45 asks outright
+  for a final ranking.
+
+**Three sentences were tried in two rounds and withdrawn**: answering an unlisted
+question to the room (both rounds), staying off other candidates' facts (round
+one), naming the candidate being dropped (round two). On the six turns they
+targeted, take-up went from 11 of 18 runs on v13 to 8 of 18, then 5 of 18.
+
+**Method note.** Three runs per turn shows a direction and cannot rank close
+wordings, so the withdrawn sentences may be noise rather than harm. Only the
+Judge's brief was replayed, never the writer's message; the next Chair session is
+still the measurement.

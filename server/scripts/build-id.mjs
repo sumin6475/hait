@@ -52,7 +52,8 @@ const checks = [
   ["28 an opinion is not a request", has("src/lib/conversationLedger.ts", "proposalOpensRequest")],
   ["ADR 0011 the list counts what the humans pooled", has("src/lib/candidateList.ts", "humanPooledIds")],
   ["ADR 0012 the Chair recaps as an act", has("src/lib/interventionEngine.ts", "recapAvailableFor")],
-  ["the Judge is told what the group narrowed to", has("src/lib/interventionJudge.ts", "groupNarrowingNote")],
+  ["the Judge replies to what was said since Alex spoke", has("src/lib/interventionJudge.ts", "humanMessagesSinceAlexSpoke")],
+  ["the board records the given note and what Alex said", has("src/lib/routeTurn.ts", "[contributedTraitId, ...broadcastExtraction.acceptedIds]")],
 ];
 
 const width = Math.max(...checks.map(([label]) => label.length));

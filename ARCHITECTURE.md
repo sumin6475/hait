@@ -10,7 +10,7 @@ file is stale.
 
 Read §7 before changing anything that counts traits.
 
-**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`.
+**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`; Judge prompt v13.
 
 ---
 
@@ -242,21 +242,41 @@ reaches the recap. Across the fifteen requests in the two sessions it fires on
 four, and on exactly the four that asked for the board. Behind
 `HAIT_GUARD_OBSERVER_BOARD_RECAP`; `test:intervention-v2` pins all fifteen.
 
+#### What a turn replies to
+
+The Judge is told which human messages have arrived since Alex last spoke
+(`humanMessagesSinceAlexSpoke`), and its prompt makes them what the turn replies
+to: what the people asked, proposed, disagreed with, chose or reported, before
+anything Alex adds of its own. An older request still outranks a voluntary act,
+but the brief answers it and takes up what was said since.
+
+It exists because the turn was built around the trigger alone. A message the
+cooldown kept Alex from answering, or one overtaken by a newer message before any
+decision, was context the turn could pass over, and across T-C2-049 to 053 it
+did: Alex spoke past what had just been said to follow its own agenda line or an
+older request (T-C2-053 seqs 13, 19, 28, 34; T-C2-052 seq 30, "Keep focus on A as
+requested", which nobody had asked). T-C2-053 seq 32 asked the room for
+everyone's top choice, was overtaken about six seconds later before its
+observation finished, and nothing answered it.
+
+These are message numbers, not the counter the Judge input dropped: the prompt
+says they are content and never pacing, and nothing that decides when Alex speaks
+reads them (`docs/adr/0001`).
+
 #### What the group has narrowed to
 
 `humanNarrowedCandidates` reports which candidates the last five human messages
 named, and returns nothing until every candidate has been named by a human at
-least once. Alex's own messages are not counted. It reaches the Judge as one line
-beside the other turn facts, in every condition, and is recorded on every turn as
-`narrowedCandidates`.
+least once. Alex's own messages are not counted. It is recorded on every turn as
+`narrowedCandidates` and **no longer reaches the Judge** (2026-09-14).
 
-**It reads attention, not intent.** Deciding *why* a candidate left the
-conversation would mean recognising "let's drop C", "it's between A and B" and "C
-is weak so I'd rather not" as one move — a sentence-shape problem with no end,
-and the one this repository has patched a word list three times to learn. What it
-reports instead cannot be wrong: these were named lately and those were not.
-T-C2-051's Candidate C was forgotten rather than rejected, and the leader's move
-is the same either way.
+**It reads attention, not intent, and in T-C2-053 the two pointed opposite
+ways.** From seq 24 it read "the last stretch named only C and D" while the people
+were arguing both of them out, and Alex's next two voluntary turns (seqs 28 and
+34) brought A and B traits in over what had just been said. The Judge now reads
+the move from what the people wrote: when they move to set a candidate aside,
+narrow or decide, and nobody has brought anything of their own about a candidate
+they are leaving behind, the Chair may say so once and then accept their answer.
 
 The precondition is what makes it mean narrowing rather than "the discussion has
 not started". All three Chair sessions cross it within two messages of each other
@@ -272,11 +292,6 @@ The window is chosen, not derived: at four the reading flickers, at five and six
 it does not and the two agree on every transition. It is recorded per turn for the
 same reason `coverage` still is — so a completed session can be re-read against a
 different one.
-
-Paired with the coverage sentence, this is the leader move
-`.scratch/leader-decision-frame/issues/04` left unbuilt: when the group has
-stopped naming a candidate nobody has pooled anything about, the Chair may say so
-once and then accept their answer.
 
 #### The Chair's board recap
 
@@ -344,6 +359,13 @@ end of both sessions. See `docs/adr/0011`.
 the Chair's Judge input; peers receive null from the same function, which is the
 status manipulation and not an optimisation. `test:intervention-v2` pins the set
 of files allowed to read the list at all.
+
+**The line is not by itself a reason to speak** (2026-09-14). Voluntary Chair
+turns kept spending themselves on it and passing over what had just been said:
+"bring the discussion back to candidates other than B" while the people were
+debating C (T-C2-052 seq 9), A and B traits over Y's list of D's misses (T-C2-053
+seq 28). The Judge takes it up when the people are leaving a candidate behind, or
+when nothing they just said gives the turn anything to take up.
 
 #### What obliges Alex to answer
 
@@ -587,6 +609,13 @@ humans'.
 
 **Nothing reconciles them.** No job checks that `Message.sharedInfoIds` for AI
 messages equals `aiSurfacedIds`, or that `firstBy` agrees with either.
+
+**Alex's record is what its message carried, plus the one note it was given.** On
+a build-on that adds a fact, the Judge's first named id is written whatever the
+matcher made of the wording; any other id it named is written only if the message
+carried it. Until 2026-09-14 every named id was forced: T-C2-052 seq 9 wrote eight
+and said one, and at seq 18 Alex told the room it had nothing new, then said seven
+of them for the first time.
 
 ---
 
@@ -858,13 +887,16 @@ class of bug in §7:
 
 ## 12. Open threads
 
-- **Prompt 1.11.0 has run live** (T-C2-050 to 052). The 2026-09-13 leader work —
-  the `recap` act, the narrowing line, the pooled list — is locked by offline
-  tests only until the next Chair session.
-- **Prompt 1.12.0 has not run.** It adds two lines: a Member lets a procedural
-  proposal pass while still putting its note on the table (LDF-06), and
-  already-said information is never offered as news (LDF-07). Only a Member
-  session exercises the first.
+- **Prompt 1.12.0 has run once, in part** (T-C2-053 on Judge prompt v12, stopped
+  at seq 34). The `recap` act was offered and not taken; LDF-07's line showed once
+  (seq 16 said plainly that nothing on C was left beyond the table). LDF-06 still
+  needs a Member session.
+- **Judge prompt v13 has not run live.** It was replayed offline against 27
+  recorded turns from T-C2-050 to 053 before landing (`docs/measurements.md`,
+  2026-09-14). What it did not fix is recorded there: with nothing left on the
+  candidate being discussed, a voluntary turn still reaches for another
+  candidate's facts, and a question to the room that was never observed is named
+  but not answered.
 - Seams §7f and §7i above.
 - `.scratch/conversation-repair/issues/` and `.scratch/leader-decision-frame/`
   hold the open work items; `docs/measurements.md` holds what has actually been

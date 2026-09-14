@@ -847,9 +847,14 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
               // Whatever else the matcher plainly accepted is kept rather than
               // replaced: dropping it was how a second trait in the same
               // message left no trace.
-              acceptedIds: [
-                ...new Set([...(input.discloseTraitIds ?? []), ...broadcastExtraction.acceptedIds]),
-              ],
+              //
+              // Only the selected note. Since `docs/adr/0010` the Judge may name
+              // several, and forcing all of them wrote facts nobody saw: T-C2-052
+              // seq 9 put eight traits on the board and said one, and at seq 18
+              // Alex told the room it had nothing new, then said seven of them for
+              // the first time. Any other named fact reaches the board the way
+              // every fact does, by being in the message.
+              acceptedIds: [...new Set([contributedTraitId, ...broadcastExtraction.acceptedIds])],
               verificationCandidates: broadcastExtraction.verificationCandidates,
             }
           : broadcastExtraction;

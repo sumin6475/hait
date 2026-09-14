@@ -2696,6 +2696,40 @@ assert.deepEqual(lateNewInformationContext.outputScopeGuard, {
   allowedTraitIds: ["B_p4", "B_n5", "B_n6"],
   reason: "new_information_request",
 });
+// [T-C2-050 seq 12, T-C2-051 seq 17] The Observer read a request for new
+// information with no candidate, and the block told the writer to pick one and
+// say so: "If you mean Candidate C" to a message that named C, "I took that to
+// mean Candidate B" to one that named nobody. Neither message was ambiguous.
+const unscopedNewInformationContext = buildRouteUserContext({
+  routeKind: "address",
+  conditionCode: "C2",
+  messages: [
+    {
+      seq: 11,
+      senderRole: "humanY",
+      speaker: "Participant Y",
+      content: "Alex, is there some information you have about Candidate C",
+    },
+  ],
+  revealStats: {},
+  language: "en",
+  anchorSeq: 11,
+  selectedOpportunity: {
+    id: "opp:11:direct_question:alex",
+    kind: "direct_question",
+    expectation: "required",
+    sourceSeq: 11,
+    currentTriggerSeq: 11,
+    threadId: "thread-1",
+    targets: ["alex"],
+    requestedAction: "discuss candidates",
+    sourceContent: "Alex, is there some information you have about Candidate C",
+    evidenceSeqs: [11],
+    requestIntent: { kind: "new_information_request", candidate: null, source: "alex_notes" },
+  },
+});
+assert.match(unscopedNewInformationContext.userPrompt, /Answer the message as it was asked/);
+assert.doesNotMatch(unscopedNewInformationContext.userPrompt, /say which one you took it to mean/);
 const expandedNewInformationContext = buildRouteUserContext({
   routeKind: "address",
   conditionCode: "C2",
@@ -4876,6 +4910,23 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
   assert.ok(
     firstPoolingWrite < ledgerCommit,
     "pooling and the ledger both settle after the broadcast, in that order",
+  );
+}
+
+// ── The board carries the given note and what Alex said ─────────────────────
+// [T-C2-052 seq 9] The Judge named eight traits for a build-on, the message said
+// one, and the forced write put all eight on the board; at seq 18 Alex said it
+// had nothing new and then said seven of them for the first time. Asserted in the
+// source for the reason given above: there is no harness for the broadcast path.
+{
+  const routeTurnSource = readFileSync(join(SRC_ROOT, "lib/routeTurn.ts"), "utf8");
+  assert.ok(
+    routeTurnSource.includes("[...new Set([contributedTraitId, ...broadcastExtraction.acceptedIds])]"),
+    "only the selected note is forced onto the board",
+  );
+  assert.ok(
+    !routeTurnSource.includes("...(input.discloseTraitIds ?? []), ...broadcastExtraction.acceptedIds"),
+    "the Judge's other named ids reach the board only by being in the message",
   );
 }
 

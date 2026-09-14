@@ -1709,10 +1709,16 @@ function requestScopeFromIntent(input: {
         // this block ordered a turn into a guard. And the four condition prompts
         // now say an ambiguous request is answered on its most reasonable
         // reading rather than sent back — the repeated clarification question is
-        // the T-C1-027 and T-C2-046 failure. The block asks for the same thing
-        // they do.
+        // the T-C1-027 and T-C2-046 failure.
+        //
+        // It then read "answer for the candidate the discussion is most plainly
+        // about and say which one you took it to mean", and that made plain
+        // questions sound misheard: T-C2-051 seq 17's "Alex- Do you have any new
+        // insight?" came back as "I took that to mean Candidate B", and T-C2-050
+        // seq 12, which named C, as "If you mean Candidate C". Neither message was
+        // ambiguous, so the block no longer asks the writer to treat it as one.
         block:
-          "The participant asked for new information, but no single candidate is established. Answer for the candidate the discussion is most plainly about and say which one you took it to mean, in one short sentence. Do not ask them which candidate they meant, and do not list candidates or notes.",
+          "The participant asked for new information, and no single candidate is established. Answer the message as it was asked. If it names a candidate, answer for that candidate. If it names none, answer for the discussion as a whole: give the facts this turn lets you put on the table, whichever candidates they are about, or, when it lets you put none, say plainly that you have nothing beyond what is already on the table. Never say \"if you mean\" or \"I took that to mean\" about a candidate, and do not ask which candidate they meant.",
       };
     }
     const surfaced = new Set([

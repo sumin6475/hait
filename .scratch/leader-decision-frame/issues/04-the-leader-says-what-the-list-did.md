@@ -91,3 +91,23 @@ On the three completed Chair sessions the first narrowing lands at seq 27/30/31
 (C drops out) and the second at 42/45/47 (D drops out). In all three, C is the
 pooled answer and nobody had brought anything of their own about it — so all three
 would have had exactly one legitimate move at the first narrowing.
+
+## 2026-09-14: the Judge reads the move from what the people wrote
+
+The narrowing line is off the Judge's input. `humanNarrowedCandidates` is still
+computed and recorded on every turn as `narrowedCandidates`, and nothing reads it
+to decide anything.
+
+**Why.** It reads attention, and in T-C2-053 attention pointed the wrong way. From
+seq 24 it read "the last stretch named only C and D" while the people were arguing
+both of them out, and Alex's next two voluntary turns (seqs 28 and 34) brought A
+and B traits in over what had just been said.
+
+**What replaced it.** Judge prompt v13 keys the shortfall to the people's own
+move: when they move to set a candidate aside, narrow the field or decide — read
+from what they wrote — and nobody has brought anything of their own about a
+candidate they are leaving behind, the Chair says so once and accepts their
+answer. The same prompt stops the coverage line from being a reason to speak on
+its own, and makes every turn reply first to what was said since Alex last spoke
+(`humanMessagesSinceAlexSpoke`). "Once" is still a prompt rule, not enforced in
+code. The close half of move 3 is still not built.

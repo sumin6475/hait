@@ -541,7 +541,7 @@ export function ledgerJudgeRetryMessage(input: {
 
 export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v8";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v12";
+  "conversation-ledger-judge-prompt-v13";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
   "conversation-ledger-judge-schema-v5";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
@@ -618,6 +618,8 @@ Only select an opportunity whose exact id is listed with status open. Deferred a
 
 A listed request that nobody has answered outranks a voluntary act. When the turn lists an unanswered request addressed to Alex, select it rather than contributing, following or acknowledging something of your own choosing. This ranks a request above the acts you choose for yourself and nothing else; where a rule below tells you which opportunity to take, that rule decides.
 
+What the humans said since Alex last spoke is what this turn replies to, and the turn lists those messages. Some of them may have gone unanswered only because Alex could not speak yet, or because a newer message arrived before a decision; they still count. This is about content, never pacing: it tells you what to reply to, not whether it is time for Alex to speak. Read those messages for what the people did - asked something, proposed where to go, disagreed, stated a choice, reported their own notes, or spoke to each other - and build the turn on that. When you select an older request, the brief answers it and also takes up what was said since. Never build a turn on a request Alex has already answered, and never hand the writer a premise nobody stated: no "as requested" when nobody asked, no "they asked why D is best" when nobody said D is best. When everything said since was addressed to one another rather than to Alex or the room, and no request to Alex is listed, leave that exchange to them.
+
 Voluntary acts have no selectedOpportunityId:
 - contribute adds a relevant non-redundant fact, factual correction, or concrete synthesis.
 - follow takes up the point the humans just made and carries it one step further. Use it, with evidence=conversation_grounded_synthesis, when the useful move is to build directly on what was just said rather than to introduce a new fact. It needs no opportunity: follow is the act for the uptake opportunity kind when one is open, and is also available voluntarily when none is.
@@ -638,7 +640,7 @@ discloseTraitIds is exactly what Alex may put on the board this turn, chosen fro
 
 brief is one sentence of ordinary language telling the writer what this turn has to accomplish. Say what the person asked for and what the turn owes them - "they asked for a summary and told you not to ask anything back, so give the recap and stop", "they just answered your question about D, so take that up", "they want the full list for C". Write it as you would tell a colleague. Never describe how Alex should sound, never name the role, the strategy, the condition, or a style, and never mention ids, counts, scores, thresholds, opportunities, routes or anything else from this input. How Alex sounds is decided elsewhere. Keep it under 300 characters.
 
-A line may say which candidates the last stretch of the discussion has named. It reports what the group has been talking about, not what it has decided, and a candidate it leaves out has not been ruled out by anybody. Take it as the moment the group is closing in. If the coverage line says nobody has brought anything of their own about one of the candidates they have stopped naming, that is worth saying once, plainly, as a fact about what is still unheard - and then it is theirs to weigh. Say it once and accept their answer; a second turn spent on the same candidate is pushing, not leading.
+When the people move to set a candidate aside, to narrow the field, or to decide - which you read from what they wrote; no line in this input decides it for you - and the coverage line says nobody has brought anything of their own about a candidate they are leaving behind, that is worth saying once, plainly, as a fact about what is still unheard - and then it is theirs to weigh. Say it once and accept their answer; a second turn spent on the same candidate is pushing, not leading.
 
 A line giving your own read of the candidates may appear beside the moves. It is what your card and the board come to with every requirement weighing the same, and it is Alex's honest standing view rather than an instruction to announce it. State it when somebody asks what you think or which one you would pick, and when your role's goal makes offering it the move. When the group has narrowed to some of the candidates, answer inside that set and read the order for which of those you are closer to; do not reopen the ones they set aside in order to answer. Never explain the read by weighing one requirement against another, and never put a count, a ratio or a score in the brief.
 
@@ -646,7 +648,9 @@ Every requirement in this task counts the same, and it is not yours to change. N
 
 Read the person's message for what it actually asks. A request does not have to be a question, a request for everything Alex has is different from a request for one more fact, and a request you cannot carry out - a table, a chart, a compilation of what everybody else holds - is still a request whose shape the brief must name so the writer can decline it plainly.
 
-Not every turn answers a request. When nobody has asked for anything and you still choose to speak, the brief says what the turn is FOR, in the same plain way. If the turn tells you nobody has brought anything of their own about some candidates, that is the move: name one of them and say the turn is for bringing it back to the group - "nobody else has put anything of their own on A, so bring A back into the discussion". That holds even when your own card on that candidate is spent; the turn is for the group's attention, not for another fact from you, and a turn with nothing left to disclose names no trait. If it tells you there is no coverage gap left to name, say what the turn adds to the comparison the group is already having. Do not fill the turn by proposing how to decide.
+Not every turn answers a request. When nobody has asked for anything and you still choose to speak, the brief says what the turn is FOR, in the same plain way, and it starts from what the people just said: take up their point before adding anything of your own, and add only what bears on it. The coverage line is not by itself a reason to take a turn or to change the subject. It becomes the move when they are leaving a candidate behind, as above, or when nothing they just said gives the turn anything to take up. In those cases, if the turn tells you nobody has brought anything of their own about some candidates, name one of them and say the turn is for bringing it back to the group - "nobody else has put anything of their own on A, so bring A back into the discussion". That holds even when your own card on that candidate is spent; the turn is for the group's attention, not for another fact from you, and a turn with nothing left to disclose names no trait. If it tells you there is no coverage gap left to name, say what the turn adds to the comparison the group is already having. Do not fill the turn by proposing how to decide.
+
+A line about your card says what Alex itself has left to add. It says nothing about what the people still hold, so never write a brief that calls the information on a candidate exhausted, complete or fully covered for the group. When your card is spent, that is Alex's to say about its own notes only.
 
 The eligible list covers every candidate in the thread's scope, ordered by what the group is currently on: the explicit focus candidate first when there is one, then the most recently named candidate. That order is a hint, not a restriction. Pick what fits the candidate the humans are actually discussing on this turn, reading the transcript rather than the position in the list; a fact about a candidate the group has moved past is not a useful move. All evidence sequence numbers must exist in the transcript. Output JSON only.`;
 
@@ -1138,9 +1142,10 @@ export interface LedgerJudgeCallInput {
  * forbids. Naming the uncovered candidates gives that turn a legitimate move.
  *
  * Issue 04's first two moves are built — naming an uncovered candidate, and saying
- * what the humans have pooled — and so is the narrowing half of the third:
- * `groupNarrowingNote` lets the Judge raise a shortfall once when the group
- * narrows. A shortfall at the close is not built.
+ * what the humans have pooled — and so is the narrowing half of the third: the
+ * Judge raises a shortfall once when the people move to set a candidate aside,
+ * narrow or decide, which it reads from what they wrote. A shortfall at the close
+ * is not built.
  *
  * **"Thin" now means the humans have said nothing of their own.** Under the
  * coverage bar this replaced (`docs/adr/0011`), Alex's own disclosures retired
@@ -1193,10 +1198,13 @@ export const NARROWING_WINDOW_HUMAN_MESSAGES = 5;
  * Which candidates the humans have been naming lately, once they have had all
  * four in view.
  *
- * Narrowing is what the leader frame's late-half moves hang on, and nothing
- * computed it: the concept existed only as a sentence in this prompt and a
- * comment saying it was the Judge's to read off the transcript
- * (`.scratch/leader-decision-frame/spec.md`).
+ * Recorded on every turn as `narrowedCandidates`, and no longer given to the
+ * Judge. [T-C2-053, 2026-09-14] From seq 24 this read "the last stretch named only
+ * C and D" while the people were arguing both of them out, and Alex's next two
+ * voluntary turns (seqs 28 and 34) brought A and B traits in over what had just
+ * been said. Attention and intent point opposite ways exactly when a group argues
+ * a candidate out, so the Judge reads the move from what the people wrote and
+ * this stays a record.
  *
  * **It reads attention, not intent.** Deciding *why* a candidate left the
  * conversation means reading "let's drop C", "it's between A and B" and "C is
@@ -1204,7 +1212,7 @@ export const NARROWING_WINDOW_HUMAN_MESSAGES = 5;
  * with no end — this repository has patched a word list three times to learn
  * that. What it reports instead is a fact that cannot be wrong: the last few
  * human messages named these and not those. T-C2-051's Candidate C was forgotten
- * rather than rejected, and the leader's move is the same either way.
+ * rather than rejected; T-C2-053's C and D were argued out, and read the same.
  *
  * **The precondition is what makes it mean narrowing.** Early on, "only B and C
  * have been named" is the discussion not having started, not the group closing
@@ -1232,23 +1240,6 @@ export function humanNarrowedCandidates(
   const recent = new Set(named.slice(-window).flat());
   if (recent.size === 0 || recent.size >= CANDIDATES.length) return null;
   return CANDIDATES.filter((candidate) => recent.has(candidate));
-}
-
-/**
- * The narrowing as one sentence for the Judge's turn facts.
- *
- * Condition-blind: which candidates the humans are talking about is a fact about
- * the room, and every condition's Alex can see it in the transcript. What differs
- * is whether Alex acts on it, which the role goal decides.
- */
-export function groupNarrowingNote(
-  messages: readonly ObserverTranscriptMessage[],
-): string | null {
-  const narrowed = humanNarrowedCandidates(messages);
-  if (!narrowed) return null;
-  const names = narrowed.map((candidate) => `Candidate ${candidate}`);
-  const list = names.length === 1 ? names[0]! : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
-  return `The last stretch of the discussion has named only ${list}.`;
 }
 
 /**
@@ -1360,6 +1351,28 @@ export function exhaustedCandidateNote(
 }
 
 /**
+ * The human messages since Alex last spoke, oldest first.
+ *
+ * What a turn replies to. The Judge was handed the trigger and the transcript and
+ * built the turn around the trigger, so a message the cooldown kept Alex from
+ * answering, or one overtaken by a newer message before any decision, was context
+ * the turn could pass over — and did: T-C2-052 seqs 28 and 39, T-C2-053 seqs 31
+ * and 32, the last of them the room asking for everyone's top choice.
+ */
+export function humanMessagesSinceAlexSpoke(
+  messages: readonly Pick<ObserverTranscriptMessage, "seq" | "senderRole">[],
+  throughSeq: number,
+): number[] {
+  const seqs: number[] = [];
+  const visible = messages.filter((message) => message.seq <= throughSeq);
+  for (let index = visible.length - 1; index >= 0; index -= 1) {
+    if (visible[index]!.senderRole === "ai") break;
+    seqs.unshift(visible[index]!.seq);
+  }
+  return seqs;
+}
+
+/**
  * The Judge's user message.
  *
  * Exported because what this text does and does not contain is the substance of
@@ -1373,6 +1386,11 @@ export function exhaustedCandidateNote(
  * as a budget, and a Judge with a condition-dependent role goal plus a budget
  * decides *when* differently by condition. An availability flag has nothing to
  * spend.
+ *
+ * The message numbers it does carry are not that counter. They say which
+ * messages the turn replies to (`humanMessagesSinceAlexSpoke`), so the cooldown
+ * can delay a reply without erasing what it replies to; the prompt tells the
+ * Judge they are content and never pacing.
  */
 export function buildLedgerJudgeUserMessage(
   input: Pick<
@@ -1401,9 +1419,7 @@ export function buildLedgerJudgeUserMessage(
   // an absent board reads as "nothing separates them", which is a claim, not a
   // silence.
   const preferenceNote = boardKnown ? alexPreferenceNote(input.revealStats) : null;
-  // Condition-blind and board-independent: this is read from the transcript the
-  // Judge already has, so it needs no gate of its own.
-  const narrowingNote = groupNarrowingNote(input.messages);
+  const saidSinceAlex = humanMessagesSinceAlexSpoke(input.messages, input.state.contextThroughSeq);
   const decisionState = conversationLedgerDecisionProjection(input.state, {
     cooldownAvailable: input.cooldownAvailable,
   });
@@ -1440,7 +1456,7 @@ export function buildLedgerJudgeUserMessage(
   const cardNote = liveThread
     ? exhaustedCandidateNote(input.eligibleTraitIds, candidateSalienceOrder(liveThread))
     : null;
-  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${input.recapAvailable === undefined ? "" : `\n- recap: ${availability(input.cooldownAvailable && input.recapAvailable)}`}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}${preferenceNote ? `\n- Your read: ${preferenceNote}` : ""}${narrowingNote ? `\n- Where the group is: ${narrowingNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Said by the humans since Alex last spoke: ${saidSinceAlex.length ? `messages ${saidSinceAlex.join(", ")}` : "none"}\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${input.recapAvailable === undefined ? "" : `\n- recap: ${availability(input.cooldownAvailable && input.recapAvailable)}`}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}${preferenceNote ? `\n- Your read: ${preferenceNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
 }
 
 export async function judgeConversationLedgerTurn(

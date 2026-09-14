@@ -36,7 +36,7 @@ import {
   currentRequiredOpportunityIdsFor,
   alexPreferenceNote,
   exhaustedCandidateNote,
-  groupNarrowingNote,
+  humanMessagesSinceAlexSpoke,
   humanNarrowedCandidates,
   NARROWING_WINDOW_HUMAN_MESSAGES,
   leaderCoverageNote,
@@ -809,11 +809,6 @@ assert.match(
     human(9, "Candidate A though"),
   ];
   assert.deepEqual(humanNarrowedCandidates(narrowed), ["A", "B"]);
-  assert.equal(
-    groupNarrowingNote(narrowed),
-    "The last stretch of the discussion has named only Candidate A and Candidate B.",
-  );
-  assert.doesNotMatch(groupNarrowingNote(narrowed)!, /\d/, "no number reaches the Judge");
 
   // Alex naming a candidate does not keep it in the room. A group has not stayed
   // wide because Alex kept talking about D.
@@ -843,10 +838,11 @@ assert.match(
     "nobody said 'let us drop C' and it makes no difference",
   );
 
-  // Condition-blind, and it needs no board. Which candidates the room is talking
-  // about is visible to every condition's Alex in the transcript already.
+  // [T-C2-053] A record now, and never given to the Judge. From seq 24 it read
+  // "only C and D" while the people were arguing both of them out; the Judge
+  // reads that move from what they wrote.
   for (const conditionCode of ["C1", "C2", "C3", "C4"] as const) {
-    assert.match(
+    assert.doesNotMatch(
       buildLedgerJudgeUserMessage({
         messages: narrowed as any,
         state: twoRequests,
@@ -855,28 +851,61 @@ assert.match(
         eligibleTraitIds: [],
         conditionCode,
       }),
-      /- Where the group is: The last stretch of the discussion has named only Candidate A and Candidate B\./,
+      /Where the group is|last stretch/,
     );
   }
-  // And nothing is said while the group still has the whole field in view.
-  assert.doesNotMatch(
-    buildLedgerJudgeUserMessage({
-      messages: wholeField as any,
-      state: twoRequests,
-      cooldownAvailable: true,
-      backchannelAvailable: true,
-      eligibleTraitIds: [],
-      conditionCode: "C2",
-    }),
-    /- Where the group is:/,
-  );
 
-  // The rule that pairs it with the coverage sentence — this is the leader move
-  // issue 04 left unbuilt, and the bound on it is the half that matters.
-  assert.match(LEDGER_JUDGE_SYSTEM, /which candidates the last stretch of the discussion has named/);
-  assert.match(LEDGER_JUDGE_SYSTEM, /has not been ruled out by anybody/);
+  // The shortfall is keyed to the people's move, and the bound on it stays.
+  assert.doesNotMatch(LEDGER_JUDGE_SYSTEM, /last stretch of the discussion/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /move to set a candidate aside, to narrow the field, or to decide/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /which you read from what they wrote/);
   assert.match(LEDGER_JUDGE_SYSTEM, /Say it once and accept their answer/);
   assert.match(LEDGER_JUDGE_SYSTEM, /pushing, not leading/);
+}
+
+// ── A turn replies to what was said since Alex last spoke ──────────────────
+// [T-C2-052, T-C2-053] The Judge built each turn around the trigger, so a message
+// the cooldown kept Alex from answering, or one overtaken before any decision,
+// was passed over: T-C2-053 seq 32 asked the room for top choices and nothing
+// answered it.
+{
+  const said = (seq: number, senderRole: "ai" | "humanX" | "humanY") => ({ seq, senderRole });
+  assert.deepEqual(
+    humanMessagesSinceAlexSpoke(
+      [said(1, "ai"), said(2, "humanX"), said(3, "humanY"), said(4, "ai"), said(5, "humanX"), said(6, "humanY")],
+      6,
+    ),
+    [5, 6],
+  );
+  assert.deepEqual(
+    humanMessagesSinceAlexSpoke([said(4, "ai"), said(5, "humanX"), said(6, "humanY"), said(7, "humanX")], 6),
+    [5, 6],
+    "a message after the judged turn is not part of it",
+  );
+  assert.deepEqual(humanMessagesSinceAlexSpoke([said(1, "humanX"), said(2, "humanY")], 2), [1, 2]);
+  assert.deepEqual(humanMessagesSinceAlexSpoke([said(1, "humanX"), said(2, "ai")], 2), []);
+
+  const prompt = buildLedgerJudgeUserMessage({
+    messages: [
+      { seq: 30, senderRole: "ai" as const, speaker: "Alex", content: "a" },
+      { seq: 31, senderRole: "humanY" as const, speaker: "Participant Y", content: "I have no common misses" },
+      { seq: 32, senderRole: "humanY" as const, speaker: "Participant Y", content: "What are your top choices?" },
+      { seq: 33, senderRole: "humanX" as const, speaker: "Participant X", content: "@Y, your preferred candidate?" },
+    ],
+    state: { ...twoRequests, currentTriggerSeq: 33, contextThroughSeq: 33 },
+    cooldownAvailable: true,
+    backchannelAvailable: true,
+    eligibleTraitIds: [],
+    conditionCode: "C2",
+  });
+  assert.match(prompt, /- Said by the humans since Alex last spoke: messages 31, 32, 33/);
+
+  // Listed as what to reply to, never as a clock; the rule says both halves.
+  assert.match(LEDGER_JUDGE_SYSTEM, /What the humans said since Alex last spoke is what this turn replies to/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /This is about content, never pacing/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /never hand the writer a premise nobody stated/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /The coverage line is not by itself a reason to take a turn/);
+  assert.match(LEDGER_JUDGE_SYSTEM, /never write a brief that calls the information on a candidate exhausted/);
 }
 
 // ── The Chair's board recap is an act, not a timer ─────────────────────────
