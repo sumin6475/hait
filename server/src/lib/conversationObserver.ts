@@ -631,7 +631,6 @@ export interface QuestionThreadSnapshot {
     | "waiting_for_answer"
     | "collecting_answers"
     | "uptake_eligible"
-    | "humans_carrying_thread"
     | "closed";
   candidates: Candidate[];
   evidenceSeqs: number[];

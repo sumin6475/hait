@@ -10,7 +10,6 @@ const questionThreadSnapshotSchema = new mongoose.Schema(
         "waiting_for_answer",
         "collecting_answers",
         "uptake_eligible",
-        "humans_carrying_thread",
         "closed",
       ],
       required: true,

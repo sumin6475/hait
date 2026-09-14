@@ -75,15 +75,6 @@ export function coverageByCandidate(revealStats: any): Record<Cand, number> {
   return coverage;
 }
 
-export function candidatesForIds(ids: Iterable<string>): Set<Cand> {
-  const candidates = new Set<Cand>();
-  for (const id of ids) {
-    const candidate = TRAIT_BY_ID.get(id)?.candidate;
-    if (candidate) candidates.add(candidate);
-  }
-  return candidates;
-}
-
 function firstByObject(revealStats: any): Record<string, { by?: string; seq?: number }> {
   const firstBy = revealStats?.firstBy;
   if (firstBy instanceof Map) return Object.fromEntries(firstBy);

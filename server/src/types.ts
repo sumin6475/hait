@@ -21,9 +21,6 @@ export type SenderRole = ParticipantRole | "ai";
 // AI 평가 결과
 export type AIDecision = "speak" | "stay_silent";
 
-// 정보 긍정/부정
-export type Valence = "positive" | "negative";
-
 //연구자 승인 게이트 — id는 잠금 해제하는 단계명 (Step 32)
 export type GateId = "consent" | "demographics" | "infoCards" | "waiting" | "teamDecision" | "debrief";
 export const GATE_ORDER: GateId[] = ["consent", "demographics", "infoCards", "waiting", "teamDecision", "debrief"];
@@ -116,23 +113,3 @@ export type RerouteReason = "judge_silent" | "peer_mediation" | "opening" | "non
 
 // [Tier 0] 쿨다운 면제 사유
 export type ExemptReason = "address" | "followup" | "long_silence" | "none";
-
-// [Tier 0] AI 턴 메타 — AIIntervention에 영속
-export interface TurnMeta {
-  routeKind: RouteKind;
-  judgeSpeak: boolean | null;    // null if judge not called
-  judgeReason: string | null;    // null if judge not called
-  rerouted: boolean;
-  rerouteReason: RerouteReason;
-  exemptReason: ExemptReason;
-}
-
-export interface TurnReservation {
-  id: string;
-  anchorSeq: number;
-  routeKind: Exclude<RouteKind, "greeting" | "closing">;
-  priorityRoute: PriorityRoute;
-  judgeDecision: MainJudgeDecision | null;
-  dueAt: number;
-  source: "push" | "long_silence" | "summary";
-}

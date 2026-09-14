@@ -1,7 +1,6 @@
 import { callAIStructured, type AIStructuredResult } from "./openai.js";
 import { guardEnabled } from "./guardFlags.js";
 import { extractHumanTraitsFast, type FastTraitCandidate } from "./poolingExtractor.js";
-import { candidatesForIds } from "./informationPools.js";
 import type { RouteOutputScopeGuard } from "./routeContext.js";
 import { log } from "./log.js";
 import { TRAIT_BY_ID } from "./traitData.js";
@@ -79,16 +78,6 @@ function successfulAttemptAudit(input: {
     violations: input.violations,
     softViolations: input.softViolations,
   };
-}
-
-function explicitCandidateLabels(content: string): Set<string> {
-  const candidates = new Set<string>();
-  const namedPattern = /\bCandidate\s+([ABCD])\b/gi;
-  const tokenPattern = /\b([ABCD])(?:'s|’s)?\b/g;
-  let match: RegExpExecArray | null;
-  while ((match = namedPattern.exec(content))) candidates.add(match[1]!.toUpperCase());
-  while ((match = tokenPattern.exec(content))) candidates.add(match[1]!.toUpperCase());
-  return candidates;
 }
 
 const INTERNAL_METADATA_PATTERNS = [

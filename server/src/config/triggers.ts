@@ -1,11 +1,5 @@
 //Trigger - 조정 가능하도록 환경변수로 분리
 export const TRIGGER_CONFIG = {
-  //매 N개 사람 메시지 후 평가 (Step 5/F: 5→3 — cooldown이 과발화를 차단하므로 더 자연스러운 끼어듦)
-  MESSAGE_COUNT_THRESHOLD: 3,
-
-  //마지막 AI 발화 후 N초 경과 시 평가
-  TIME_INTERVAL_SECONDS: 90,
-
   // Long silence is a restrained backup route, not the primary speaking path.
   LONG_SILENCE_SECONDS: 60,
   LONG_SILENCE_MAX_BROADCASTS: 3,
@@ -23,8 +17,6 @@ export const TRIGGER_CONFIG = {
   DEPTH_MIN_PER_CAND: 3,
   // [Step 39] 현재 토픽 후보(C*) 탐지 시 거슬러 볼 '사람' 메시지 수 (튜너블)
   DEPTH_LOOKBACK_MSGS: 4,
-  // [Step 41] social 발화 최소 간격(메시지) — 직전 social 후 이만큼 안 지나면 억제. (callout 쿨다운과 동급)
-  EXP_NATURAL_DIRECTED: true, // [EXP] 자연발화 프로빙.
 
   // [Tier 1] 시간 플로어 — exemption이 결정하는 것은 "속도"뿐, "브레이크 유무"가 아님.
   // 정규식/judge가 틀려도 연속 발화는 구조적으로 불가능 (응답이 조금 빠르거나 늦을 뿐).
@@ -33,16 +25,8 @@ export const TRIGGER_CONFIG = {
   MAIN_ROUTE_DELAY_MS: 3_000,
   BACKCHANNEL_GAP_MS: 15_000, // 의미 Judge를 통과한 backchannel끼리의 최소 간격.
   BACKCHANNEL_RATE: 1,
-  SUMMARY_MIN_ELAPSED_MS: 10 * 60 * 1000,
-  SUMMARY_MIN_HUMAN_MESSAGES: 12,
-  SUMMARY_MIN_SURFACED: 8,
-  SUMMARY_MIN_CANDIDATES: 2,
-  SUMMARY_LATEST_BEFORE_END_MS: 5 * 60 * 1000,
 
   MEDIATION_TTL_MS: 3 * 60 * 1000,
   MEDIATION_TTL_HUMAN_MESSAGES: 8,
   MEDIATION_BUILD_ON_THRESHOLD: 2,
-
-  // [opening] 자연발화 "인사 recipe"를 쓸 토론 극초반 상한(누적 메시지). 이 미만 ∧ 테이블에 후보 0이면 오프닝으로 보고 인사로 받음. (튜너블 — 너무 일찍 의견 내면 ↑)
-  NATURAL_OPENING_MAX_MSGS: 6,
 } as const;

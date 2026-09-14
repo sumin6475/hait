@@ -15,8 +15,6 @@ import { deriveSignalFromLLM, type JudgeExchangeClass } from "./signalJudge.js";
 // below is the request classifier's looser reading and predates it.
 import { literalCandidateMentions } from "./conversationObserver.js";
 
-export type { JudgeExchangeClass } from "./signalJudge.js";
-
 export interface TranscriptMessage {
   seq: number;
   senderRole: string;
@@ -973,7 +971,6 @@ function scopedInventoryCountKind(text: string): RequestCountKind | null {
   return "all";
 }
 
-
 // [D6 / T-C1-024 seq 3] "I think it would be best to just go through what
 // information we have on each candidate" is a proposal about procedure, not a
 // request that Alex enumerate the board — but "each candidate" matches
@@ -1144,50 +1141,12 @@ function requestCountKind(text: string): RequestCountKind {
 // phrasing, replace this source decision with one shared semantic classifier
 // rather than continuing to grow route-specific phrase patches.
 
-/**
- * [Decline] Three deterministic detectors for requests Alex must refuse plainly
- * rather than defer with a question.
- *
- * T-C1-027 answered four consecutive direct requests with another clarifying
- * question — asked for a table, Alex asked compact-or-full; told "full row", it
- * asked which order; given the order, it asked exact-phrases-or-labels — until
- * the participant wrote that they had hoped the AI could just make the table.
- * The policy of the day allowed "one clarification question only when the
- * request genuinely cannot be answered as written", and a prompt rule alone had
- * failed at this three times, so the refusal became server-derived like the
- * anti-repeat block beside it. That escape hatch is now gone from the prompts
- * entirely: all four conditions answer an ambiguous request on its most
- * reasonable reading and say which reading they took.
- *
- * Note the standing rule these blocks must not break: Alex may never say that a
- * prompt, rule, or scope prevents it from answering. Both refusals below are
- * true in character — Alex writes chat prose, and a Peer really does hold only
- * its own card — so neither has to reach for a policy.
- */
 // The layout, collation and candidate-letter detectors stood here: three word
 // lists deciding whether a participant had asked for a table, asked Alex to
 // compile everyone's notes, or addressed it by a candidate letter. `docs/adr/0010`
 // removed the blocks they fed, and a detector nothing calls is how a rule comes
 // back by accident. The phrasings they were built from are recorded beside the
 // Judge prompt, which is what reads for them now.
-
-
-/**
- * [Label reservation] A/B/C/D name candidates and nothing else. Asked whether to
- * call it "C" or "Alex", T-C1-027's Alex answered that either name works —
- * adopting a candidate identifier as its own, in the middle of a board those
- * same letters index. Detected here so the correction does not depend on the
- * model noticing the collision.
- */
-const ADDRESSED_BY_CANDIDATE_LETTER = [
-  /^\s*(?:hey\s+|hi\s+)?[ABCD]\s*[,:!?]/,
-  /\b(?:call|address|refer to)\s+you\s+(?:as\s+)?[ABCD]\b/i,
-  /\b(?:respond|reply|answer)\s+to\s+[ABCD]\b/i,
-  /\byou(?:'re|\s+are)\s+[ABCD]\b/,
-];
-export function candidateLetterAddressSignal(content: string | undefined | null): boolean {
-  return matchesAny(content?.trim() ?? "", ADDRESSED_BY_CANDIDATE_LETTER);
-}
 
 export function classifyRequestIntent(content: string | undefined | null): RequestIntent {
   const text = content?.trim() ?? "";

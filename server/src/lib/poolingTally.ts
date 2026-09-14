@@ -4,7 +4,7 @@ import { Session } from "../models/Session.js";
 import { TRAIT_BY_ID, type Cand } from "./traitData.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js"; // [Step 39] DEPTH_LOOKBACK_MSGS
 import { recordFirstSurfacer } from "./poolingDV.js";
-import { coverageByCandidate, humanSurfacedIds } from "./informationPools.js";
+import { humanSurfacedIds } from "./informationPools.js";
 
 // (a) 갱신: 원자적 $addToSet — 동시 async 추출에 안전, dedup 자동.
 // 카운트는 저장하지 않고 읽을 때 revealedIds에서 파생한다 (read-modify-write 레이스 회피).
@@ -49,12 +49,6 @@ export async function updateRevealStats(
   }
   await recordFirstSurfacer(sessionId, valid, "human", seq); // [Step 62]
   return newIds.size;
-}
-
-// (b) 계산: 후보별 distinct pos/neg (Z ∪ revealed). leader = 최고 pos/neg 비율, 동점이면 null.
-export interface Tally {
-  rows: Record<Cand, { pos: number; neg: number }>;
-  leader: Cand | null;
 }
 
 // [Step 39] 최근 '사람' 메시지에서 지금 논의 중인 후보 1개 탐지 (정규식 · 순수함수).
