@@ -43,6 +43,15 @@ router.patch("/:code/progress", async (req, res) => {
     if (!participant) {
       return res.status(404).json({ error: "participant_not_found" });
     }
+    //완료 단계가 completedAt의 유일한 기록 지점이다. 재접속 라우터가 이 값을 가장 먼저 보는데
+    //스키마·응답·클라이언트에 다 있고 쓰는 곳만 없어서, 마지막 화면에서 새로고침하면 debrief로 되돌아갔다.
+    //처음 완료한 시각만 남긴다.
+    if (step === "complete" && !participant.completedAt) {
+      await Participant.updateOne(
+        { participantCode: code, completedAt: { $exists: false } },
+        { $set: { completedAt: new Date() } },
+      );
+    }
     res.json({ ok: true, progress: participant.progress });
   } catch (error) {
     console.error("[PATCH /participants/:code/progress]", error);

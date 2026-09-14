@@ -22,6 +22,7 @@ const questionThreadSnapshotSchema = new mongoose.Schema(
       default: [],
     },
     closeReason: { type: String },
+    // Never set: the uptake judge that would set it is not wired into the controller.
     uptakeEvaluated: { type: Boolean, default: false },
   },
   { _id: false },
@@ -257,6 +258,8 @@ const conversationObservationSchema = new mongoose.Schema(
     pendingQuestionRootSeq: { type: Number },
     questionThreadAfter: { type: questionThreadSnapshotSchema, default: undefined },
     stateAfter: { type: conversationStateAfterSchema, default: undefined },
+    // Historical: the uptake judge is not wired into the live controller (ARCHITECTURE §8).
+    // Kept so older exports keep these fields.
     uptakeJudgeCalled: { type: Boolean },
     uptakeDecision: {
       type: String,
@@ -281,6 +284,7 @@ const conversationObservationSchema = new mongoose.Schema(
     uptakeLatencyMs: { type: Number },
     uptakeError: { type: String },
 
+    // Historical: written by recordFollowupObservation, deleted 2026-09-08. Kept for older exports.
     followupCandidateEligible: { type: Boolean },
     followupJudgeCalled: { type: Boolean },
     followupJudgeResult: { type: Boolean },

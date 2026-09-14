@@ -88,7 +88,7 @@ const participantSchema = new mongoose.Schema(
     //게이트 도착 — Hold 화면 마운트 시각 (Step 32, 대시보드 "n/m 도착" 표시용)
     gateArrivals: { type: gateDatesSchema, default: () => ({}) },
 
-    //접속/종료 시점
+    //접속/종료 시점. connectedAt은 쓰는 곳이 없다 (접속 기록은 lastSeenAt). completedAt은 progress 'complete'가 쓴다
     connectedAt: Date,
     lastSeenAt: Date,
     completedAt: Date,

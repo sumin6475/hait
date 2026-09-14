@@ -78,7 +78,7 @@ const gateDatesSchema = new mongoose.Schema(
   { _id: false },
 );
 
-//세션 메타 (요약 통계)
+//세션 메타 (요약 통계) — 서버가 쓰는 곳이 없다 (ARCHITECTURE §7i). 클라이언트 대시보드 타입이 이 모양을 읽어서 남긴다.
 const metadataSchema = new mongoose.Schema(
   {
     totalTurns: { type: Number, default: 0 },
@@ -99,7 +99,7 @@ const aiStateSchema = new mongoose.Schema(
       enum: ["not_eligible", "pending", "generating", "done"],
       default: "not_eligible",
     },
-    summaryEligibleAt: { type: Date },
+    summaryEligibleAt: { type: Date }, // 과거 행 전용 — docs/adr/0012가 요약 타이머를 없앴다
     summaryMessageId: { type: mongoose.Schema.Types.ObjectId, ref: "Message" },
     // [LOW-5] closing 발화가 실제로 저장된 Message id — 재시작 시 이중 closing 감지용.
     // AIIntervention 로그 기록 실패와 무관하게 closing 완료 여부를 판단하는 별도 경로.

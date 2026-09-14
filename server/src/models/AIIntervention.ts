@@ -29,6 +29,7 @@ const outputRepairGuardSchema = new mongoose.Schema(
   {
     candidate: { type: String, enum: ["A", "B", "C", "D"] },
     reason: { type: String, required: true },
+    // 과거 행 전용 — docs/adr/0010이 네 개수 제한을 없앴다. 이전 세션 export가 읽으므로 남긴다.
     maxTraitIds: { type: Number },
     maxRestatedTraitIds: { type: Number },
     maxSentences: { type: Number },
@@ -123,7 +124,7 @@ const aiInterventionSchema = new mongoose.Schema(
     //호출에 사용한 모델명 (예: "gpt-5.5")
     model: { type: String },
 
-    //디버깅/분석용 - 프롬프트 원문, 응답 원문
+    //응답 원문. prompt는 2026-09-08 삭제된 aiTurn 경로만 썼다 — 과거 행 전용
     prompt: { type: String },
     response: { type: String },
 
@@ -135,10 +136,10 @@ const aiInterventionSchema = new mongoose.Schema(
     //OpenAI 모델 버전 식별자
     systemFingerprint: { type: String },
 
-    //judge 사유 문자열 (stay_silent/ speak 판단 근거) — Step 20
+    //judge 사유 문자열 — Step 20. aiTurn 경로 전용이라 과거 행 전용. 라이브 사유는 judgeEvidence·routeReason·silenceReason
     why: { type: String },
 
-    //[Step 30] 지목 호명 overlay — 지목 DV (leader>0 · peer=0 비교)
+    //[Step 30] 지목 호명 overlay — aiTurn 경로 전용이라 과거 행 전용 (tail 조립기는 2026-09-14 삭제)
     calloutTarget: { type: String },
     calloutCand: { type: String },
 
