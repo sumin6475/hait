@@ -12,8 +12,8 @@ import type { SpeakingReason } from "./computeCue.js";
 import compiledPrompts from "./compiled-prompts.json" with { type: "json" };
 
 //=== 동결 프롬프트 (PMS 산출물) ===
-// core_prompts/*.yaml → compiled-prompts.json → 동결 프롬프트
-//프롬프트 갱신 : PMS에서 'pnpm run export:hait' 실행
+// compiled-prompts.json은 동결된 마지막 산출물이다. 만든 PMS(prompt-management-system)는
+// 2026-09-14 저장소에서 제거됐으므로 갱신하지 않는다. 라이브 프롬프트는 src/prompts/blocks/에서 컴파일된다.
 export function buildSystemPrompt(conditionCode: ConditionCode): string {
   if (conditionCode === "CTRL") {
     throw new Error("CTRL condition should not invoke AI");
@@ -22,8 +22,7 @@ export function buildSystemPrompt(conditionCode: ConditionCode): string {
   const entry = compiledPrompts.conditions[conditionCode];
   if (!entry) {
     throw new Error(
-      `No compiled prompt for condition "${conditionCode}". ` +
-        `Run \`pnpm run export:hait\` in prompt-management-system/.`,
+      `No compiled prompt for condition "${conditionCode}" in the frozen compiled-prompts.json.`,
     );
   }
   return entry.prompt;

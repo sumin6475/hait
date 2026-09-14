@@ -88,7 +88,7 @@ Session and participant code issuance, chat + AI-intervention logging, researche
 > For the full engineering map — every pipeline stage, every place the same fact
 > is written twice, and what is unused — see **[ARCHITECTURE.md](ARCHITECTURE.md)**.
 
-The repo is a **three-way split**, with dependencies installed per package (no monorepo workspaces):
+The repo is a **client/server split**, with dependencies installed per package (no monorepo workspaces):
 
 ```
 ┌──────────────┐      ┌───────────────────────┐      ┌──────────────────┐
@@ -98,14 +98,11 @@ The repo is a **three-way split**, with dependencies installed per package (no m
 └──────────────┘      └───────────┬───────────┘      └──────────────────┘
                                   │
                                   ▼
-                         ┌─────────────────┐        ┌────────────────────────┐
-                         │    MongoDB      │        │ prompt-management-system│
-                         │ sessions · msgs │        │ agents ─▶ YAML ─▶       │
-                         │ AI logs · DVs   │        │ compiled-prompts.json   │
-                         └─────────────────┘        └───────────┬────────────┘
-                                                                │ frozen prompts
-                                                                ▼
-                                                          server consumes
+                         ┌─────────────────┐
+                         │    MongoDB      │
+                         │ sessions · msgs │
+                         │ AI logs · DVs   │
+                         └─────────────────┘
 ```
 
 **Repository map:**
@@ -119,11 +116,6 @@ HAIT/
 │       ├── lib/               # Judge, prompt routing, model calls, DV extraction
 │       ├── models/            # Mongoose persistence
 │       └── eval/              # Golden baselines and judge regression cases
-├── prompt-management-system/
-│   ├── src/agents/            # Scout, Grounder, Architect, Critic, Supervisor
-│   ├── core_prompts/          # Four independently versioned condition specs
-│   ├── config/                # Model assignments, rubrics, thresholds
-│   └── tests/                 # Schema, citation, orthogonality, freeze checks
 └── docs/                      # Study decisions, snapshots, pilot records
 ```
 
@@ -152,6 +144,8 @@ HAIT/
 ## 🧠 AI System Design
 
 ### How the agents converge on one specification
+
+> ⚠️ Removed (2026-09-14): the Prompt Management System is no longer in this repository. Its last output, `server/src/lib/compiled-prompts.json`, is frozen and read only by the eval harnesses and an admin audit field; the live prompt is compiled from `server/src/prompts/blocks/`. The description below is kept as a record of how the original condition specs were authored.
 
 The offline Prompt Management System is a **score-gated revision pipeline**, not an open-ended group chat or majority vote:
 

@@ -48,7 +48,6 @@ eval-results/
 # Architecture docs (local agent-generated, not tracked).
 # The root ARCHITECTURE.md is the exception: it is a deliberate map of the
 # pipeline and the seams, written to be read by the next person on this repo.
-prompt-management-system/ARCHITECTURE.md
 INTERVENTION_LOGIC.md
 MEMORY.md
 
@@ -64,6 +63,8 @@ docs/*
 !docs/measurements.md
 cursor_steps/
 IRB/
-# prompt-management-system (오서링타임 툴 — 산출물 캐시는 지금 제외)
-# 재현성 증빙 필요 시 아래 줄 삭제 후 git add 로 추적 시작
-prompt-management-system/cache/
+# prompt-management-system: the authoring tool was removed from the repo on 2026-09-14.
+# A local copy may remain, with its own .env; it must never be re-added.
+prompt-management-system/
+# Pilot data exports carry participant messages. Never commit them.
+server/pilot-export.json
