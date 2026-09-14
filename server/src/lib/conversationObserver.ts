@@ -187,7 +187,6 @@ type ParsedObservation = z.infer<typeof CONVERSATION_OBSERVER_OUTPUT_SCHEMA>;
  * last field of `activeThread`, nothing semantic follows it, and it was the
  * unbounded accumulator.
  */
-// Older saved observations and replay fixtures predate these semantic fields.
 /**
  * The Observer's reading of the request, carrying the scope it reported for the
  * same turn. The model does not emit `requestedScope` inside the intent — the
@@ -199,6 +198,7 @@ export type ObservedRequestIntent = NonNullable<ParsedObservation["requestIntent
   requestedScope?: ParsedObservation["requestedScope"];
 };
 
+// Older saved observations and replay fixtures predate the transition field.
 export type ConversationObserverResult = Omit<
   ParsedObservation,
   "requestIntent" | "opportunityTransitions"

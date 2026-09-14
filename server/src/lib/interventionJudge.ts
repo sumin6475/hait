@@ -32,8 +32,8 @@ const client = new OpenAI({ apiKey: config.openaiApiKey, baseURL: config.openaiA
 // The Judge now reads the message for what it asks, decides the subject, names
 // what may be said, and writes the generator's instruction — four judgements the
 // deterministic layer used to make with regular expressions. `gpt-4o-mini` was
-// sized for a five-field routing decision. `docs/adr/0005` forbids swapping the
-// *speech* model for latency and says nothing about this one.
+// sized for a five-field routing decision. (`docs/adr/0005` concerned the
+// Observer's model and is obsolete: the Observer runs on this one too.)
 const JUDGE_MODEL = "gpt-5-mini";
 
 /**
@@ -394,9 +394,9 @@ const LEDGER_JUDGE_EVIDENCE = [
  * cannot be talked out of, and this repair has watched prose rules fail at this
  * class of problem repeatedly.
  *
- * The wide schema stays the source of the decision type: the legacy Judge still
- * uses it, and the engine still maps a `mediate` from that path down to
- * `contribute` for a non-Chair condition.
+ * The wide schema is the Chair's and the source of the decision type. A Member's
+ * decision has the same type with fewer acts the model can emit, and the engine
+ * still demotes a leader-only act to `contribute` for a non-Chair condition.
  */
 const ConversationLedgerJudgeSchema = z.object({
   decision: z.enum(["speak", "silent", "reobserve"]),
@@ -1042,12 +1042,10 @@ export function deterministicVetoBeforeJudge(
  * silence. In T-C2-037 the same violation, `trait_present_for_non_trait_evidence`,
  * cost four turns this way.
  *
- * Only one repair qualifies today. `selectedTraitId` reaches generation solely
- * through `build_on` + `relevant_unsurfaced_information`; under any other
- * evidence the field is inert, so clearing it is provably meaning-preserving.
- * The opposite repair — promoting the evidence to match the trait — is not:
- * it would hand the turn a licence to reveal a private note that the Judge
- * never asked for. Anything that could change meaning must still be rejected.
+ * One repair qualifies today: a silent decision that still carries a brief or a
+ * disclosure list has both cleared, since a silent turn broadcasts nothing either
+ * way. The trait clearing that was the other one went with `docs/adr/0010`.
+ * Anything that could change meaning must still be rejected.
  */
 export function canonicalizeConversationLedgerJudgeDecision(
   decision: ConversationLedgerJudgeDecision,
@@ -1120,7 +1118,7 @@ export interface LedgerJudgeCallInput {
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
   eligibleTraitIds: string[];
-  /** The board, for the leader's coverage note. Absent means no note is added. */
+  /** The board: the leader's coverage note and, in every condition, Alex's own read. Absent means neither is added. */
   revealStats?: unknown;
   /** Whether `recap` is one of this turn's moves. Absent reads as not offered. */
   recapAvailable?: boolean;
@@ -1139,9 +1137,9 @@ export interface LedgerJudgeCallInput {
  * that weighted trait categories — the one thing the equal-weight task standard
  * forbids. Naming the uncovered candidates gives that turn a legitimate move.
  *
- * Only issue 04's first move is built. The list says what is thin; it does not
- * say what the team has pooled, and it does not raise a shortfall at the close.
- * Those are separate moves and separate measurements.
+ * Issue 04's first two moves are built: this sentence says what the humans have
+ * pooled, and `groupNarrowingNote` lets the Judge raise a shortfall once when the
+ * group narrows. A shortfall at the close is not built.
  *
  * **"Thin" now means the humans have said nothing of their own.** Under the
  * coverage bar this replaced (`docs/adr/0011`), Alex's own disclosures retired

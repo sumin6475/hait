@@ -100,13 +100,17 @@ export function contributesToBoard(routeKind: string): boolean {
   return !NON_CONTRIBUTING_ROUTES.includes(routeKind as RouteKind);
 }
 
+/**
+ * The values the turn path writes to `AIIntervention.outcome`. That field has no
+ * schema enum, so this is the one list of them, kept for the export's readers.
+ */
 export type TurnOutcome =
-  | "reserved"
   | "cancelled"
   | "stay_silent"
   | "generation_failed"
   | "saved"
-  | "broadcast";
+  | "broadcast"
+  | "broadcast_failed";
 
 // [Tier 0] 리라우트 사유 (judge 침묵 때 natural reroute 등)
 // Legacy analysis fields remain readable while V2 writes explicit route outcomes.

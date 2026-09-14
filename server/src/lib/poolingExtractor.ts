@@ -436,7 +436,7 @@ export async function verifyHumanTraitCandidates(input: { messageText: string; c
   } finally { clearTimeout(timeout); }
 }
 
-/** Existing AI guard API. Human callers should use fast + verify instead. */
+/** The LLM extractor, kept for the admin test-chat (`routes/conditions.ts`). Live turns use fast + verify. */
 export async function extractSurfacedTraits(messageText: string): Promise<string[]> {
   const ctrl = new AbortController(); const timeout = setTimeout(() => ctrl.abort(), EXTRACT_TIMEOUT_MS);
   try {

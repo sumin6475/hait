@@ -6,7 +6,7 @@
  * counts, and the content of any finding are the author's business and are
  * deliberately not checked.
  *
- * Two jobs today:
+ * Five jobs:
  *
  *   1. Cross-references resolve. A `§4h`-style pointer must name a section that
  *      exists, and a relative markdown link must name a file that exists.
@@ -15,11 +15,8 @@
  *      marks `unmoved` or `partial` must still be present, and one it marks
  *      `moved` or `partial` must say where its content went.
  *
- * While the migration is in progress, sections not yet fully `moved` are
- * reported rather than failed — otherwise this would be red from the first
- * commit to the last. The ticket that rewrites the checkpoint flips
- * `enforceAllAccounted` in the map, and from then on an unaccounted section is
- * a failure.
+ * The map's `enforceAllAccounted` has been on since 2026-09-08, so an
+ * unaccounted checkpoint section fails the build.
  *
  *   3. The glossary holds terms and only terms.
  *   4. The ADRs are numbered contiguously and each has a title.

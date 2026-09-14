@@ -15,10 +15,11 @@
  * missing `.env` all produce the shipped behaviour, so a comparison run has to
  * be asked for explicitly and can never happen by accident.
  *
- * Whatever was on is written into the session record. A transcript produced
+ * Whatever was off is written into the intervention record. A transcript produced
  * with a check disabled and no note of it is worse than no transcript, because
- * it reads exactly like a normal one — so `guardFlagsForRecord()` goes into the
- * intervention row and the reader can always see which build spoke.
+ * it reads exactly like a normal one — so `disabledGuards()` is the default of every
+ * intervention row's `disabledGuards` field and the reader can always see which
+ * build spoke.
  */
 
 export type GuardFlagName =

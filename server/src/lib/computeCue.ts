@@ -1,6 +1,6 @@
 // computeCue — 발화 시점의 speaking reason(cue)을 맥락에서 계산한다 (순수 함수).
 // 값은 compiled 프롬프트의 cue_routing 어휘와 정확히 일치해야 한다.
-// 라이브(Step 6)와 eval(run-golden) 공유. 가정: 호출 맥락의 마지막 메시지는 사람 턴이다
+// eval(run-golden) 전용 — 라이브는 Judge가 act를 정한다. 가정: 호출 맥락의 마지막 메시지는 사람 턴이다
 // (트리거는 사람 발화 뒤에 돌고, 라이브 cooldown(Step 5)이 'AI 직후 발화'를 막는다).
 
 export type SpeakingReason =
@@ -22,7 +22,6 @@ const MEDIATION_RE =
   /(going in circles|i disagree|i'?d be fine|deciding between those|decide between those|we'?re split|split between)/i;
 
 // AI 호명(명시). 라이브의 'AI 메시지에 직접 reply'는 Step 6에서 추가.
-// 트리거 게이트(evaluate.ts)와 공유 — 단일 소스 (Step 5/F)
 // [KO-PILOT] 한국어 호명 "알렉스" 추가 — 영어 세션엔 안 나타나 무해. 제거 시 |알렉스 만 삭제.
 export const ADDRESS_RE = /\balex\b|알렉스/i;
 

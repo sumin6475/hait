@@ -757,25 +757,6 @@ function mergeCandidateSalience(
 }
 
 /**
- * The thread's candidates ordered by what the group is currently on: the
- * candidate the current turn explicitly named first when the observer decided
- * one, then the most recently named candidate, then the rest of the scope in its
- * stable order.
- *
- * This is the ranking signal that `focusCandidate` alone could not carry. It is
- * a pure derivation over recorded mentions — no model call, no reinterpretation
- * of wording — so it stays available on the comparison and continuation turns
- * where focus is structurally null.
- *
- * Focus only outranks salience on a `current_explicit` basis. That basis is a
- * claim about *this* turn — normalization drops it when the turn's literal
- * mentions contradict it — so promoting it adds the observer's reading of which
- * named candidate the turn is about, which recency alone cannot express. Every
- * other basis is an inference about an announcement further back, and at
- * T-C2-039 seq 10 a focus carried from an earlier thread outranked the candidate
- * a participant had just named. A hint does not overrule the transcript.
- */
-/**
  * The candidates a thread is about.
  *
  * Two callers derived this expression independently — here and in
@@ -814,6 +795,25 @@ export function liveForegroundThread(
   return thread.status === "open" || thread.status === "waiting" ? thread : undefined;
 }
 
+/**
+ * The thread's candidates ordered by what the group is currently on: the
+ * candidate the current turn explicitly named first when the observer decided
+ * one, then the most recently named candidate, then the rest of the scope in its
+ * stable order.
+ *
+ * This is the ranking signal that `focusCandidate` alone could not carry. It is
+ * a pure derivation over recorded mentions — no model call, no reinterpretation
+ * of wording — so it stays available on the comparison and continuation turns
+ * where focus is structurally null.
+ *
+ * Focus only outranks salience on a `current_explicit` basis. That basis is a
+ * claim about *this* turn — normalization drops it when the turn's literal
+ * mentions contradict it — so promoting it adds the observer's reading of which
+ * named candidate the turn is about, which recency alone cannot express. Every
+ * other basis is an inference about an announcement further back, and at
+ * T-C2-039 seq 10 a focus carried from an earlier thread outranked the candidate
+ * a participant had just named. A hint does not overrule the transcript.
+ */
 export function candidateSalienceOrder(
   thread: Pick<ConversationThread, "focusCandidate" | "focusBasis" | "candidates" | "scopeCandidates" | "candidateSalience">,
 ): Candidate[] {

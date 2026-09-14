@@ -188,11 +188,16 @@ const ALREADY_STATED_LIMIT = 12;
 /**
  * What Alex has already put in view, told to the generator.
  *
- * The hard half of this shipped as `too_many_restated_traits`, which stops a
- * recital after the fact — T-C1-025 seq 7 restated fifteen traits and introduced
- * none, and the guard now catches that. This is the positive half: the generator
- * is told what it has already said, so it has a reason not to say it again
- * rather than only being stopped when it does.
+ * T-C1-025 seq 7 restated fifteen traits and introduced none. The count that
+ * stopped that recital after the fact, `too_many_restated_traits`, went with
+ * `docs/adr/0010`: a pure restatement of the board is now unguarded, a trade that
+ * ADR makes knowingly and names as the first thing to reconsider if a recital
+ * returns. This block is what is left: the generator is told what it has already
+ * said, so it has a reason not to say it again.
+ *
+ * It covers Alex's own disclosures only. A trait a *human* put on the board is
+ * not in it, which is how T-C3-003 seq 47 offered three human-said misses as "my
+ * notes" (`.scratch/leader-decision-frame/issues/07`).
  *
  * The set is **Alex's own surfaced traits** and nothing else. Surfaced covers
  * what was said aloud, by anyone, and its only legitimate use is avoiding
@@ -1273,7 +1278,7 @@ export function classifyRequestIntent(content: string | undefined | null): Reque
  * thirteen of its twenty-four notes were unsaid.
  *
  * This is bookkeeping, not an instruction. It says nothing about what Alex
- * should disclose, and the reveal budget is unchanged; it only means "do I have
+ * should disclose, and what a turn may disclose is still the Judge's to name; it only means "do I have
  * anything left" stops being a guess. Deliberately not marked by profile: which
  * notes only Alex holds is not something a participant can know about their own
  * card, and this block must not tell Alex either.
@@ -1755,8 +1760,10 @@ function requestScopeFromIntent(input: {
       };
     }
     return {
-      // The candidate bound is enforced (the guard below carries it). The trait
-      // count is not: ADR-0010 moved that onto the Judge, whose named disclosure
+      // The candidate is stated to the generator. The guard below carries it only
+      // for the repair prose and the audit record, because the output check reads
+      // the Judge's list alone. No trait count either: ADR-0010 moved that onto
+      // the Judge, whose named disclosure
       // outranks this guard, so a sentence here promising "at most one trait"
       // could contradict the facts the Judge put in front of the generator on
       // the same turn. It names the scope it can actually hold and stops there.
@@ -2101,17 +2108,11 @@ export function buildRouteUserContext(input: {
       lastHumanDiscussionCandidate(input.revealStats, window[0]?.seq ?? 0));
   const completeRequestCandidate =
     requestIntent.kind === "complete_single_candidate" ? resolvedRequestCandidate : null;
-  // [Decline / T-C1-027] A request Alex must decline is not one the template may
-  // silently fulfil. Widening makes the complete-list templates reachable on
-  // turns the decline detectors also fire on, and the whole-board template would
-  // then have a Peer recite the group's board — the leader behaviour the
-  // collation refusal exists to prevent. Those turns go to generation, where the
-  // decline block is read and the widened scope still applies.
   // The deterministic complete-list templates no longer step aside for a detected
   // decline, because there is no detector. What they still step aside for is the
   // Judge: a turn it named facts for is a turn it decided the content of, and a
   // template that recites the whole board instead is not that turn.
-  const declineTakesPrecedence = Boolean(input.discloseTraitIds?.length);
+  const judgeNamedTheFacts = Boolean(input.discloseTraitIds?.length);
   // [Issue 06] The route reads the observation instead of short-circuiting ahead
   // of it. The fixed sentence is a whole reply, so it can only answer a message
   // that asked for nothing else; a turn that also names a candidate is making a
@@ -2147,7 +2148,7 @@ export function buildRouteUserContext(input: {
     // The agreement check stands for every other reading. It does not stand over
     // the Observer's scope fields, because agreement with a word list is not
     // evidence about a message the word list has no word for.
-    (!declineTakesPrecedence && (observerWholeBoard || lexicalIntent.kind === requestIntent.kind)
+    (!judgeNamedTheFacts && (observerWholeBoard || lexicalIntent.kind === requestIntent.kind)
       ? deterministicCompleteResponse({
           language: input.language,
           intent: requestIntent,
@@ -2272,14 +2273,9 @@ export function buildRouteUserContext(input: {
           reason: "mediation_no_new_traits",
         }
       : undefined;
-  // [D3] An explicit request determines its own scope, including the decision to
-  // impose no trait-count limit at all — answering "what do you have on all
-  // four?" is exactly the turn that may name many traits, and
-  // `buildRequestScope` says so by returning a block with no guard. Only turns
-  // where no explicit request scope applies get the per-turn reveal budget.
-  // The Judge's list is the turn's factual bound. An explicit request scope may
-  // still narrow it — that path reads the participant's own words and is removed
-  // with the classifier — but nothing widens it, and nothing counts.
+  // The Judge's list is the turn's factual bound, and nothing counts traits,
+  // sentences or words (`docs/adr/0010`). An explicit complete-list request
+  // carries no list of its own, so it adds no bound either.
   // Only the routes the Judge actually decides. A greeting, a summary and a
   // closing are assembled elsewhere and never pass through it, so an absent list
   // there means "no Judge ran", not "say nothing".
@@ -2301,11 +2297,7 @@ export function buildRouteUserContext(input: {
   // The first three are the Judge's own list wearing a route's shape — they read
   // `discloseTraitIds` and add what that route needs on top of it, so they are not
   // competing decisions. `judgeNamedGuard` is the same list for every other route.
-  //
-  // What moved is the request scope: it now sits *below* all of them. It is a
-  // deterministic reading of the participant's words made after the Judge decided
-  // and without seeing that decision, and `docs/adr/0010` settles which wins.
-  // T-C4-022 seq 53 is what the other order costs.
+  // The request scope sits below all of them.
   const outputScopeGuard =
     selectedContributionGuard ??
     routeSinglePointGuard ??

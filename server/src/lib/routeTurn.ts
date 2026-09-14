@@ -349,8 +349,9 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
   ];
   const generationGuard = routeGenerationGuard(input.routeKind, context.outputScopeGuard);
   // The board Alex reasoned against on this turn, read before Alex's own message
-  // is extracted into it. Written to every record this turn can leave and read
-  // by nothing — see the shadow-only assertion in test-intervention-v2.
+  // is extracted into it. Written to every record this turn can leave. The list's
+  // one live reader is the Chair's coverage note (`docs/adr/0011`), and
+  // test-intervention-v2 names every file allowed to read it.
   const candidateListAudit = {
     candidateList: computeCandidateList((session as any).revealStats),
     // What the humans had been naming lately, recorded so a session can be
@@ -775,8 +776,8 @@ export async function executeRouteTurn(input: RouteTurnInput): Promise<RouteTurn
    * recorded and nothing more: the message is already out, blocking it is not
    * on offer, and buying it back would cost a model call on the broadcast path
    * that T-C1-024 took off it. What the record must not do is stay silent —
-   * the reveal budget is what keeps Alex's disclosure rate comparable across
-   * conditions, and a budget whose breaches are invisible is not measurable.
+   * the Judge's named list is what keeps Alex's disclosure rate comparable
+   * across conditions, and a bound whose breaches are invisible is not measurable.
    */
   const recordSurfaced = async (ids: string[]) => {
     if (!interventionId) return;

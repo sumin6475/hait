@@ -405,7 +405,7 @@ async function judgeLiveLedgerTurn(input: {
   docs: any[];
   snapshot: ConversationObserverSnapshot | null;
   eligibleTraitIdsForState: (state: ConversationLedgerState) => string[];
-  /** The board. Reaches the Judge only for the leader's coverage note. */
+  /** The board. Gives the Judge the leader's coverage note and, in every condition, Alex's own read. */
   revealStats: unknown;
   recapAvailable: boolean;
   cooldownAvailable: boolean;
@@ -639,14 +639,6 @@ async function runLegacyObserverFallback(input: {
     source: "push",
     communicativeAct: decision.decision === "acknowledge" ? "acknowledge" : "contribute",
   });
-}
-
-function surfacedCoverage(revealStats: any): { total: number; candidates: number } {
-  // Summary eligibility is human-grounded; Alex cannot arm a summary by disclosing notes itself.
-  const ids = humanConfirmedIds(revealStats);
-  const candidates = new Set([...ids].map((id) => TRAIT_BY_ID.get(id)?.candidate).filter(Boolean))
-    .size;
-  return { total: ids.size, candidates };
 }
 
 function silenceDecisionStage(reason: string): InterventionDecisionStage {
@@ -908,7 +900,9 @@ export function recapAvailableFor(
 ): boolean {
   if (!isLeader(runtime.conditionCode)) return false;
   if (runtime.summaryStatus !== "not_eligible") return false;
-  return surfacedCoverage(session?.revealStats).total > 0;
+  // Something the humans put on the board. Alex cannot make a recap available by
+  // disclosing its own notes.
+  return humanConfirmedIds(session?.revealStats).size > 0;
 }
 
 function scheduleLongSilence(runtime: RuntimeState) {

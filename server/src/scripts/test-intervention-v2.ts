@@ -3034,9 +3034,8 @@ assert.equal(
 // record while they were in force. Length is the prompt's job, and the record
 // says the prompt is doing it.
 
-// An explicit request decides its own scope, including that no length limit
-// applies. Those paths are untouched: the bound rides on the reveal budget, and
-// the reveal budget is the default for a turn that asked for nothing.
+// An explicit request decides its own scope, and no turn has had a length limit
+// since `docs/adr/0010`.
 const wholeBoardRequest = buildRouteUserContext({
   routeKind: "address",
   conditionCode: "C1",
@@ -4079,9 +4078,9 @@ assert.match(repeatedGroundingContext.deterministicResponse!, /\?/, "the Chair r
 // The generator is told what it has already said.
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// T-C1-025 seq 7 restated fifteen traits and introduced none. The hard half of
-// that fix — `too_many_restated_traits` — stops the recital after the fact; it
-// does not give the generator a reason not to start one.
+// T-C1-025 seq 7 restated fifteen traits and introduced none. The count that
+// stopped the recital after the fact went with `docs/adr/0010`; this block is
+// what remains, and it gives the generator a reason not to start one.
 const alreadyStatedMessages = [
   { seq: 9, senderRole: "humanX", speaker: "Participant X", content: "What else do we know?" },
 ];
@@ -4752,7 +4751,6 @@ const ALLOWED_CANDIDATE_LIST_READERS = new Set([
   "lib/routeTurn.ts",
   "lib/interventionEngine.ts",
   "scripts/test-intervention-v2.ts",
-  "scripts/test-conversation-ledger.ts",
   // [Issue 03, leader half] The leader's Judge is told which candidates the
   // group has barely touched, so a turn nobody asked for has a legitimate move.
   // Peer conditions get null from the same function.

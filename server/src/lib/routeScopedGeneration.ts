@@ -392,7 +392,7 @@ const VIOLATION_LEAD: Record<string, string> = {
  * The instruction a rejected draft is sent back with.
  *
  * [Issue 21] This used to branch on *which* bound was broken and describe only
- * that one. A guard constrains up to five things at once, so a rewrite was
+ * that one. A guard then constrained up to five things at once, so a rewrite was
  * routinely told about one dimension and left to guess the rest — the trait
  * branch ended in "keep it to a short chat message", an adjective standing in
  * for two numbers the guard was holding.
