@@ -26,12 +26,21 @@ const snapshot = (() => {
   }
 })();
 
+// The snapshot is compared with the source it was compiled from, not with a
+// version written here. A pinned "1.9.0" outlived two prompt bumps and called
+// the correct build old.
+const sourceVersion = read("src/prompts/blocks/index.ts").match(/export const VERSION = "([^"]+)"/)?.[1];
+
 const checks = [
-  ["prompt snapshot 1.9.0", snapshot.sourceVersion === "1.9.0"],
+  [
+    `prompt snapshot compiled from its source (${sourceVersion ?? "source missing"})`,
+    Boolean(sourceVersion) && snapshot.sourceVersion === sourceVersion,
+  ],
   ["01 cooldown veto skips the Judge", has("src/lib/interventionEngine.ts", "deterministicVetoBeforeJudge")],
   ["02 Judge carries a role goal", has("src/lib/interventionJudge.ts", "Alex chairs this group")],
-  ["03 length is a post-condition", has("src/lib/routeScopedGeneration.ts", "too_many_words")],
-  ["03 reveal budget reaches generation", has("src/lib/routeTurn.ts", "revealBudget")],
+  // Issue 03's length and reveal-budget bounds went with docs/adr/0010. What a
+  // turn may put on the board is now the list the Judge names.
+  ["ADR 0010 the Judge names what a turn may spend", has("src/lib/routeScopedGeneration.ts", "trait_outside_selected_contribution")],
   ["04 generator told what it said", has("src/lib/routeContext.ts", "Already stated by you")],
   ["05 focus outranked by salience", has("src/lib/conversationLedger.ts", 'thread.focusBasis !== "current_explicit"')],
   ["06 grounding reads the observation", has("src/lib/routeContext.ts", "taskGroundingInstructionBlock")],
@@ -39,6 +48,11 @@ const checks = [
   // differently, so this one is pinned to the exact expression that was there.
   ["07 thread action off the prompt", !has("src/lib/conversationLedger.ts", "foreground.requestedAction")],
   ["09 turn records its guard", has("src/models/AIIntervention.ts", "outputGuard")],
+  // What the next session is run to measure.
+  ["28 an opinion is not a request", has("src/lib/conversationLedger.ts", "proposalOpensRequest")],
+  ["ADR 0011 the list counts what the humans pooled", has("src/lib/candidateList.ts", "humanPooledIds")],
+  ["ADR 0012 the Chair recaps as an act", has("src/lib/interventionEngine.ts", "recapAvailableFor")],
+  ["the Judge is told what the group narrowed to", has("src/lib/interventionJudge.ts", "groupNarrowingNote")],
 ];
 
 const width = Math.max(...checks.map(([label]) => label.length));
