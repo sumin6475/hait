@@ -1799,7 +1799,7 @@ export interface SelectedOpportunityGenerationContext {
   requestIntent?: RequestIntent;
   id: string;
   kind: "direct_question" | "invitation" | "group_request" | "uptake";
-  expectation: "required" | "invited" | "optional";
+  expectation: "required" | "invited";
   sourceSeq: number;
   currentTriggerSeq: number;
   threadId: string;

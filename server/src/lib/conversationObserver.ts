@@ -370,7 +370,6 @@ export function normalizeConversationObservation(
   anchorContent?: string,
   anchorSeq?: number,
   validSeqs?: ReadonlySet<number>,
-  previousState?: ConversationStateAfter | null,
   participantRoster: readonly ConversationActor[] = ALL_OBSERVER_ACTORS.filter(
     (actor): actor is ConversationActor => actor !== "group",
   ),
@@ -1075,7 +1074,6 @@ export async function observeConversationStructure(input: {
       anchor.content,
       anchor.seq,
       new Set(input.messages.map((message) => message.seq)),
-      input.previousState,
       participantRoster,
     );
     const audit = observerNormalizationAudit(observed, normalized);

@@ -158,12 +158,6 @@ interface CallAIStructuredOptions {
   // null deliberately removes the API/schema cap for long readable recap routes.
   maxOutputTokens?: number | null; // default 140
   maxContentChars?: number | null;
-  /**
-   * GPT-5's own length control. `reasoning.effort` was already set here and this
-   * field beside it was simply unused, so asking for brevity was left entirely
-   * to prose — which two attempts showed does not produce it.
-   */
-  verbosity?: "low" | "medium" | "high";
 }
 
 export async function callAIStructured({
@@ -174,7 +168,6 @@ export async function callAIStructured({
   timeoutMs = 30_000,
   maxOutputTokens = 140,
   maxContentChars = 800,
-  verbosity,
 }: CallAIStructuredOptions): Promise<AIStructuredResult> {
   const start = Date.now();
   const isReasoning = REASONING_MODEL.test(model);
@@ -209,9 +202,6 @@ export async function callAIStructured({
           ],
           text: {
             format: zodTextFormat(responseSchema, "ai_response"),
-            // Only the reasoning family accepts it; the fallback models ignore
-            // the field or reject the request outright.
-            ...(isReasoning && verbosity ? { verbosity } : {}),
           },
         },
         { signal: ctrl.signal },

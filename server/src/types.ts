@@ -56,13 +56,14 @@ export type CommunicativeAct =
   | "recap";
 // Where a turn was decided. Keep this separate from the Main Judge result so
 // cooldown, timer, priority, and route-gate suppressions remain distinguishable.
+// Rows from before docs/adr/0012 can also carry "summary", written by the recap
+// timer that ADR removed; nothing writes it now.
 export type InterventionDecisionStage =
   | "priority"
   | "cooldown"
   | "main_judge"
   | "route_gate"
   | "long_silence_timer"
-  | "summary"
   | "lifecycle"
   | "system";
 export type RouteKind =

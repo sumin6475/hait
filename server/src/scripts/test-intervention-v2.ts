@@ -65,7 +65,6 @@ import {
   internalMetadataSoftViolations,
   MAX_REPAIR_ATTEMPTS,
   outputScopeViolation,
-  sentenceCount,
   outputAsksAQuestion,
   outputVerdict,
   evaluateDraft,
@@ -244,7 +243,7 @@ const repairedIntervention = new AIIntervention({
         model: "test-model",
         extractedTraitIds: ["A_p1", "A_p2"],
         violations: ["trait_outside_selected_contribution"],
-        softViolations: ["too_many_trait_labels"],
+        softViolations: ["metadata_reference"],
       },
       {
         stage: "repair",
@@ -346,7 +345,7 @@ const storedRepairAudit = repairedIntervention.toObject().repairAudit!;
 assert.equal(storedRepairAudit.attempts.length, 2);
 assert.equal(storedRepairAudit.attempts[0]!.content, "Candidate A has two MATCH traits.");
 assert.deepEqual(storedRepairAudit.attempts[0]!.violations, ["trait_outside_selected_contribution"]);
-assert.deepEqual(storedRepairAudit.attempts[0]!.softViolations, ["too_many_trait_labels"]);
+assert.deepEqual(storedRepairAudit.attempts[0]!.softViolations, ["metadata_reference"]);
 assert.equal(storedRepairAudit.attempts[1]!.outcome, "accepted");
 assert.equal(
   keys.some((key) => key === "C1.summary.v1"),
@@ -760,7 +759,6 @@ const normalizeTc4022 = (content: string, seq: number, focusCandidate: "A" | "B"
     content,
     seq,
     new Set(Array.from({ length: seq }, (_, index) => index + 1)),
-    tc4022State,
   );
   tc4022State = reduceConversationStateAfter({
     previous: tc4022State,
@@ -929,7 +927,6 @@ assert.equal(
   ).requestedScope,
   "none",
 );
-
 
 const explicitGroupCompare: ConversationObserverResult = {
   ...observerBase,
@@ -1888,83 +1885,15 @@ assert.deepEqual(scopedInformationContext.outputScopeGuard, {
   candidate: "A",
   reason: "scopeless_information_request",
 });
+// This guard carries a candidate and no list. The output check reads only the
+// list the Judge named (`docs/adr/0010`), so nothing a draft says trips it here:
+// not three new traits, not a second candidate. The candidate still shapes the
+// repair prose and the audit record; it is not a bound. Nine assertions stood
+// here, each passing for this reason while its comment claimed a different one.
 assert.equal(
   outputScopeViolation(
-    "For Candidate A, one MATCH in my notes is excellent spatial awareness.",
-    ["A_p3"],
-    scopedInformationContext.outputScopeGuard!,
-  ),
-  null,
-);
-// A surfaced human point may be acknowledged alongside exactly one new Alex
-// point without triggering repair; only the newly introduced IDs count.
-assert.equal(
-  outputScopeViolation(
-    "Candidate A is very well organized (MATCH), and my notes add that A is unfriendly (MISS).",
-    ["A_p4", "A_n1"],
-    scopedInformationContext.outputScopeGuard!,
-    ["A_p4"],
-  ),
-  null,
-);
-// The relaxation is narrow: two genuinely new traits remain a violation.
-assert.equal(
-  outputScopeViolation(
-    "Candidate A is very well organized, has excellent spatial awareness, and is unfriendly.",
-    ["A_p4", "A_p3", "A_n1"],
-    scopedInformationContext.outputScopeGuard!,
-    ["A_p4"],
-  ),
-  null,
-);
-assert.equal(
-  outputScopeViolation(
-    "Candidate A has one MATCH, while Candidate B has another.",
-    ["A_p3", "B_p1"],
-    scopedInformationContext.outputScopeGuard!,
-  ),
-  null,
-);
-assert.equal(
-  outputScopeViolation(
-    "Candidate A — MATCH: excellent spatial awareness; MISS: unfriendly.",
-    [],
-    scopedInformationContext.outputScopeGuard!,
-  ),
-  null,
-);
-// [T-C4-019] 라벨 카운트는 트레이트 도입 위치(괄호/대시/콜론)만 센다 — 확인 어휘는 오탐이었다.
-// "MATCH or MISS" 접속 언급은 트레이트 공개가 아니다 (라이브 anchor=7: 트레이트 1개 공개, 라벨 2회).
-assert.equal(
-  outputScopeViolation(
-    "Candidate A has a very good sense for recognizing dangerous situations. Do you want me to add the next MATCH or MISS for A from my notes?",
-    ["A_p1"],
-    scopedInformationContext.outputScopeGuard!,
-  ),
-  null,
-);
-// 같은 트레이트에 라벨이 두 번 붙어도 1건이다 (라이브 anchor=16: "(MISS)" + "as a MISS").
-assert.equal(
-  outputScopeViolation(
-    "I have that Candidate A transmits restlessness (MISS). Do we agree to add that as a MISS to A's notes?",
-    ["A_n2"],
-    scopedInformationContext.outputScopeGuard!,
-  ),
-  null,
-);
-// 표현상 라벨 수는 audit만 남기며 정상 발화를 차단하지 않는다.
-assert.equal(
-  outputScopeViolation(
-    "Candidate A is very well organized (MATCH) and sometimes unfriendly (MISS).",
-    ["A_p4"],
-    scopedInformationContext.outputScopeGuard!,
-  ),
-  null,
-);
-assert.equal(
-  outputScopeViolation(
-    "Candidate B is still uncovered.",
-    [],
+    "Candidate A is very well organized, has excellent spatial awareness, and is unfriendly. Candidate B has another.",
+    ["A_p4", "A_p3", "A_n1", "B_p1"],
     scopedInformationContext.outputScopeGuard!,
   ),
   null,
@@ -2402,7 +2331,7 @@ assert.equal(
   outputVerdict({
     metadata: "internal_metadata_leak",
     question: "answered_with_a_question",
-    scope: "too_many_words",
+    scope: "trait_outside_selected_contribution",
   }).primary,
   "internal_metadata_leak",
   "a metadata leak still leads, because it is the class that makes a message unusable",
@@ -2958,7 +2887,8 @@ assert.deepEqual(completeSingleBareContext.outputScopeGuard, {
 assert.doesNotMatch(completeSingleBareContext.userPrompt, /Internal preference cue/);
 // focus control은 명시적 전체 요청을 막지 못한다.
 assert.doesNotMatch(completeSingleBareContext.userPrompt, /Conversational target: Candidate A/);
-// B 전체 목록 출력은 가드를 통과하고, 다른 후보 확장은 차단된다.
+// B 전체 목록 출력은 가드를 통과한다. 이 guard는 목록 없이 후보만 담아서 다른 후보 언급도 막지 않는다 —
+// 출력 검사가 읽는 것은 Judge가 지정한 목록뿐이다 (docs/adr/0010).
 assert.equal(
   outputScopeViolation(
     "Candidate B — MATCH: keeps a cool head in crisis situations; MATCH: can be relied on 100%; " +
@@ -3126,30 +3056,10 @@ assert.equal(wholeBoardRequest.requestIntent.kind, "complete_single_candidate");
 // The length bounds this used to assert away are gone; what matters is that an
 // explicit complete-list request still carries no allowlist narrowing it.
 assert.equal(wholeBoardRequest.outputScopeGuard?.allowedTraitIds, undefined);
-const longAnswer = Array.from({ length: 140 }, (_, index) => `word${index}`).join(" ") + ".";
-assert.equal(
-  outputScopeViolation(longAnswer, [], wholeBoardRequest.outputScopeGuard!, []),
-  null,
-  "an explicit whole-board request still answers in full",
-);
-
-// The model's own length control is off everywhere. It was a global "be terse"
-// nudge sitting on top of turns the Judge may have told to give a full list, and
-// it pushed the same direction as the count bound that emptied eighteen of
-// T-C4-022's twenty-four messages.
-assert.equal(routeGenerationLimits("address").verbosity, undefined);
-assert.equal(routeGenerationLimits("build_on").verbosity, undefined);
-assert.equal(routeGenerationLimits("summary").verbosity, undefined);
-assert.equal(routeGenerationLimits("closing").verbosity, undefined);
-assert.equal(
-  routeGenerationLimits("address", { kind: "complete_single_candidate", candidate: "B", source: "alex_notes" }).verbosity,
-  undefined,
-  "a turn that must enumerate a whole profile is not asked to be terse",
-);
 
 // Exhausted repair costs the turn, and says so distinctly.
 assert.equal(
-  silenceReasonForGenerationFailure("output_violation_after_repair: too_many_words"),
+  silenceReasonForGenerationFailure("output_violation_after_repair: trait_outside_selected_contribution"),
   "output_violation_after_repair",
 );
 assert.equal(
@@ -3660,14 +3570,6 @@ assert.deepEqual(focusedLongSilenceContext.outputScopeGuard, {
   candidate: "A",
   reason: "focus_depth",
 });
-assert.equal(
-  outputScopeViolation(
-    "Candidate B still needs more discussion.",
-    [],
-    focusedLongSilenceContext.outputScopeGuard!,
-  ),
-  null,
-);
 
 const bareAddressContext = buildRouteUserContext({
   routeKind: "address",

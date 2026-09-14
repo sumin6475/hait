@@ -99,7 +99,6 @@ const contradictoryAddress = normalizeConversationObservation(
   "Hello! I think it would be best to just go through what information we have on each candidate",
   3,
   new Set([1, 2, 3]),
-  null,
   roster,
 );
 assert.equal(
@@ -133,7 +132,6 @@ const pluralInvitation = normalizeConversationObservation(
   "Is this what the two of you are feeling also?",
   28,
   new Set([28]),
-  null,
   roster,
 );
 assert.ok(
@@ -164,7 +162,6 @@ const singularQuestion = normalizeConversationObservation(
   "humanX, do you agree with that?",
   28,
   new Set([28]),
-  null,
   roster,
 );
 assert.equal(
@@ -178,11 +175,11 @@ assert.ok(
 );
 let priorState = reduceConversationStateAfter({ anchorSeq: 1, conversationEpoch: 1, observation: { ...observation, focusCandidate: null } });
 for (let seq = 2; seq <= 4; seq++) {
-  const normalized = normalizeConversationObservation(observation, false, "humanX", "그 지원자 얘기 계속하자", seq, new Set([1, 2, 3, 4]), priorState, roster);
+  const normalized = normalizeConversationObservation(observation, false, "humanX", "그 지원자 얘기 계속하자", seq, new Set([1, 2, 3, 4]), roster);
   assert.equal(normalized.focusCandidate, "B");
   priorState = reduceConversationStateAfter({ previous: priorState, anchorSeq: seq, conversationEpoch: seq, observation: normalized });
 }
-assert.equal(normalizeConversationObservation({ ...observation, focusCandidate: null }, false, "humanX", "B", 5, undefined, priorState).focusCandidate, null, "explicit semantic null clears focus");
+assert.equal(normalizeConversationObservation({ ...observation, focusCandidate: null }, false, "humanX", "B", 5, undefined).focusCandidate, null, "explicit semantic null clears focus");
 assert.deepEqual(normalizeConversationObservation({ ...observation, mentionedCandidates: ["B"] }, false, "humanX", "A good point about B.").mentionedCandidates, ["B"]);
 // [Issue 12] The deterministic half of "this answers Alex". Strictly the message
 // immediately before, and only when it was a question — so it says "Alex asked
@@ -429,7 +426,6 @@ try {
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // [B1] The model's output contract and the observation consumers read are two
 // different shapes. Measured on T-C1-024, whose Observer output grew 384 → 527
@@ -462,7 +458,6 @@ const b1Normalized = normalizeConversationObservation(
   "Let us compare Candidate C and Candidate D",
   9,
   new Set([1, 9]),
-  null,
   roster,
 );
 assert.deepEqual(
@@ -514,7 +509,7 @@ assert.equal(
 const b8Normalize = (patch: Partial<ConversationObserverResult>) =>
   normalizeConversationObservation(
     { ...observation, ...patch } as ConversationObserverResult,
-    false, "humanX", "Alex, what next?", 9, new Set([9]), null, roster,
+    false, "humanX", "Alex, what next?", 9, new Set([9]), roster,
   );
 
 // B8a — the floor trigger was unreachable, and removing unreachable code is not

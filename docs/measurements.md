@@ -1134,7 +1134,7 @@ Observer slower did not materialise.
 
 **Length did not move.** Alex 33.3 words per message against the humans' 19.6
 (T-C4-022: 32.6 against 20.8). The target of ≤ 30 is still missed, and no check
-enforces it — `sentenceCount` and `wordCount` are exported and called by nothing.
+enforces it — `sentenceCount` and `wordCount` are exported and called by nothing. (Both were deleted on 2026-09-14; length is read from the export.)
 
 **The either/or question is gone; the question is not.** 1 of 15 messages ends in
 an either/or, against 14 of 24 in T-C4-022. 13 of 15 still carry a question mark.

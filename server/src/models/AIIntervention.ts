@@ -209,7 +209,7 @@ const aiInterventionSchema = new mongoose.Schema(
     },
     selectedOpportunityExpectation: {
       type: String,
-      enum: ["required", "invited", "optional"],
+      enum: ["required", "invited"],
     },
     selectedOpportunityTargets: { type: [String], default: undefined },
     selectedOpportunityRequestedAction: { type: String },

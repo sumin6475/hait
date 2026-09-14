@@ -137,7 +137,7 @@ export interface RouteTurnResult {
 export function routeGenerationLimits(
   routeKind: RouteKind,
   requestIntent?: RequestIntent,
-): { maxOutputTokens: number | null; maxContentChars: number | null; timeoutMs: number; verbosity?: "low" } {
+): { maxOutputTokens: number | null; maxContentChars: number | null; timeoutMs: number } {
   if (routeKind === "summary") {
     return { maxOutputTokens: null, maxContentChars: null, timeoutMs: 60_000 };
   }
@@ -161,9 +161,6 @@ export function routeGenerationLimits(
   // the wider cap only protects the rare legitimately long output.
   // timeoutMs 45s: any turn may now produce ~2_400 chars, which the old 30s
   // budget risked timing out (= lost turn, same contamination as truncation).
-  // Every other turn is an ordinary chat reply, and the model's own length
-  // control says so. The three cases above enumerate a whole profile and are
-  // deliberately left at the API default.
   // `verbosity: "low"` was here and is gone with `docs/adr/0010`. It was a
   // global "be terse" nudge sitting on top of a turn the Judge may have told to
   // give a complete list, and it pushed the same direction as the count bound

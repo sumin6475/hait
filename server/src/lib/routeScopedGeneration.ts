@@ -9,11 +9,6 @@ interface GenerationLimits {
   maxOutputTokens: number | null;
   maxContentChars: number | null;
   timeoutMs: number;
-  /**
-   * The model's own length control, which was available and unused. Undefined
-   * on the routes that legitimately enumerate a whole profile.
-   */
-  verbosity?: "low";
 }
 
 type SuccessfulStructuredResult = Extract<AIStructuredResult, { ok: true }>;
@@ -190,30 +185,6 @@ function disclosedTraitIds(
       (candidate) => !disclosed.has(candidate.traitId),
     ),
   };
-}
-
-/**
- * Sentences and words, counted deterministically.
- *
- * Nothing here may become a model call: the count runs on the broadcast path,
- * and an extractor that can fail is an extractor whose failure reads as "this
- * message was fine" — the exact shape that let three oversized messages ship
- * against a one-trait guard.
- */
-export function sentenceCount(content: string): number {
-  return content
-    .split(/(?<=[.!?。！？])[\s"'”’)]+|\n+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean).length;
-}
-
-export function wordCount(content: string): number {
-  // Whitespace-delimited, which in Korean counts eojeol rather than words. That
-  // runs lower than the English count for the same content, so the bound is
-  // looser in Korean than in English, never tighter — it cannot cost a Korean
-  // turn that an English one would have kept. The bound was sized on English
-  // sessions and there is no Korean measurement to size it against yet.
-  return content.trim().split(/\s+/).filter(Boolean).length;
 }
 
 /**
@@ -406,17 +377,12 @@ export function evaluateDraft(input: {
 }
 
 /** What the rewrite is told it did wrong, before it is told the bounds. */
+//
+// Only the two violations `outputScopeViolation` can still produce. Seven more
+// keys stood here for the count, length and candidate checks `docs/adr/0010`
+// removed; nothing could look them up. Past sessions still carry those names in
+// their stored violations, and `scripts/report-reveal-budget` keeps reading them.
 const VIOLATION_LEAD: Record<string, string> = {
-  too_many_traits: "Your message introduced more new candidate traits than this turn allows.",
-  new_trait_in_mediation:
-    "Your message introduced a candidate trait that was not already visible in the conversation.",
-  too_many_restated_traits:
-    "Your message referred back to more already-surfaced traits than this turn allows.",
-  too_many_sentences: "Your message was too long.",
-  too_many_words: "Your message was too long.",
-  trait_outside_current_candidate:
-    "Your message brought in a trait belonging to another candidate.",
-  candidate_outside_current_focus: "Your message named a candidate this turn is not about.",
   trait_outside_selected_contribution:
     "Your message included a trait outside the one point this turn may contribute.",
   selected_trait_missing: "Your message left out the point this turn was supposed to make.",

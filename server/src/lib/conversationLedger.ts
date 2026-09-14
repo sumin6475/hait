@@ -7,7 +7,7 @@ export const CONVERSATION_LEDGER_VERSION = "conversation-ledger-v4";
 export type ConversationActor = "alex" | ParticipantRole;
 export type ThreadStatus = "open" | "waiting" | "resolved" | "superseded";
 export type OpportunityKind = "direct_question" | "invitation" | "group_request" | "uptake";
-export type OpportunityExpectation = "required" | "invited" | "optional";
+export type OpportunityExpectation = "required" | "invited";
 export type OpportunityStatus =
   | "open"
   | "deferred"

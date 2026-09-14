@@ -115,7 +115,7 @@ interface Reservation {
   decisionStage: InterventionDecisionStage;
   routeReason?: string;
   floorMs: number;
-  source: "push" | "long_silence" | "summary";
+  source: "push" | "long_silence";
   conversationEpoch: number;
   postGenerationReevaluation?: boolean;
   interactionObligationEpoch?: number;
@@ -402,14 +402,12 @@ async function judgeLiveLedgerTurn(input: {
   runtime: RuntimeState;
   messageSeq: number;
   conversationEpoch: number;
-  content: string;
   docs: any[];
   snapshot: ConversationObserverSnapshot | null;
   eligibleTraitIdsForState: (state: ConversationLedgerState) => string[];
   /** The board. Reaches the Judge only for the leader's coverage note. */
   revealStats: unknown;
   recapAvailable: boolean;
-  messagesSinceAlex: number;
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
   /** Live routing only. In shadow mode the Judge still runs on every turn, so
@@ -1936,12 +1934,10 @@ export async function onHumanMessage(input: {
       recapAvailable: recapAvailableFor(runtime, session),
       messageSeq: input.messageSeq,
       conversationEpoch: input.conversationEpoch,
-      content: input.content,
       docs: anchorDocs,
       snapshot,
       eligibleTraitIdsForState,
       revealStats: (session as any).revealStats,
-      messagesSinceAlex: sinceAI,
       cooldownAvailable,
       backchannelAvailable,
       applyDeterministicVeto: controllerMode === "ledger_active",
@@ -2312,7 +2308,6 @@ export async function onHumanMessage(input: {
     });
     return;
   }
-
 
   if (decision.decision === "silent" || !decision.act) {
     await recordSilence({

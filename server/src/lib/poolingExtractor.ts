@@ -20,7 +20,7 @@ export type ExtractedTraitMention = z.infer<typeof TraitMentionSchema>;
 export interface FastTraitCandidate {
   traitId: string;
   evidenceQuote: string;
-  reason: "ambiguous" | "lexical_near_match" | "assertion_context";
+  reason: "lexical_near_match" | "assertion_context";
 }
 export interface FastTraitExtraction { acceptedIds: string[]; verificationCandidates: FastTraitCandidate[] }
 
