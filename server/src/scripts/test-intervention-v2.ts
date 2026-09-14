@@ -4,7 +4,7 @@ import { forceGuardsOnForTest } from "../lib/guardFlags.js";
 // Pin them on before anything reads them, so a suite can never quietly assert
 // the behaviour of a build nobody ships.
 forceGuardsOnForTest();
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
@@ -4688,73 +4688,80 @@ assert.equal(ordinaryIntervention.toObject().candidateList, undefined);
 // being used for is whether the arithmetic behaves on real conversation.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SERVER_ROOT = resolve(HERE, "..", "..");
-const pilotSessions: any[] = JSON.parse(
-  readFileSync(join(SERVER_ROOT, "pilot-export.json"), "utf8"),
-);
+// The export is test-session data kept out of the repository (.gitignore). A
+// checkout without it skips these replays and says so; one with it runs them.
+const PILOT_EXPORT = join(SERVER_ROOT, "pilot-export.json");
+if (!existsSync(PILOT_EXPORT)) {
+  console.log("  skipped: candidate-list transcript replays (server/pilot-export.json is not in this checkout)");
+} else {
+  const pilotSessions: any[] = JSON.parse(
+    readFileSync(PILOT_EXPORT, "utf8"),
+  );
 
-function replayCandidateList(sessionCode: string) {
-  const session = pilotSessions.find((entry) => entry.sessionCode === sessionCode);
-  assert.ok(session, `${sessionCode} is missing from the pilot export`);
-  const human: string[] = [];
-  const ai: string[] = [];
-  const states: { seq: number; live: string[]; covered: string[] }[] = [];
-  for (const message of session.messages) {
-    for (const id of extractHumanTraitsFast({ messageText: message.content }).acceptedIds) {
-      const into = message.senderRole === "ai" ? ai : human;
-      if (!into.includes(id)) into.push(id);
+  function replayCandidateList(sessionCode: string) {
+    const session = pilotSessions.find((entry) => entry.sessionCode === sessionCode);
+    assert.ok(session, `${sessionCode} is missing from the pilot export`);
+    const human: string[] = [];
+    const ai: string[] = [];
+    const states: { seq: number; live: string[]; covered: string[] }[] = [];
+    for (const message of session.messages) {
+      for (const id of extractHumanTraitsFast({ messageText: message.content }).acceptedIds) {
+        const into = message.senderRole === "ai" ? ai : human;
+        if (!into.includes(id)) into.push(id);
+      }
+      const revealStats = boardOf(human);
+      revealStats.aiSurfacedIds = [...ai];
+      const state = computeCandidateList(revealStats);
+      states.push({ seq: message.seq, live: state.live, covered: state.covered });
     }
-    const revealStats = boardOf(human);
-    revealStats.aiSurfacedIds = [...ai];
-    const state = computeCandidateList(revealStats);
-    states.push({ seq: message.seq, live: state.live, covered: state.covered });
+    return states;
   }
-  return states;
-}
 
-// A candidate never returns to the list, because coverage never falls. That is
-// what replaces the old rule's reopening argument: there is nothing to reopen.
-for (const sessionCode of ["T-C3-007", "T-C1-016", "T-C2-001"]) {
-  const states = replayCandidateList(sessionCode);
-  for (const [index, state] of states.entries()) {
-    if (index === 0) continue;
-    for (const candidate of state.live) {
-      assert.ok(
-        states[index - 1]!.live.includes(candidate),
-        `${sessionCode} seq ${state.seq}: a candidate re-entered a list that only shrinks`,
-      );
+  // A candidate never returns to the list, because coverage never falls. That is
+  // what replaces the old rule's reopening argument: there is nothing to reopen.
+  for (const sessionCode of ["T-C3-007", "T-C1-016", "T-C2-001"]) {
+    const states = replayCandidateList(sessionCode);
+    for (const [index, state] of states.entries()) {
+      if (index === 0) continue;
+      for (const candidate of state.live) {
+        assert.ok(
+          states[index - 1]!.live.includes(candidate),
+          `${sessionCode} seq ${state.seq}: a candidate re-entered a list that only shrinks`,
+        );
+      }
     }
   }
+
+  // T-C1-016 is the session the old score rule failed on: it set the pooled
+  // answer aside at coverage 4 and score 0. Neither bar since can do that — the
+  // list stopped expressing verdicts at `docs/adr/0009`.
+  //
+  // What the two bars disagree about is who the group has left out. Across the
+  // whole session the humans put three traits on the board that Alex does not
+  // hold (`C_p2`, `D_n3`, `D_n4`) and the coverage bar saw none of them, because
+  // no candidate's total ever reached five: it reported all four still untouched
+  // while A and B were the only two that actually were. The pooled bar names
+  // those two, which is the sentence a leader can act on.
+  const previouslyDropped = replayCandidateList("T-C1-016");
+  assert.deepEqual(
+    previouslyDropped.at(-1)!.covered,
+    ["C", "D"],
+    "T-C1-016's humans pooled something of their own about C and D",
+  );
+  assert.deepEqual(
+    previouslyDropped.at(-1)!.live,
+    ["A", "B"],
+    "and nothing of their own about A or B, which is what the leader is told",
+  );
+
+  // The list is allowed to empty, and that is the signal the group may close.
+  const converging = replayCandidateList("T-C3-007");
+  assert.deepEqual(
+    converging.at(-1)!.live,
+    [],
+    "T-C3-007 pooled something unshared about all four, so nothing is outstanding",
+  );
 }
-
-// T-C1-016 is the session the old score rule failed on: it set the pooled
-// answer aside at coverage 4 and score 0. Neither bar since can do that — the
-// list stopped expressing verdicts at `docs/adr/0009`.
-//
-// What the two bars disagree about is who the group has left out. Across the
-// whole session the humans put three traits on the board that Alex does not
-// hold (`C_p2`, `D_n3`, `D_n4`) and the coverage bar saw none of them, because
-// no candidate's total ever reached five: it reported all four still untouched
-// while A and B were the only two that actually were. The pooled bar names
-// those two, which is the sentence a leader can act on.
-const previouslyDropped = replayCandidateList("T-C1-016");
-assert.deepEqual(
-  previouslyDropped.at(-1)!.covered,
-  ["C", "D"],
-  "T-C1-016's humans pooled something of their own about C and D",
-);
-assert.deepEqual(
-  previouslyDropped.at(-1)!.live,
-  ["A", "B"],
-  "and nothing of their own about A or B, which is what the leader is told",
-);
-
-// The list is allowed to empty, and that is the signal the group may close.
-const converging = replayCandidateList("T-C3-007");
-assert.deepEqual(
-  converging.at(-1)!.live,
-  [],
-  "T-C3-007 pooled something unshared about all four, so nothing is outstanding",
-);
 
 // ── Who may read the list ───────────────────────────────────────────────────
 // It was shadow-only through issue 02: computed every turn, reaching nothing but
