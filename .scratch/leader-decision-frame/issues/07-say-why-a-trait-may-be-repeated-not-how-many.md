@@ -5,7 +5,7 @@ does not move.
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human — landed 2026-09-14 in prompt 1.12.0; awaits a session
 
 **Premise correction, 2026-09-14.** The bound this issue protects no longer exists:
 `docs/adr/0010` removed `maxRestatedTraitIds` and the reveal budget, and
@@ -68,6 +68,9 @@ session, and issue 01's sessions decide whether it recurs.
 - The pairing test between prompt text and post-condition still holds
 - No new post-condition, no new repair path
 
-- [ ] The instruction states the property; the bound is untouched
-- [ ] The 40-word two-sentence six-trait recital that gate D2 refuses is still refused
-- [ ] A message citing one already-surfaced trait as agreement still passes
+- [x] The instruction states the property (in the common output discipline, every
+      condition); there is no bound left to touch
+- [ ] ~~The 40-word two-sentence six-trait recital that gate D2 refuses is still
+      refused~~ void: `docs/adr/0010` leaves a pure restatement unguarded
+- [x] A message citing one already-surfaced trait as agreement still passes (the
+      output check exempts already-surfaced traits)

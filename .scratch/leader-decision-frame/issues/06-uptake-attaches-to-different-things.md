@@ -5,7 +5,7 @@ is allowed to attach to.
 
 **Blocked by:** None.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human — landed 2026-09-14 in prompt 1.12.0; awaits a Member session
 
 ## The defect, as observed
 
@@ -60,7 +60,12 @@ accepted; the record is what says how much.
 - No new post-condition, no new repair path
 - The leader's framing is unchanged
 
-- [ ] Peer prompts license uptake of content and withhold uptake of a procedural move
-- [ ] A peer fixture facing an elimination proposal still emits the trait
+- [x] Peer prompts license uptake of content and withhold uptake of a procedural move
+- [ ] A peer fixture facing an elimination proposal still emits the trait (needs a
+      model run: a Member session or an eval case)
 - [ ] A logged marker counts peer turns that take a position on a procedural move
-- [ ] Leader prompts are byte-identical apart from the intended line
+      (not built, 2026-09-14: a detector here is a model judgement on the generation
+      path; the first Member session is read by hand instead)
+- [x] Leader prompts are byte-identical apart from the intended line (C2 and C4
+      differ from 1.11.0 only by LDF-07's shared sentence; `test:intervention-v2`
+      pins which conditions carry this one)

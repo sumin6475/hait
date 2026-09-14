@@ -385,6 +385,29 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
   assert.doesNotMatch(prompts[0]!.systemPrompt, /# Route Contract —/i);
 }
 
+// [LDF-06] A Member takes up what was said about the candidates and lets a
+// procedural proposal pass; taking the proposal up is the Chair's move, which is
+// the status contrast. The same line tells a Member to still put its note on the
+// table, so the conditions differ in framing and not in how much reaches the pool.
+for (const condition of ["C1", "C2", "C3", "C4"] as const) {
+  const systemPrompt = getRoutePrompt(condition, "build_on").systemPrompt;
+  const isMember = condition === "C1" || condition === "C3";
+  assert.equal(
+    systemPrompt.includes("let the proposal itself pass"),
+    isMember,
+    `${condition}: only a Member lets a procedural proposal pass`,
+  );
+  assert.equal(systemPrompt.includes("still goes on the table"), isMember);
+}
+// [LDF-07] Information already on the board is agreement or grounding, never
+// news — in every condition, and whoever said it first.
+for (const condition of ["C1", "C2", "C3", "C4"] as const) {
+  assert.match(
+    getRoutePrompt(condition, "build_on").systemPrompt,
+    /never presented as something you are adding/,
+  );
+}
+
 const conditionMarkers = {
   C1: [
     /equal peer/i,
@@ -450,7 +473,7 @@ for (const condition of ["C1", "C2", "C3", "C4"] as const) {
     // do, byte for byte. Sessions before it are on a different card and are not
     // directly comparable — the measurement log names the version for that
     // reason. Bump this deliberately, in the commit that recompiles the snapshot.
-    assert.equal(resolvedPrompt.promptVersion, "1.11.0");
+    assert.equal(resolvedPrompt.promptVersion, "1.12.0");
     const conditionPrompt = resolvedPrompt.systemPrompt;
     // The exemption is no longer the generator's own judgement about its own
     // turn: "an explicitly requested full list or comparison" fired on ordinary

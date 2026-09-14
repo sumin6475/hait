@@ -17,7 +17,7 @@ import { refinement as c4Refinement } from "./c4.refinement.js";
 import { routeContracts } from "./route-contracts.js";
 
 export const SCHEMA_VERSION = 1;
-export const VERSION = "1.11.0";
+export const VERSION = "1.12.0";
 
 export const common = {
   unifiedInteractionPolicy,

@@ -10,7 +10,7 @@ file is stale.
 
 Read §7 before changing anything that counts traits.
 
-**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.11.0`.
+**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`.
 
 ---
 
@@ -855,6 +855,10 @@ class of bug in §7:
 - **Prompt 1.11.0 has run live** (T-C2-050 to 052). The 2026-09-13 leader work —
   the `recap` act, the narrowing line, the pooled list — is locked by offline
   tests only until the next Chair session.
+- **Prompt 1.12.0 has not run.** It adds two lines: a Member lets a procedural
+  proposal pass while still putting its note on the table (LDF-06), and
+  already-said information is never offered as news (LDF-07). Only a Member
+  session exercises the first.
 - Seams §7f and §7i above.
 - `.scratch/conversation-repair/issues/` and `.scratch/leader-decision-frame/`
   hold the open work items; `docs/measurements.md` holds what has actually been
