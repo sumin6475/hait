@@ -819,6 +819,12 @@ retired count names.
 Before a session: `npm run build:id` says whether this checkout is the build the
 session is meant to measure.
 
+Deploying: `npm run deploy:turn-taking`, from the repo root, pushes the last commit
+to `sumin6475/hait-turn-taking` as one snapshot commit and never this history. It
+refuses the paths left out of that repository, tracked `.env` files and anything
+shaped like a key, and it refuses when turn-taking was changed outside the script.
+`-- --dry-run` pushes nothing.
+
 Three source-level assertions in `test-intervention-v2` deserve naming, because
 they lock *structure* rather than behaviour and are the only defence against the
 class of bug in §7:

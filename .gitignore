@@ -68,3 +68,8 @@ IRB/
 prompt-management-system/
 # Pilot data exports carry participant messages. Never commit them.
 server/pilot-export.json
+# Stray paths removed on 2026-09-14. Ignored so they cannot come back and reach a
+# deploy to sumin6475/hait-turn-taking (scripts/deploy-turn-taking.sh refuses them too).
+.pnpm-store/
+.vscode.local-backup/
+/final-touch/
