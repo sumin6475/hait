@@ -8,7 +8,6 @@
 //  - All / Main / Test 탭으로 목록 구분 (주소의 ?view= 로 유지)
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
   useSessionList,
   useSessionDetail,
@@ -20,14 +19,9 @@ import {
 import type { ConditionCode, SessionSummary } from "@/lib/api";
 import { GATES } from "@/lib/gates";
 import { cn } from "@/lib/utils";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  isMainSession,
-  parseSessionView,
-  SESSION_VIEWS,
-  sessionsInView,
-  type SessionView,
-} from "@/lib/sessionView";
+import { SessionViewTabs } from "@/components/dashboard/SessionViewTabs";
+import { useSessionView } from "@/hooks/useSessionView";
+import { isMainSession, sessionsInView, type SessionView } from "@/lib/sessionView";
 
 const CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
 
@@ -69,13 +63,9 @@ const Sessions = () => {
   const [koPilot, setKoPilot] = useState(false); // [KO-PILOT]
   const [detailCode, setDetailCode] = useState<string | null>(null);
 
-  //목록 탭 — 주소에 남겨서 새로고침/뒤로가기에도 유지. 5초 자동 갱신과는 무관.
-  const [searchParams, setSearchParams] = useSearchParams();
-  const view = parseSessionView(searchParams.get("view"));
-  const setView = (next: SessionView) =>
-    setSearchParams(next === "all" ? {} : { view: next }, { replace: true });
+  //목록 탭 — 주소의 ?view= 에 유지. 5초 자동 갱신과는 무관.
+  const [view, setView] = useSessionView();
   const visibleSessions = sessions ? sessionsInView(sessions, view) : undefined;
-  const countIn = (v: SessionView) => (sessions ? sessionsInView(sessions, v).length : 0);
 
   const handleCreate = () => {
     createMutation.mutate(
@@ -163,18 +153,7 @@ const Sessions = () => {
       </div>
 
       {/* 목록 탭 */}
-      <Tabs value={view} onValueChange={(v) => setView(parseSessionView(v))}>
-        <TabsList>
-          {SESSION_VIEWS.map((v) => (
-            <TabsTrigger key={v.value} value={v.value}>
-              {v.label}
-              {sessions && (
-                <span className="ml-1.5 text-xs text-muted-foreground">{countIn(v.value)}</span>
-              )}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      <SessionViewTabs view={view} onChange={setView} sessions={sessions} />
 
       {/* 목록 */}
       <div className="rounded-xl bg-card shadow-card overflow-hidden">

@@ -10,6 +10,9 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Download, Bot, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SessionViewTabs } from "@/components/dashboard/SessionViewTabs";
+import { useSessionView } from "@/hooks/useSessionView";
+import { sessionsInView } from "@/lib/sessionView";
 import { getSession, type ConditionCode, type SessionDetail } from "@/lib/api";
 import { toCsv, downloadCsv, fileStamp, type CsvColumn } from "@/lib/csv";
 
@@ -41,13 +44,19 @@ function applyFilter(messages: ChatMessage[], filter: Filter): ChatMessage[] {
 }
 
 const ChatLogs = () => {
-  const { data: sessions = [] } = useSessionList();
+  const { data: sessions = [], isSuccess: sessionsLoaded } = useSessionList();
   const [selectedCode, setSelectedCode] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
   const [exporting, setExporting] = useState(false);
+  //세션 탭 (All / Main / Test) — Sessions 페이지와 같은 기준, 주소의 ?view= 에 유지
+  const [view, setView] = useSessionView();
+  const visibleSessions = sessionsInView(sessions, view);
 
-  //selectedCode 없으면 첫 세션 자동 선택
-  const activeCode = selectedCode ?? sessions[0]?.sessionCode ?? null;
+  //고른 세션이 지금 탭에 없으면(선택 전이거나 탭을 바꿨으면) 탭의 첫 세션을 보여준다
+  const activeCode =
+    (selectedCode && visibleSessions.some((s) => s.sessionCode === selectedCode)
+      ? selectedCode
+      : visibleSessions[0]?.sessionCode) ?? null;
   //선택된 세션의 상세(메시지 포함) - in_progress면 3초마다 자동 갱신
   const { data: detail } = useSessionDetail(activeCode ?? undefined);
 
@@ -70,14 +79,14 @@ const ChatLogs = () => {
     );
   };
 
-  //전체 세션 — 세션마다 상세를 받아야 하므로 4개씩 끊어서 호출 (서버 과부하 방지)
+  //지금 탭의 세션 전부 (보고 있는 탭 = 내려받는 범위) — 세션마다 상세를 받아야 하므로 4개씩 끊어서 호출 (서버 과부하 방지)
   const exportAll = async () => {
     setExporting(true);
     try {
       const rows: CsvRow[] = [];
-      for (let i = 0; i < sessions.length; i += 4) {
+      for (let i = 0; i < visibleSessions.length; i += 4) {
         const batch = await Promise.all(
-          sessions.slice(i, i + 4).map((s) =>
+          visibleSessions.slice(i, i + 4).map((s) =>
             getSession(s.sessionCode).catch((e) => {
               console.error(`[chatlogs] export failed: ${s.sessionCode}`, e);
               return null;
@@ -95,7 +104,7 @@ const ChatLogs = () => {
           }
         }
       }
-      downloadCsv(`chatlogs_all${filterSuffix}_${fileStamp()}.csv`, toCsv(rows, CSV_COLUMNS));
+      downloadCsv(`chatlogs_${view}${filterSuffix}_${fileStamp()}.csv`, toCsv(rows, CSV_COLUMNS));
     } finally {
       setExporting(false);
     }
@@ -107,7 +116,7 @@ const ChatLogs = () => {
         <h1 className="text-2xl font-semibold">Chat Logs</h1>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" disabled={exporting || sessions.length === 0}>
+            <Button variant="outline" size="sm" disabled={exporting || visibleSessions.length === 0}>
               <Download className="w-3.5 h-3.5 mr-1.5" />
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
@@ -117,17 +126,19 @@ const ChatLogs = () => {
               This session ({filtered.length} messages)
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={exportAll}>
-              All sessions ({sessions.length})
+              {view === "all" ? "All sessions" : `All ${view} sessions`} ({visibleSessions.length})
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
+      <SessionViewTabs view={view} onChange={setView} sessions={sessionsLoaded ? sessions : undefined} />
+
       <div className="flex gap-6">
         <div className="w-56 shrink-0 space-y-2">
           <label className="text-xs font-semibold text-muted-foreground uppercase">Session</label>
           <div className="space-y-1">
-            {sessions.map((s) => (
+            {visibleSessions.map((s) => (
               <button
                 key={s.sessionCode}
                 onClick={() => setSelectedCode(s.sessionCode)}
@@ -142,6 +153,11 @@ const ChatLogs = () => {
                 <div className="text-xs">{conditionLabel[s.conditionCode]}</div>
               </button>
             ))}
+            {sessionsLoaded && visibleSessions.length === 0 && (
+              <div className="px-3 py-2 text-xs text-muted-foreground">
+                {view === "all" ? "No sessions yet" : `No ${view} sessions yet`}
+              </div>
+            )}
           </div>
         </div>
 
