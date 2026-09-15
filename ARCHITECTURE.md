@@ -760,6 +760,23 @@ still reads the shape, so they read as zero. Counting `Message` rows is the
 source. The legacy `candidateStats.positiveRevealed` / `negativeRevealed` next
 to them are likewise not written. Do not use either in an analysis.
 
+### 7j. What counts as a test session — **open**
+
+Three readers, three rules:
+
+| reader | rule |
+| --- | --- |
+| the session list API (`routes/sessions.ts`) | `isTest` means the code starts with `T-` |
+| the dashboard Overview's experiment counts | `isTest === false`, or the code starts with `S-` |
+| the Sessions page tabs (`client/src/lib/sessionView.ts`) | Main is not `isTest` and the code is `S-<condition>-<seq>`; everything else is Test |
+
+They disagree on one kind of session: `S-Test-<timestamp>`, which the
+`POST /test/create-session` route (`routes/test.ts`) still creates. The API and the
+Overview count it as an experiment session; the Sessions tabs put it under Test.
+The tabs take the stricter rule on purpose (2026-09-14): the Main tab is what the
+researcher reads while running an experiment session. No export or analysis reads
+the tabs.
+
 ---
 
 ## 8. Code that is not used

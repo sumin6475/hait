@@ -5,8 +5,10 @@
 //  - 새 세션 생성 (condition + isTest 선택)
 //  - 세션 클릭 → 참가자 URL 보기/복사 (모달)
 //  - 세션 삭제
+//  - All / Main / Test 탭으로 목록 구분 (주소의 ?view= 로 유지)
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   useSessionList,
   useSessionDetail,
@@ -18,6 +20,14 @@ import {
 import type { ConditionCode, SessionSummary } from "@/lib/api";
 import { GATES } from "@/lib/gates";
 import { cn } from "@/lib/utils";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  isMainSession,
+  parseSessionView,
+  SESSION_VIEWS,
+  sessionsInView,
+  type SessionView,
+} from "@/lib/sessionView";
 
 const CONDITIONS: ConditionCode[] = ["C1", "C2", "C3", "C4", "CTRL"];
 
@@ -59,6 +69,14 @@ const Sessions = () => {
   const [koPilot, setKoPilot] = useState(false); // [KO-PILOT]
   const [detailCode, setDetailCode] = useState<string | null>(null);
 
+  //목록 탭 — 주소에 남겨서 새로고침/뒤로가기에도 유지. 5초 자동 갱신과는 무관.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view = parseSessionView(searchParams.get("view"));
+  const setView = (next: SessionView) =>
+    setSearchParams(next === "all" ? {} : { view: next }, { replace: true });
+  const visibleSessions = sessions ? sessionsInView(sessions, view) : undefined;
+  const countIn = (v: SessionView) => (sessions ? sessionsInView(sessions, v).length : 0);
+
   const handleCreate = () => {
     createMutation.mutate(
       { conditionCode: selectedCondition, isTest, language: koPilot ? "ko" : "en" }, // [KO-PILOT]
@@ -66,6 +84,9 @@ const Sessions = () => {
         onSuccess: (res) => {
           //생성 직후 바로 상세 모달 열기 — 어드민이 URL 복사하기 쉽게
           setDetailCode(res.session.sessionCode);
+          //지금 탭에서 안 보이는 종류를 만들었으면 그 탭으로 옮김 (만든 세션이 사라진 것처럼 보이지 않게)
+          const createdView: SessionView = isMainSession(res.session) ? "main" : "test";
+          if (view !== "all" && view !== createdView) setView(createdView);
         },
         onError: (e) => alert(`생성 실패: ${(e as Error).message}`),
       },
@@ -141,6 +162,20 @@ const Sessions = () => {
         </button>
       </div>
 
+      {/* 목록 탭 */}
+      <Tabs value={view} onValueChange={(v) => setView(parseSessionView(v))}>
+        <TabsList>
+          {SESSION_VIEWS.map((v) => (
+            <TabsTrigger key={v.value} value={v.value}>
+              {v.label}
+              {sessions && (
+                <span className="ml-1.5 text-xs text-muted-foreground">{countIn(v.value)}</span>
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
       {/* 목록 */}
       <div className="rounded-xl bg-card shadow-card overflow-hidden">
         {isLoading && <div className="p-8 text-center text-sm text-muted-foreground">Loading…</div>}
@@ -177,7 +212,7 @@ const Sessions = () => {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {sessions?.map((s) => (
+              {visibleSessions?.map((s) => (
                 <SessionRow
                   key={s.sessionCode}
                   session={s}
@@ -187,10 +222,10 @@ const Sessions = () => {
                   stopAIPending={stopAIMutation.isPending}
                 />
               ))}
-              {sessions && sessions.length === 0 && (
+              {visibleSessions && visibleSessions.length === 0 && (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-sm text-muted-foreground">
-                    No sessions yet. Create one above.
+                    {view === "all" ? "No sessions yet. Create one above." : `No ${view} sessions yet.`}
                   </td>
                 </tr>
               )}
@@ -228,7 +263,7 @@ function SessionRow({
         <button onClick={onOpen} className="hover:underline">
           {session.sessionCode}
         </button>
-        {session.isTest && (
+        {!isMainSession(session) && (
           <span className="ml-2 text-[10px] uppercase rounded bg-muted px-1.5 py-0.5 text-muted-foreground">
             test
           </span>
