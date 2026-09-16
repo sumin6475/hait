@@ -1368,3 +1368,51 @@ targeted, take-up went from 11 of 18 runs on v13 to 8 of 18, then 5 of 18.
 wordings, so the withdrawn sentences may be noise rather than harm. Only the
 Judge's brief was replayed, never the writer's message; the next Chair session is
 still the measurement.
+
+---
+
+## 2026-09-15 — S-C2-002, the first live session
+
+C2 (Chair × XAI), two participants, 56 messages, 20 of them Alex's. Team chose B
+unanimously; the pooled answer is C. Judge prompt v13, prompt snapshot 1.12.0,
+comparison build (`outputScope`, `humanFloor`, `judgeBrief` off).
+
+**Alex asked nothing and requested constantly.** 0 question marks in 20 messages,
+and 8 of the 19 model-written ones carry an imperative next step — "state which
+candidate handles it better", "please state for each scenario", "vote which
+candidate handles each" (the greeting is deterministic and is not counted).
+The XAI question ban held in punctuation and not in function.
+
+**Alex wrote 72% of the words on 36% of the turns**: 1,239 words across 20
+messages against the humans' 478 across 36. Average 62 words to their 13. The
+whole overrun sits on `followup` turns after seq 39 (113, 193, 79, 52 words) where
+the shared discipline asks for 40.
+
+**Alex stated a preference once** (seq 50, "my read is B looks stronger"), on a
+`followup` with no preference cue supplied — so it chose from its own judgment,
+which the refinement forbids — and it said it immediately after X and Y had both
+settled on B. The cue reaches only `closing` and an explicit preference request;
+`closing` never ran, and one turn in twenty carried such a request.
+
+**Mediation ran zero times** while its evidence latch was on from seq 16.
+
+**The extractor missed four traits that were said aloud** — A_n3, B_p1, C_n3
+(twice), B_n4 — and invented one, D_n1, which then printed in the seq 53 board
+recap. Y's unique-reveal count read 2 of 8 against an actual 4 of 8.
+
+### Replays behind the three fixes
+
+**Extractor, offline, 1,094 messages from 21 sessions.** Old matcher vs new:
+nothing lost from either the accepted or the deferred set, 18 newly accepted. The
+four S-C2-002 misses all now fire; the D_n1 attribution check rejects the invented
+miss and keeps B_n5 on the same sentence.
+
+**Mediation, offline, S-C2-002's 34 recorded turns** with `mediate` listed as a
+move and availability taken from the session's own latch. Three turns flipped to
+`mediate` (anchors 49, 52, 55) and **no other turn changed act**. Two of the three
+briefs name the gap the session never closed — that nobody had brought their own
+notes on C. One of the three took the turn the Chair had spent on its recap.
+
+Not measured: the writer's message on a mediation turn, and whether the
+direct-reply procedure ban changes what seq 39 and 41 would have written. Only
+the Judge was replayed. The next Chair session is still the measurement.

@@ -541,7 +541,7 @@ export function ledgerJudgeRetryMessage(input: {
 
 export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v8";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v13";
+  "conversation-ledger-judge-prompt-v14";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
   "conversation-ledger-judge-schema-v5";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
@@ -624,7 +624,7 @@ Voluntary acts have no selectedOpportunityId:
 - contribute adds a relevant non-redundant fact, factual correction, or concrete synthesis.
 - follow takes up the point the humans just made and carries it one step further. Use it, with evidence=conversation_grounded_synthesis, when the useful move is to build directly on what was just said rather than to introduce a new fact. It needs no opportunity: follow is the act for the uptake opportunity kind when one is open, and is also available voluntarily when none is.
 - acknowledge is brief social uptake without a new fact or agenda change.
-- mediate is reserved for an explicit unresolved process blockage.
+- mediate hands the group its own discussion state back: what the room has been working on, and what it has not reached. It names no fact and picks no candidate, so take it when the useful move is about where the discussion stands rather than what is in it - the room has stayed on one or two candidates while others sit untouched, the same ground is being gone over again, or people are moving to settle before the field has been looked at. Name the state and the one thing left uncovered, and stop; it is theirs to weigh. Never turn it into a rule, a vote, a round, an exercise, or any other procedure, and never use it to tell them which candidate to choose. It is listed as available only on the turns that state is actually there. Say it once: a second mediation about the same gap is pushing, not leading.
 - recap puts the board back in front of the group exactly as it stands. It writes nothing itself: the message is assembled from what has actually been said, so it adds no fact, names no trait and states no preference. Take it when the turn is better spent showing the group where the comparison currently stands than adding to it - the discussion has covered enough to be worth seeing whole, or people are weighing candidates against a picture they are holding in their heads. It is listed as available only while it is yours to take, and it is worth taking once.
 
 Each turn lists the moves available on it. A move listed as not available is not a choice, and selecting it is invalid. Availability is a fact about this turn's options, never a budget to spend or save. Choose reobserve only for a material conflict affecting target, opportunity identity/lifecycle, thread assignment, or floor. Low confidence alone is not enough.
@@ -730,6 +730,8 @@ export function validateConversationLedgerJudgeDecision(input: {
   cooldownAvailable?: boolean;
   /** Whether `recap` is one of this turn's moves. Absent reads as not offered. */
   recapAvailable?: boolean;
+  /** Whether `mediate` is one of this turn's moves. Absent reads as not offered. */
+  mediationAvailable?: boolean;
 }): ConversationLedgerJudgeValidation {
   const { decision, state } = input;
   const ruleCodes: string[] = [];
@@ -854,12 +856,25 @@ export function validateConversationLedgerJudgeDecision(input: {
     if (decision.act === "recap" && input.recapAvailable !== true) {
       ruleCodes.push("recap_unavailable_this_turn");
     }
+    // Same shape for mediation, and the same reason: the turn facts and the
+    // validator must not disagree about what was on offer. A Member never sees
+    // the move, and a Chair sees it only while the discussion state that opens
+    // it is actually there.
+    if (decision.act === "mediate" && input.mediationAvailable !== true) {
+      ruleCodes.push("mediation_unavailable_this_turn");
+    }
   }
   // The board is recited, never written. A recap that also names a fact is a
   // contribution wearing a recap's name, and the message it produces would not
   // contain the named fact anyway - the text is assembled from the board.
   if (decision.act === "recap" && decision.discloseTraitIds.length) {
     ruleCodes.push("recap_names_a_trait");
+  }
+  // Mediation is about the shape of the discussion, not its contents. A
+  // mediation carrying a fact is a contribution with a leader's framing on it,
+  // and the writer's mediation block is not allowed to state the fact anyway.
+  if (decision.act === "mediate" && decision.discloseTraitIds.length) {
+    ruleCodes.push("mediation_names_a_trait");
   }
   // What the Judge named must be Alex's to name. `eligibleTraitIds` is the
   // unsurfaced part of Alex's own card inside the thread's scope, so anything
@@ -1126,6 +1141,21 @@ export interface LedgerJudgeCallInput {
   revealStats?: unknown;
   /** Whether `recap` is one of this turn's moves. Absent reads as not offered. */
   recapAvailable?: boolean;
+  /**
+   * Whether `mediate` is one of this turn's moves. Absent reads as not offered,
+   * which is what a Member always gets.
+   *
+   * The act has been in the Chair's schema since the schema existed and was
+   * chosen zero times in every recorded session, because the moves block never
+   * listed it and the system prompt says a move not listed is not a choice. The
+   * engine meanwhile kept a latch of the discussion-state evidence that opens
+   * it, wrote it to the session on every turn, and never read it back: in
+   * S-C2-002 that latch was on from seq 16 to the end and no mediation turn
+   * ever ran.
+   */
+  mediationAvailable?: boolean;
+  /** Which discussion-state evidence opened it, for the moves line. */
+  mediationEvidence?: readonly string[];
 }
 
 /**
@@ -1397,7 +1427,12 @@ export function buildLedgerJudgeUserMessage(
     LedgerJudgeCallInput,
     "messages" | "state" | "cooldownAvailable" | "backchannelAvailable" | "eligibleTraitIds"
   > &
-    Partial<Pick<LedgerJudgeCallInput, "conditionCode" | "revealStats" | "recapAvailable">>,
+    Partial<
+      Pick<
+        LedgerJudgeCallInput,
+        "conditionCode" | "revealStats" | "recapAvailable" | "mediationAvailable" | "mediationEvidence"
+      >
+    >,
 ): string {
   // Both of the board-derived sentences require a board. `revealStats` has been
   // documented as "absent means no note is added" since it was added, and was
@@ -1456,7 +1491,7 @@ export function buildLedgerJudgeUserMessage(
   const cardNote = liveThread
     ? exhaustedCandidateNote(input.eligibleTraitIds, candidateSalienceOrder(liveThread))
     : null;
-  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Said by the humans since Alex last spoke: ${saidSinceAlex.length ? `messages ${saidSinceAlex.join(", ")}` : "none"}\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${input.recapAvailable === undefined ? "" : `\n- recap: ${availability(input.cooldownAvailable && input.recapAvailable)}`}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}${preferenceNote ? `\n- Your read: ${preferenceNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
+  return `Complete transcript:\n${transcript}\n\nCurrent selectable ledger situation:\n${describeConversationLedger(decisionState)}\n\nDecision inputs:\n- Said by the humans since Alex last spoke: ${saidSinceAlex.length ? `messages ${saidSinceAlex.join(", ")}` : "none"}\n- Focus candidate: ${foreground?.focusCandidate ?? "none"}\n- Focus basis: ${foreground?.focusBasis ?? "none"}\n- Candidates ordered by what the group is currently on: ${foreground ? candidateSalienceOrder(foreground).join(", ") || "none" : "none"}\n- Degraded mode: ${decisionState.degradedMode === true}\n\nMoves available on this turn:\n- Selectable open opportunity ids: ${openOpportunities.map((item) => item.id).join(", ") || "none"}\n- ${requiredNow.length ? `You must select one of these, opened by the message you are judging: ${requiredNow.join(", ")}. The older unanswered requests below are context; taking one of them instead is rejected.` : "No opportunity is required this turn."}\n- Unanswered requests addressed to Alex, oldest first: ${unansweredRequestsForAlex(openOpportunities).map((item) => `${item.id} (asked at message ${item.originSeq})`).join(", ") || "none"}\n- Voluntary acts (contribute, follow): ${availability(input.cooldownAvailable)}\n- acknowledge: ${availability(input.cooldownAvailable && input.backchannelAvailable)}${input.recapAvailable === undefined ? "" : `\n- recap: ${availability(input.cooldownAvailable && input.recapAvailable)}`}${input.mediationAvailable === undefined ? "" : `\n- mediate: ${availability(input.cooldownAvailable && input.mediationAvailable)}${input.mediationAvailable && input.mediationEvidence?.length ? ` (the discussion state that opened it: ${input.mediationEvidence.join(", ")})` : ""}`}${cardNote ? `\n- Your card: ${cardNote}` : ""}${coverageNote ? `\n- Coverage: ${coverageNote}` : ""}${preferenceNote ? `\n- Your read: ${preferenceNote}` : ""}\n\nExact structured decision ledger:\n${JSON.stringify(decisionState)}\n\nEligible exact unsurfaced Alex facts:\n${eligible.length ? eligible.join("\n") : "none"}\n\nJudge current trigger message ${decisionState.currentTriggerSeq}. Output JSON only.`;
 }
 
 export async function judgeConversationLedgerTurn(
@@ -1544,6 +1579,7 @@ export async function judgeConversationLedgerTurn(
         transcriptSeqs: new Set(input.messages.map((message) => message.seq)),
         cooldownAvailable: input.cooldownAvailable,
         recapAvailable: input.recapAvailable,
+        mediationAvailable: input.mediationAvailable,
       });
       if (validation.ok && validation.value) {
         attempts.push({

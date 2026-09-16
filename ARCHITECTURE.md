@@ -10,7 +10,7 @@ file is stale.
 
 Read §7 before changing anything that counts traits.
 
-**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`; Judge prompt v13.
+**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`; Judge prompt v14.
 
 ---
 
@@ -202,7 +202,8 @@ onHumanMessage
   ├ waitForConversationObservation  gpt-5-mini, serial per session (~7 s)
   ├ updateMediationState
   ├ task-grounding drift + Chair → mediation, and return
-  └ judgeLiveLedgerTurn              recapAvailable = recapAvailableFor(runtime, session)
+  └ judgeLiveLedgerTurn              recapAvailable      = recapAvailableFor(runtime, session)
+        │                            mediationAvailable  = mediationAvailableFor(runtime)
         ├ observerDeltaFromTurn      threads + opportunities, deterministic
         ├ deterministic veto         human floor held | cooldown   (ADR 0001)
         └ ledger judge               act + evidence + selectedOpportunityId
@@ -320,6 +321,42 @@ speaks, decided outside the Judge and only for leaders, which is the line
 
 `aiState.summaryStatus` now means: `not_eligible` the Chair has not recapped,
 `generating` in flight, `done` spent. Nothing writes `pending`.
+
+#### The Chair's mediation
+
+Same construction as the recap, and it was missing the same piece for longer.
+`mediate` has been in the leader schema since the schema existed and was chosen
+**zero times in every recorded session**, because the Judge's "Moves available on
+this turn" block never listed it and the system prompt says a move that is not
+listed is not a choice. The two consumers that could have routed it sit on the
+legacy observer paths, which the shipped controller returns before reaching.
+Everything else was built: the writer's mediation block, its route contract, the
+`summary`-style leader-only boundary.
+
+`updateMediationState` runs on every push, reads the last six human messages, and
+latches when the room has circled one or two candidates, gone over the same
+ground, or moved to settle early (`detectMediationEvidence`); a 3-minute /
+8-human-message TTL lets it lapse. That latch was written to the session on every
+turn and **never read back**. In S-C2-002 it was on from seq 16 while the group
+narrowed to A and B, and C — the candidate whose pooled profile is the right
+answer, and the one nobody had brought their own notes on — left the table at
+seq 42 and never came back.
+
+`mediationAvailableFor` now offers the move: a leader condition and a live latch,
+gated on the cooldown like every other voluntary act. What it deliberately does
+**not** read is `buildOnsSinceMediation`. "Mediate every two build-ons" is
+arithmetic about when Alex speaks, decided outside the Judge and condition-
+dependent, which is the line `docs/adr/0001` holds — and the Judge is told in as
+many words never to reason about pacing. The cadence trigger survives only on the
+legacy resolver.
+
+The validator mirrors the recap's two rules: `mediation_unavailable_this_turn`
+when the move was not offered, and `mediation_names_a_trait` because mediation is
+about the shape of the discussion, not its contents.
+
+Replayed over S-C2-002's 34 recorded turns, three flipped to `mediate` (anchors
+49, 52, 55) and no other turn changed act. One of the three took the turn the
+Chair had spent on its recap.
 
 #### Where Alex's lean is decided
 
@@ -470,7 +507,8 @@ only for C2 and C4. The boundary is re-established at three separate places so
 a peer can never reach them:
 
 - only the leader Judge schema has the `mediate` and `recap` acts, and
-  `recapAvailableFor` returns false for a Member
+  `recapAvailableFor` / `mediationAvailableFor` return false for a Member, so the
+  moves block never lists either one to a peer's Judge
 - `ledgerRouteKindForAct` maps a `mediate` or `recap` act to `build_on` for a peer, with
   the comment that the Judge is deliberately condition-neutral and the boundary
   belongs at the routing seam
@@ -569,6 +607,36 @@ reaches the repair prose and the audit record.
 A violation triggers one repair attempt, and a second failure **costs the turn**
 rather than broadcasting a message outside the list.
 
+### A turn may not invent the way the board decides
+
+"Do not invent facts, causal effects, job criteria, weights, scores" has been in
+the shared output discipline from the start, and the build-on contribution block
+says it again in its own words. The two **direct-reply** routes said neither —
+and the leader refinement asks every discretionary turn to end on "one clear
+next-step move". In S-C2-002 the brief at seq 39 said to reconcile what X had
+reported about B; the reply (a `followup`) ended by proposing the board compare
+"in-flight crew conflict scenarios". A person took that up at seq 40, and seq 41
+(an `address`) wrote three fictional situations for the board to judge the
+candidates against. Eighteen of the session's fifty-six messages ran inside that
+frame; C left the table at seq 42 and never came back, and the four positives X
+and Y still held on C were never said.
+
+The scenarios added no trait, so no guard objected. What they added was a way of
+weighing traits, which is what the rule names. `address`, `followup` and
+`mediation` now carry it: not a new rule, the rule that never shipped to those
+routes. Mediation carries it in its own terms — the direction it names is a
+candidate or an uncovered area, never a method.
+
+Note what the route contracts in `server/src/prompts/blocks/route-contracts.ts`
+would have said here: *"Direct-response override: on this route, do not perform
+the condition-specific leader/peer manipulation… 1-2 concise sentences… do not
+set or redirect the agenda."* **That file reaches no prompt.** All nine C2 route
+prompts are byte-identical (`sha256 c161e637…`, the hash recorded in every
+intervention row), the string `Route Contract` does not occur in any of them, and
+`c2.behavioral.ts` refers to a block — "When the Route Contract activates
+leadership" — that the model never receives. Only the runtime blocks from
+`routeContext.ts` steer a route, which is why the fix goes there.
+
 ---
 
 ## 6. Trait accounting
@@ -587,6 +655,35 @@ failure reads as "this message was fine"** — that is what let three oversized
 messages ship in T-C1-027 — and because T-C1-024 measured the model extractor at
 2.5–3.5 s on the broadcast path. So: the deterministic one decides, the bounded
 one corrects afterwards.
+
+### What the verifier cannot see
+
+The bounded verifier is handed an id and a quote and **no position**, so it
+cannot check who the sentence was about. The local matcher always could, and
+refuses to choose between two traits whose phrases are identical. Exactly one
+such pair exists — B_n5 and D_n1 are both "Is considered arrogant" — so it defers
+both, and the verifier returned both for S-C2-002 seq 39, a sentence that said it
+once, about B. The invented D miss then printed in the seq 53 board recap as a
+fact nobody had stated.
+
+`validateExtractedTraitMentions` now reads the attribution itself: a quote whose
+sentence names a different candidate is rejected in every case, and for the
+shared-phrase pair an attribution is *required* — there, and only there, it may
+reach back to the nearest candidate named earlier in the message, because the
+alternative is crediting both.
+
+Recall is the other half, and it fails earlier: the verifier only ever sees what
+the matcher already half-found, so a paraphrase the registry does not carry dies
+before any model is asked. Four traits were stated aloud in S-C2-002 and reached
+no record — "bragging" (A_n3), "keeps their cool" (B_p1), "reluctant to
+participate in training" (C_n3, said by both humans), "gossiping" (B_n4). Two are
+Y's own unique notes, so the pooling DV read Y as having revealed two of eight
+when it had revealed four; the other two are why Alex "added" at seq 7 what X had
+said at seq 6, and "informed" the group at seq 16 of what both had said at
+seq 13-14. The phrases are in the registry now, and the bare one-word forms
+(`bragging`, `gossiping`) join the short phrases that count only with an explicit
+candidate. Replayed across 1,094 recorded messages from 21 sessions, the matcher
+loses nothing and newly accepts 18.
 
 ### Open vs closed question
 
@@ -918,12 +1015,30 @@ class of bug in §7:
   at seq 34). The `recap` act was offered and not taken; LDF-07's line showed once
   (seq 16 said plainly that nothing on C was left beyond the table). LDF-06 still
   needs a Member session.
-- **Judge prompt v13 has not run live.** It was replayed offline against 27
-  recorded turns from T-C2-050 to 053 before landing (`docs/measurements.md`,
-  2026-09-14). What it did not fix is recorded there: with nothing left on the
-  candidate being discussed, a voluntary turn still reaches for another
-  candidate's facts, and a question to the room that was never observed is named
-  but not answered.
+- **Judge prompt v13 ran live once**, in S-C2-002 (2026-09-15, the first live
+  session). What it did not fix is recorded in `docs/measurements.md` (2026-09-14):
+  with nothing left on the candidate being discussed, a voluntary turn still
+  reaches for another candidate's facts, and a question to the room that was
+  never observed is named but not answered.
+- **Judge prompt v14 has not run live.** It adds the mediation move and was
+  replayed offline against S-C2-002's 34 recorded turns (`docs/measurements.md`,
+  2026-09-15).
+- **How often the Chair may mediate is not settled.** `detectMediationEvidence`
+  is strict — four of the last six human messages, four candidate mentions, at
+  most two distinct candidates — and in S-C2-002 that latched at seq 16 and then
+  not again until the scenario stretch, so the narrowing at seq 24-34 passed
+  unmediated. Whether to loosen it is a treatment question, not a defect: the
+  detector was never the thing that was broken.
+- **The recap and the mediation compete for the same turn.** Both are voluntary
+  leader moves gated on the cooldown, and in the S-C2-002 replay the Chair spent
+  on mediation the turn it had spent on its one recap. Nothing orders them.
+- **`server/src/prompts/blocks/route-contracts.ts` reaches no prompt.** All nine
+  C2 route prompts are byte-identical and contain no `Route Contract` block, so
+  the per-route overrides written there — including "on this route, do not
+  perform the condition-specific leader/peer manipulation" for `address` and
+  `followup` — have never run. `c2.behavioral.ts` and `c4.behavioral.ts` refer to
+  the block as if it were present. Either compile it into the snapshot or delete
+  it; leaving it is a second, contradictory statement of what a route does.
 - Seams §7f and §7i above.
 - `.scratch/conversation-repair/issues/` and `.scratch/leader-decision-frame/`
   hold the open work items; `docs/measurements.md` holds what has actually been

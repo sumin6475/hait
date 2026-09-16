@@ -408,6 +408,8 @@ async function judgeLiveLedgerTurn(input: {
   /** The board. Gives the Judge the leader's coverage note and, in every condition, Alex's own read. */
   revealStats: unknown;
   recapAvailable: boolean;
+  mediationAvailable: boolean;
+  mediationEvidence: readonly string[];
   cooldownAvailable: boolean;
   backchannelAvailable: boolean;
   /** Live routing only. In shadow mode the Judge still runs on every turn, so
@@ -452,6 +454,8 @@ async function judgeLiveLedgerTurn(input: {
     eligibleTraitIds: input.eligibleTraitIdsForState(state),
     revealStats: input.revealStats,
     recapAvailable: input.recapAvailable,
+    mediationAvailable: input.mediationAvailable,
+    mediationEvidence: input.mediationEvidence,
   });
   const attempts = [...judged.attempts];
   if (judged.decision?.decision === "reobserve" && !reobserved) {
@@ -475,6 +479,8 @@ async function judgeLiveLedgerTurn(input: {
         eligibleTraitIds: input.eligibleTraitIdsForState(state),
         revealStats: input.revealStats,
         recapAvailable: input.recapAvailable,
+        mediationAvailable: input.mediationAvailable,
+        mediationEvidence: input.mediationEvidence,
       });
       attempts.push(...judged.attempts);
     }
@@ -903,6 +909,35 @@ export function recapAvailableFor(
   // Something the humans put on the board. Alex cannot make a recap available by
   // disclosing its own notes.
   return humanConfirmedIds(session?.revealStats).size > 0;
+}
+
+/**
+ * Whether the Chair may mediate on this turn.
+ *
+ * The evidence this reads has been maintained all along. `updateMediationState`
+ * runs on every push, reads the last six human messages, and latches when the
+ * room has circled one or two candidates, gone over the same ground, or moved
+ * to settle early; a short TTL lets it lapse when the discussion moves on. The
+ * live controller then never consulted it. Its two consumers sit on the legacy
+ * observer paths, which the shipped controller returns before reaching, so the
+ * act existed in the Chair's schema, the writer's mediation block was fully
+ * built, and no session has ever produced a mediation turn. S-C2-002 latched at
+ * seq 16 on candidate concentration and stayed latched while the group narrowed
+ * to A and B; C, the one candidate nobody had brought their own notes on, left
+ * the table at seq 42 and never came back.
+ *
+ * What this does *not* read is the build-on counter. "Mediate every two
+ * build-ons" is arithmetic about when Alex speaks, decided outside the Judge and
+ * condition-dependent, which is the one thing `docs/adr/0001` holds constant —
+ * and the Judge is told in as many words never to reason about pacing. The move
+ * is offered when the discussion state that calls for it is there, and on no
+ * other grounds.
+ */
+export function mediationAvailableFor(
+  runtime: Pick<RuntimeState, "conditionCode" | "mediationLatched">,
+): boolean {
+  if (!isLeader(runtime.conditionCode)) return false;
+  return runtime.mediationLatched === true;
 }
 
 function scheduleLongSilence(runtime: RuntimeState) {
@@ -1926,6 +1961,8 @@ export async function onHumanMessage(input: {
     const ledgerResult = await judgeLiveLedgerTurn({
       runtime,
       recapAvailable: recapAvailableFor(runtime, session),
+      mediationAvailable: mediationAvailableFor(runtime),
+      mediationEvidence: runtime.mediationEvidence ?? [],
       messageSeq: input.messageSeq,
       conversationEpoch: input.conversationEpoch,
       docs: anchorDocs,
@@ -2063,6 +2100,14 @@ export async function onHumanMessage(input: {
         : undefined;
       const selectedFocusCandidate =
         selectedThread?.focusCandidate ?? null;
+      // A mediation has no selected opportunity, so the thread that would name
+      // its subject is absent; the Judge named one itself. The writer's
+      // mediation block opens on "the current discussion focus", and without
+      // this it opened on "no single candidate" every time.
+      const routeFocusCandidate =
+        routeKind === "mediation"
+          ? (decision.focusCandidate ?? selectedFocusCandidate)
+          : selectedFocusCandidate;
       await reserveTurn(runtime, {
         anchorSeq: input.messageSeq,
         routeKind,
@@ -2082,11 +2127,14 @@ export async function onHumanMessage(input: {
         // this turn was for. Three of the session's silences were decisions
         // rejected on a field with no consumer.
         judgeBrief: decision.brief,
-        focusCandidate: selectedFocusCandidate,
+        focusCandidate: routeFocusCandidate,
+        mediationTrigger: routeKind === "mediation" ? "evidence_latch" : undefined,
         decisionStage: "main_judge",
         routeReason: selectedOpportunity
           ? "ledger_selected_opportunity"
-          : "ledger_voluntary_act",
+          : routeKind === "mediation"
+            ? "ledger_mediation"
+            : "ledger_voluntary_act",
         floorMs:
           routeKind === "address"
             ? TRIGGER_CONFIG.ADDRESS_FLOOR_MS

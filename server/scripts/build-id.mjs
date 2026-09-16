@@ -54,6 +54,10 @@ const checks = [
   ["ADR 0012 the Chair recaps as an act", has("src/lib/interventionEngine.ts", "recapAvailableFor")],
   ["the Judge replies to what was said since Alex spoke", has("src/lib/interventionJudge.ts", "humanMessagesSinceAlexSpoke")],
   ["the board records the given note and what Alex said", has("src/lib/routeTurn.ts", "[contributedTraitId, ...broadcastExtraction.acceptedIds]")],
+  // S-C2-002, the first live session.
+  ["a direct reply invents no procedure", has("src/lib/routeContext.ts", "do not propose an exercise, role-play, vote, or decision procedure of your own")],
+  ["the Chair is offered the mediation move", has("src/lib/interventionEngine.ts", "mediationAvailableFor")],
+  ["one name per arrogance claim", has("src/lib/poolingExtractor.ts", "SHARED_PHRASE_TRAIT_IDS")],
 ];
 
 const width = Math.max(...checks.map(([label]) => label.length));

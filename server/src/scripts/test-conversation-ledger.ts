@@ -28,6 +28,7 @@ import {
   eligibleTraitIdsForLedgerState,
   ledgerRouteKindForAct,
   ledgerSpeechBlockedByHumanFloor,
+  mediationAvailableFor,
   recapAvailableFor,
 } from "../lib/interventionEngine.js";
 import {
@@ -1040,6 +1041,93 @@ assert.match(
   // not contain it — the message is assembled from the board.
   assert.ok(
     validate({ discloseTraitIds: ["A_p1"] }, true).ruleCodes.includes("recap_names_a_trait"),
+  );
+}
+
+// ── The Chair's mediation ──────────────────────────────────────────────────
+// [S-C2-002] `mediate` has been in the Chair's schema since the schema existed
+// and was chosen zero times in every recorded session. The moves block never
+// listed it, and the system prompt says a move that is not listed is not a
+// choice. Meanwhile the engine latched the discussion-state evidence that opens
+// it on every push and never read the latch back: S-C2-002 latched at seq 16 on
+// candidate concentration and stayed latched while the group narrowed to A and
+// B, and C — the one candidate nobody had brought their own notes on — left the
+// table at seq 42 and never returned.
+{
+  const leaderTurn = (over: Record<string, unknown>) =>
+    buildLedgerJudgeUserMessage({
+      messages: [{ seq: 2, senderRole: "humanY" as const, speaker: "Participant Y", content: "m2" }],
+      state: twoRequests,
+      cooldownAvailable: true,
+      backchannelAvailable: true,
+      eligibleTraitIds: [],
+      conditionCode: "C2",
+      ...over,
+    } as any);
+
+  assert.match(leaderTurn({ mediationAvailable: true }), /- mediate: available/);
+  assert.match(leaderTurn({ mediationAvailable: false }), /- mediate: not available/);
+  // A voluntary act, so the cooldown governs it like the others.
+  assert.match(
+    leaderTurn({ mediationAvailable: true, cooldownAvailable: false }),
+    /- mediate: not available/,
+  );
+  // A Member is told nothing about a move it cannot make.
+  assert.doesNotMatch(leaderTurn({}), /- mediate:/);
+  // The evidence rides along so the Judge reads a state, not a permission.
+  assert.match(
+    leaderTurn({ mediationAvailable: true, mediationEvidence: ["candidate_concentration"] }),
+    /- mediate: available \(the discussion state that opened it: candidate_concentration\)/,
+  );
+
+  // Availability is the discussion state, never the build-on counter: "mediate
+  // every two build-ons" is arithmetic about when Alex speaks, and `docs/adr/0001`
+  // holds that constant across conditions.
+  assert.equal(mediationAvailableFor({ conditionCode: "C2", mediationLatched: true }), true);
+  assert.equal(mediationAvailableFor({ conditionCode: "C4", mediationLatched: true }), true);
+  assert.equal(mediationAvailableFor({ conditionCode: "C2", mediationLatched: false }), false);
+  assert.equal(mediationAvailableFor({ conditionCode: "C1", mediationLatched: true }), false);
+  assert.equal(mediationAvailableFor({ conditionCode: "C3", mediationLatched: true }), false);
+
+  // The schema is the first lock, the routing seam the second — same two locks
+  // the recap has.
+  const asMediation = {
+    decision: "speak",
+    act: "mediate",
+    selectedOpportunityId: null,
+    evidence: "conversation_grounded_synthesis",
+    discloseTraitIds: [],
+    focusCandidate: "B",
+    brief: "say where the discussion stands and what it has not reached",
+    evidenceSeqs: [2],
+  };
+  assert.equal(ledgerJudgeSchemaFor("C1").safeParse(asMediation).success, false);
+  assert.equal(ledgerJudgeSchemaFor("C3").safeParse(asMediation).success, false);
+  assert.equal(ledgerJudgeSchemaFor("C2").safeParse(asMediation).success, true);
+  assert.equal(ledgerRouteKindForAct("mediate", "C2"), "mediation");
+  assert.equal(ledgerRouteKindForAct("mediate", "C4"), "mediation");
+  assert.equal(ledgerRouteKindForAct("mediate", "C1"), "build_on");
+  assert.equal(ledgerRouteKindForAct("mediate", "C3"), "build_on");
+
+  const validateMediation = (over: Record<string, unknown>, mediationAvailable: boolean) =>
+    validateConversationLedgerJudgeDecision({
+      decision: { ...asMediation, ...over } as any,
+      state: { ...twoRequests, currentTriggerSeq: 2, contextThroughSeq: 2 },
+      eligibleTraitIds: ["A_p1"],
+      transcriptSeqs: new Set([1, 2]),
+      cooldownAvailable: true,
+      mediationAvailable,
+    });
+  assert.equal(validateMediation({}, true).ok, true, "an offered mediation is accepted");
+  assert.ok(
+    validateMediation({}, false).ruleCodes.includes("mediation_unavailable_this_turn"),
+    "a mediation nobody offered is rejected",
+  );
+  // Mediation is about the shape of the discussion, not its contents.
+  assert.ok(
+    validateMediation({ discloseTraitIds: ["A_p1"] }, true).ruleCodes.includes(
+      "mediation_names_a_trait",
+    ),
   );
 }
 
