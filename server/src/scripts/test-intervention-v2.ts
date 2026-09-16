@@ -5502,4 +5502,82 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
   }
 }
 
+// ── S-C2-002: a turn may not invent the way the board decides ───────────────
+//
+// The leader refinement asks every discretionary turn to end on "one clear
+// next-step move", and the shared output discipline forbids inventing job
+// criteria — but only the build-on contribution was ever told so in those
+// words. At seq 39 the brief said to reconcile what X had reported about B, and
+// the reply ended by proposing the board compare "in-flight crew conflict
+// scenarios"; seq 41 wrote three fictional situations to judge the candidates
+// against. Eighteen of fifty-six messages ran inside that frame, and C — the
+// candidate whose pooled profile is the right answer — left the table at seq 42
+// and never came back.
+{
+  const scenarioBan = /do not propose an exercise, role-play, vote, or decision procedure of your own/;
+  for (const routeKind of ["address", "followup"] as const) {
+    for (const conditionCode of ["C1", "C2", "C3", "C4"] as const) {
+      const context = buildRouteUserContext({
+        routeKind,
+        conditionCode,
+        messages: [
+          {
+            seq: 12,
+            senderRole: "humanX",
+            speaker: "Participant X",
+            content: "Okay Alex, you go first!",
+          },
+        ],
+        revealStats: tC2030PreferenceStats,
+        language: "en",
+        anchorSeq: 12,
+      });
+      assert.match(
+        context.userPrompt,
+        scenarioBan,
+        `${conditionCode} ${routeKind} must refuse an invented procedure`,
+      );
+      assert.match(
+        context.userPrompt,
+        /Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff/,
+        `${conditionCode} ${routeKind} carries the same rule the build-on has`,
+      );
+    }
+  }
+  // A backchannel is one sentence of social uptake; it was never at risk and
+  // the extra prose would only crowd it.
+  assert.doesNotMatch(
+    buildRouteUserContext({
+      routeKind: "backchannel",
+      conditionCode: "C2",
+      messages: [
+        { seq: 12, senderRole: "humanX", speaker: "Participant X", content: "Exactly" },
+      ],
+      revealStats: tC2030PreferenceStats,
+      language: "en",
+      anchorSeq: 12,
+    }).userPrompt,
+    scenarioBan,
+  );
+
+  // Mediation is the turn most likely to reach for a procedure, because naming
+  // a next direction is its whole purpose.
+  const mediation = buildRouteUserContext({
+    routeKind: "mediation",
+    conditionCode: "C2",
+    messages: [
+      { seq: 12, senderRole: "humanX", speaker: "Participant X", content: "A and B are the top two." },
+    ],
+    revealStats: tC2030PreferenceStats,
+    language: "en",
+    anchorSeq: 12,
+    mediationEvidence: ["candidate_concentration"],
+  } as any);
+  assert.match(
+    mediation.userPrompt,
+    /Name the direction as a candidate or an uncovered area, never as a method/,
+  );
+  assert.match(mediation.userPrompt, /no vote, round, exercise, scenario, ranking rule/);
+}
+
 console.log("intervention-v2 checks passed");

@@ -1966,6 +1966,26 @@ export function buildRouteUserContext(input: {
           : "Contribution mode (server-derived): NOTE_CONTRIBUTION.",
     );
   }
+  // The same sentence the build-on contribution has carried since it was
+  // written, on the two routes that never got it.
+  //
+  // Alex may not invent job criteria — that has been in the shared output
+  // discipline from the start — and a build-on is told so in these words. A
+  // direct reply was not, and the leader refinement asks every discretionary
+  // turn to end on "one clear next-step move". In S-C2-002 the brief at seq 39
+  // said to reconcile what X had reported about B; the reply ended by proposing
+  // that the board compare "in-flight crew conflict scenarios". A person took
+  // the invitation at seq 40, and Alex wrote three fictional situations for the
+  // board to judge the candidates against. Eighteen of the session's fifty-six
+  // messages ran inside that frame, C left the table at seq 42 and never came
+  // back, and the four positives X and Y still held on C were never said. The
+  // scenarios added no trait, so nothing downstream objected; what they added
+  // was a way of weighing traits, which is the thing the rule names.
+  if (input.routeKind === "address" || input.routeKind === "followup") {
+    blocks.push(
+      "Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff that is absent from the recent conversation, and do not propose an exercise, role-play, vote, or decision procedure of your own. Answer what was actually asked; where this turn's purpose is to point the discussion somewhere, point it at the candidates and what has or has not been said about them.",
+    );
+  }
   if (input.routeKind === "mediation") {
     const currentFocus = input.mediationFocusCandidate
       ? `Current discussion focus: Candidate ${input.mediationFocusCandidate}.`
@@ -1984,6 +2004,11 @@ export function buildRouteUserContext(input: {
           : "Observed process evidence: cadence checkpoint.",
         conditionMove,
         "Add no new candidate trait. Mediation means orienting the team's discussion state and next direction; it does not require conflict, does not require switching candidates, and must not tell the team which candidate to choose.",
+        // The same rule the direct-reply routes carry. Mediation is the turn
+        // most likely to reach for a procedure, because naming a next direction
+        // is its whole purpose — and a procedure is how S-C2-002 lost the
+        // hidden profile. The direction it names is a candidate or a gap.
+        "Name the direction as a candidate or an uncovered area, never as a method: no vote, round, exercise, scenario, ranking rule, scoring scheme, or stopping rule, and no invented criterion for weighing traits against one another.",
         "Keep the whole mediation to two short sentences and aim for 45 words or fewer. Name only the current focus and the coverage gap; do not enumerate discussed traits, counts, or lettered options. Put the next-step sentence or question on a new line.",
       ].join("\n"),
     );
