@@ -433,4 +433,61 @@ assert.ok(
   "misses Alex discloses are recorded, which the model extractor was dropping",
 );
 
+// --- S-C2-002: what the humans said and the board never recorded -------------
+//
+// Four traits were stated aloud in the first live session and reached no
+// record. Two of them (A_n3, B_n4) are Y's own unique notes, so the pooling DV
+// read Y as having revealed two of eight when it had revealed four. The other
+// two produced the symptom the participants described as Alex not listening:
+// X said B keeps their cool at seq 6 and Alex "added" it at seq 7; X said C is
+// reluctant to participate in training at seq 14 and Alex "informed" the group
+// of it at seq 16.
+for (const [message, profile, traitId] of [
+  ["I think the candidated A is good because he's good at his work even though he's bragging sometimes.", "Y", "A_n3"],
+  ["Candidate B can assess weather conditions very well, keeps their cool and is 100 percent reliable, all which is critical for navigating a plane.", "X", "B_p1"],
+  ["Candidate C being reluctant to participate in training is a huge red flage", "X", "C_n3"],
+  ["Let's talk about B's gossiping others", "Y", "B_n4"],
+] as const) {
+  const said = extractHumanTraitsFast({ messageText: message, assignedProfile: profile });
+  assert.ok(
+    said.acceptedIds.includes(traitId),
+    `${traitId} was stated aloud in S-C2-002 and must reach the board: ${message}`,
+  );
+}
+
+// The bare forms carry the trait only when the sentence names the candidate.
+for (const message of ["Someone in that pile is always bragging.", "There is too much gossiping on that crew."]) {
+  const unattributed = extractHumanTraitsFast({ messageText: message, assignedProfile: "Y" });
+  assert.deepEqual(unattributed.acceptedIds, [], `no candidate is named: ${message}`);
+}
+
+// --- S-C2-002 seq 39: the one trait pair the words cannot separate -----------
+//
+// B_n5 and D_n1 are both "Is considered arrogant". The local matcher has always
+// refused to choose between them without an attribution and hands the pair to
+// the bounded verifier, which is given an id and a quote and no position — so
+// it returned both for a sentence that said it once, about B. The invented D
+// miss then printed in the seq 53 board recap as a fact nobody had stated.
+const bothSides =
+  "I see both sides: B\u2019s operational strengths\u2014keeps a cool head in crisis, is 100% reliable, can assess weather well, and is good at multitasking\u2014are clear matches. Those sit against interpersonal misses: considered arrogant, sometimes abusive in tone, and described as nagging or not very cooperative. D\u2019s interpersonal risks are different: considered moody and having strong prejudices.";
+const arrogantMention = (traitId: string) =>
+  validateExtractedTraitMentions(
+    bothSides,
+    [{ traitId, evidenceQuote: "considered arrogant", assertionType: "asserted" as const, confidence: 0.95 }],
+    new Set([traitId]),
+  );
+assert.deepEqual(arrogantMention("B_n5"), ["B_n5"], "the sentence names B before the phrase");
+assert.deepEqual(arrogantMention("D_n1"), [], "nobody called D arrogant in that message");
+
+// The same check must not cost a trait the message does attribute.
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "Candidate D is considered arrogant and quick-tempered.",
+    [{ traitId: "D_n1", evidenceQuote: "considered arrogant", assertionType: "asserted" as const, confidence: 0.95 }],
+    new Set(["D_n1"]),
+  ),
+  ["D_n1"],
+  "an attributed arrogance claim still counts for D",
+);
+
 console.log("pooling extractor fast-path tests passed");

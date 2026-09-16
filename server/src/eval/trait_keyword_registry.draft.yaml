@@ -140,9 +140,9 @@ traits:
     profiles: [Y]
     canonical_text: "Is considered a show-off"
     core_phrases: ["Is considered a show-off", "show-off"]
-    accepted_variants: ["show off", "showoff"]
+    accepted_variants: ["show off", "showoff", "bragging", "brags", "is bragging"]
     fuzzy_policy: verify_lexical_near_match
-    collision_notes: "Do not match the phrasal verb 'show off' unless it describes the candidate as a disposition."
+    collision_notes: "Do not match the phrasal verb 'show off' unless it describes the candidate as a disposition. 'bragging'/'brags' are accepted only with explicit Candidate A attribution (S-C2-002 seq 3)."
     review_status: approved
 
   - trait_id: A_n4
@@ -184,7 +184,7 @@ traits:
     profiles: [X, Y, Z]
     canonical_text: "Keeps a cool head in crisis situations"
     core_phrases: ["Keeps a cool head in crisis situations", "keeps a cool head in crisis situations", "cool head in crisis situations"]
-    accepted_variants: ["keep a cool head in a crisis", "keeps a cool head in crises", "cool head", "keeping a cool head in crisis situations", "keeping a cool head"]
+    accepted_variants: ["keep a cool head in a crisis", "keeps a cool head in crises", "cool head", "keeping a cool head in crisis situations", "keeping a cool head", "keeps their cool", "keeps his cool", "keeps her cool", "keeps his/her cool", "keep their cool", "keeping their cool", "kept their cool"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "'Cool head' is accepted only with explicit Candidate B attribution and a crisis/operational context; do not match the idiom generically."
     review_status: approved
@@ -261,9 +261,9 @@ traits:
     profiles: [Y]
     canonical_text: "Gossips about his/her coworkers"
     core_phrases: ["Gossips about his/her coworkers", "gossips about coworkers"]
-    accepted_variants: ["gossips about co-workers", "gossiping about coworkers", "gossips about colleagues", "gossiping about co-workers", "gossips about his coworkers", "gossips about his co-workers", "gossips about his/her coworker", "gossips about his/her coworkers", "gossip about his coworkers"]
+    accepted_variants: ["gossips about co-workers", "gossiping about coworkers", "gossips about colleagues", "gossiping about co-workers", "gossips about his coworkers", "gossips about his co-workers", "gossips about his/her coworker", "gossips about his/her coworkers", "gossip about his coworkers", "gossips about others", "gossiping about others", "gossiping others", "gossips about other people", "gossip", "gossips", "gossiping"]
     fuzzy_policy: verify_lexical_near_match
-    collision_notes: "A quoted piece of gossip is not itself enough to assert this trait."
+    collision_notes: "A quoted piece of gossip is not itself enough to assert this trait. The bare noun/verb forms are accepted only with explicit Candidate B attribution (S-C2-002 seq 36)."
     review_status: approved
 
   - trait_id: B_n5
@@ -393,7 +393,7 @@ traits:
     profiles: [X, Y, Z]
     canonical_text: "Is reluctant to take part in training"
     core_phrases: ["Is reluctant to take part in training", "reluctant to take part in training", "reluctant to train"]
-    accepted_variants: ["doesn't want to take part in training", "unwilling to take part in training", "reluctant about training", "reluctant to take parts in training"]
+    accepted_variants: ["doesn't want to take part in training", "unwilling to take part in training", "reluctant about training", "reluctant to take parts in training", "reluctant to participate in training", "reluctant to participate in the training", "reluctant to participate in training sessions", "unwilling to participate in training", "doesn't want to participate in training"]
     fuzzy_policy: verify_lexical_near_match
     collision_notes: "A scheduling problem or one declined course is not necessarily the disposition."
     review_status: approved

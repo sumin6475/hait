@@ -299,6 +299,8 @@ export function extractHumanTraitsFast(input: { messageText: string; assignedPro
           (entry.traitId === "B_p4" && /^(?:can multitask|multitasks)$/.test(normalizedEvidence(match[0]))) ||
           (entry.traitId === "B_n1" && /^(?:nagging|are nagging)$/.test(normalizedEvidence(match[0]))) ||
           (entry.traitId === "C_n2" && normalizedEvidence(match[0]) === "egocentric") ||
+          (entry.traitId === "A_n3" && /^(?:bragging|brags)$/.test(normalizedEvidence(match[0]))) ||
+          (entry.traitId === "B_n4" && /^(?:gossip|gossips|gossiping)$/.test(normalizedEvidence(match[0]))) ||
           (entry.traitId === "D_n3" && normalizedEvidence(match[0]) === "know all");
         if (shortPhraseNeedsCandidate && !explicitlyAttributed) continue;
         if (phraseCandidates.size === 0 || (phraseCandidates.size > 1 && !explicitlyAttributed)) continue;
@@ -362,6 +364,72 @@ function evidenceOnlyAppearsInRejectedContext(message: string, quote: string, tr
   return found;
 }
 
+/**
+ * Trait ids whose lexical evidence cannot be told apart from another
+ * candidate's trait.
+ *
+ * Exactly one pair qualifies: B_n5 and D_n1 are both "Is considered arrogant",
+ * so the words alone never say who was meant. The local matcher has always
+ * required an explicit attribution for these (`phraseCandidates.size > 1`); the
+ * bounded verifier never did, because it receives an id and a quote and no
+ * position. S-C2-002 seq 39 said "considered arrogant" once, about B, and the
+ * verifier returned both ids. The invented D miss then printed in the seq 53
+ * board recap as a fact nobody had stated.
+ */
+const SHARED_PHRASE_TRAIT_IDS: ReadonlySet<string> = (() => {
+  const byPhrase = new Map<string, Set<string>>();
+  for (const entry of TRAIT_KEYWORD_REGISTRY) {
+    for (const phrase of entryPhrases(entry)) {
+      const key = normalizedEvidence(phrase);
+      if (!key) continue;
+      if (!byPhrase.has(key)) byPhrase.set(key, new Set<string>());
+      byPhrase.get(key)!.add(entry.traitId);
+    }
+  }
+  const shared = new Set<string>();
+  for (const ids of byPhrase.values()) {
+    const candidates = new Set([...ids].map((id) => TRAIT_BY_ID.get(id)?.candidate));
+    if (candidates.size > 1) for (const id of ids) shared.add(id);
+  }
+  return shared;
+})();
+
+/**
+ * Which candidate a quote is talking about, read from the message itself.
+ *
+ * `reachBack` is off by default so this answers exactly what the local matcher
+ * answers: inside the quote's own sentence. That bound is what keeps the
+ * matcher honest while it scans every phrase in the registry, and a validator
+ * that reached further would start rejecting traits the matcher deferred on
+ * purpose. It is turned on only for the phrases no wording can disambiguate,
+ * where the choice is between reading an earlier sentence and crediting both
+ * candidates: S-C2-002 seq 39 names B two sentences before "considered
+ * arrogant" and names nothing else in between.
+ */
+function attributedCandidateForQuote(
+  messageText: string,
+  quote: string,
+  reachBack = false,
+): Cand | undefined {
+  if (!quote) return undefined;
+  const mentions = candidateMentions(messageText);
+  if (!mentions.length) return undefined;
+  const haystack = messageText.toLowerCase();
+  const needle = quote.toLowerCase();
+  let offset = 0;
+  let firstIndex = -1;
+  while (offset <= haystack.length) {
+    const index = haystack.indexOf(needle, offset);
+    if (index < 0) break;
+    if (firstIndex < 0) firstIndex = index;
+    const withinSentence = candidateAtEvidence(messageText, mentions, index, quote.length);
+    if (withinSentence) return withinSentence;
+    offset = index + Math.max(quote.length, 1);
+  }
+  if (!reachBack || firstIndex < 0) return undefined;
+  return mentions.filter((mention) => mention.end <= firstIndex).at(-1)?.candidate;
+}
+
 export function validateExtractedTraitMentions(
   messageText: string,
   mentions: readonly ExtractedTraitMention[],
@@ -375,6 +443,12 @@ export function validateExtractedTraitMentions(
     if (!trait || m.assertionType !== "asserted" || m.confidence < 0.8) return false;
     if (allowedTraitIds && !allowedTraitIds.has(m.traitId)) return false;
     if (!quote || !message.includes(quote) || GENERIC_ONLY.test(quote) || (quoteCounts.get(quote) ?? 0) > 1) return false;
+    // The verifier is handed ids and words and never a position, so it cannot
+    // see who the sentence was about. Read that here, from the message.
+    const shared = SHARED_PHRASE_TRAIT_IDS.has(m.traitId);
+    const attributed = attributedCandidateForQuote(messageText, m.evidenceQuote, shared);
+    if (attributed && attributed !== trait.candidate) return false;
+    if (shared && attributed !== trait.candidate) return false;
     // The verifier is advisory. Keep deterministic vetoes for evidence that is
     // only present inside a question, hypothetical, report, or explicit denial.
     if (evidenceOnlyAppearsInRejectedContext(message, quote, m.traitId)) return false;
