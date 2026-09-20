@@ -209,7 +209,22 @@ export function detectMediationEvidence(
     const matches = message.match(/\b(?:Candidate\s+)?([ABCD])(?:'s)?\b/g) ?? [];
     return matches.map((match) => match.match(/([ABCD])/i)?.[1]?.toUpperCase()).filter(Boolean);
   });
-  if (recent.length >= 4 && candidates.length >= 4 && new Set(candidates).size <= 2) {
+  // Which candidates the window is actually *about*. A letter said once is not a
+  // subject the room is on, and one of the four collides with an English word:
+  // in S-C4-003 seq 6 a participant wrote "A short overall for each candidate's
+  // strengths and weaknesses", the leading article counted as a mention of
+  // Candidate A, and the distinct count came to three — one over the threshold —
+  // on the very stretch where the group had settled on D and the Chair should
+  // have widened the field. Counting only the repeated letters drops that stray
+  // article without a word list to keep patching, and drops the symmetrical case
+  // with it: four candidates named once each is a broad discussion, not a
+  // concentrated one.
+  const mentions = new Map<string, number>();
+  for (const candidate of candidates) {
+    mentions.set(candidate as string, (mentions.get(candidate as string) ?? 0) + 1);
+  }
+  const dominant = [...mentions.values()].filter((count) => count >= 2).length;
+  if (recent.length >= 4 && candidates.length >= 4 && dominant >= 1 && dominant <= 2) {
     evidence.add("candidate_concentration");
   }
   const normalized = recent.map((message) =>

@@ -1416,3 +1416,54 @@ notes on C. One of the three took the turn the Chair had spent on its recap.
 Not measured: the writer's message on a mediation turn, and whether the
 direct-reply procedure ban changes what seq 39 and 41 would have written. Only
 the Judge was replayed. The next Chair session is still the measurement.
+
+---
+
+## 2026-09-20 — S-C4-003
+
+C4 (Chair × ACI), 43 messages, 20 of them Alex's. Team chose D unanimously; the
+pooled answer is C. Judge prompt v14, comparison build.
+
+**The hidden profile was over by minute three.** At seq 6 a participant asked for
+"a short overall for each candidate's strengths and weaknesses" and the Judge
+named twenty trait ids for one turn. From seq 14 the eligible list was empty for
+**fourteen consecutive turns**. The humans pooled two traits all session
+(C_n2, C_n3, both at seq 18); `revealStats.byCandidate` is empty for A, B and D.
+
+**With nothing left, four turns asked for evidence that does not exist.** Seqs
+30, 32, 34 and 36 asked for "concrete examples", "specific incidents", "concrete
+evidence" of a trait's operational impact. The briefs show the Judge as the
+origin, not the writer. A participant answered: "We have to use what we currently
+have at hand".
+
+**Mediation was never offered.** `detectMediationEvidence` returned `[]` on every
+window. At seq 14 it missed by one match: the leading "A" of "**A** short overall
+for each candidate's…" counted as Candidate A, putting the window at three
+distinct candidates against a threshold of two. Lowercasing that one word in the
+same window returns `["candidate_concentration"]`.
+
+**The recap was never available either** — it needs a non-empty human board, and
+the humans had put nothing up until seq 18.
+
+### Replays behind the v15 fixes
+
+**S-C4-003, 20 turns.** Briefs asking for something outside the notes: 4 → 2.
+Both survivors follow Alex's own earlier example-asking in the transcript, which
+the fix removes upstream. Briefs that ask the group for their own notes on an
+uncovered candidate appear at anchors 14, 16, 18 and 27, where none did before.
+
+**Mediation is offered and not taken in C4.** With the detector fixed, the move
+was available on 10 of the 20 turns and the Judge chose `follow` every time:
+ACI's question at the end of each turn draws a human reply, which mints an uptake,
+and taking up the reply beats a voluntary mediation. Nothing forces that
+ordering — it is the Judge's free choice — so it is a prompt-weight question, not
+a block.
+
+**S-C2-002 re-replayed on v15, 34 turns.** Mediation taken at anchors 11, 43, 49,
+52 and 55, against three on v14; anchor 11's brief is the one this work was for —
+"note that nobody has added their own notes on any candidate, and ask the group
+what they still have on A, C and D". Four of the five name the same gap (C), which
+the prompt tells the Judge not to do. The replay cannot model the engine clearing
+the latch after a mediation broadcast, nor that the first mediation changes the
+conversation, so live frequency will be lower than five. **This is the number to
+watch in the next Chair session.**

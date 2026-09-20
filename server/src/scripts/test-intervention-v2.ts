@@ -1548,6 +1548,49 @@ assert.deepEqual(
   ["candidate_concentration", "premature_convergence", "repetition"].sort(),
 );
 
+// [S-C4-003 seq 6] "A short overall for each candidate's strengths and
+// weaknesses" — the leading English article counted as a mention of Candidate A,
+// the window's distinct count came to three, and concentration stayed unlatched
+// through the stretch where the group had settled on D. The concentration test
+// now reads the letters a window returns to, not every letter in it: one stray
+// mention neither makes a candidate a subject nor unmakes the concentration.
+assert.deepEqual(
+  detectMediationEvidence([
+    "A short overall for each candidate's strengths and weaknesses",
+    "I feel candidate D's attributes are stronger compared to the others",
+    "Also, his weaknesses aren't that concerning",
+    "I agree on D",
+    "Candidate B won't be able to relate well with the crew, I find that concerning",
+    "D is the perfect candidate",
+  ]),
+  ["candidate_concentration"],
+);
+// The same rule has to keep a genuinely wide discussion unlatched, in both of
+// its shapes: four candidates named once each, and three the room keeps
+// returning to.
+assert.deepEqual(
+  detectMediationEvidence([
+    "I have notes on A",
+    "and something on B",
+    "C looks interesting too",
+    "D is worth a look",
+    "what does everyone think",
+    "let's keep going",
+  ]),
+  [],
+);
+assert.deepEqual(
+  detectMediationEvidence([
+    "A and B are close",
+    "A has more matches",
+    "B is reliable though",
+    "C is also in play",
+    "C has three matches",
+    "so it is A, B or C",
+  ]),
+  [],
+);
+
 const revealStats = {
   byCandidate: {
     A: { revealedIds: ["A_p1", "A_n5"] },
@@ -5578,6 +5621,41 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
     /Name the direction as a candidate or an uncovered area, never as a method/,
   );
   assert.match(mediation.userPrompt, /no vote, round, exercise, scenario, ranking rule/);
+}
+
+// ── S-C4-003: nobody has an example, so nobody may be asked for one ─────────
+//
+// With its card spent from seq 7 on, Alex spent seqs 30, 32, 34 and 36 asking
+// the group for "concrete examples", "specific incidents" and "concrete
+// evidence" that a trait had an effect. No such thing exists in this task — the
+// cards are the whole world — so the question can only be answered by making
+// something up, and a participant had to say so: "We have to use what we
+// currently have at hand".
+{
+  const evidenceBan = /Nobody here has an example, an incident, an anecdote, a source or a witness beyond the notes on their cards/;
+  for (const routeKind of ["address", "followup"] as const) {
+    for (const conditionCode of ["C1", "C2", "C3", "C4"] as const) {
+      assert.match(
+        buildRouteUserContext({
+          routeKind,
+          conditionCode,
+          messages: [
+            {
+              seq: 12,
+              senderRole: "humanY",
+              speaker: "Participant Y",
+              content: "I think A's traits would affect teamwork",
+            },
+          ],
+          revealStats: tC2030PreferenceStats,
+          language: "en",
+          anchorSeq: 12,
+        }).userPrompt,
+        evidenceBan,
+        `${conditionCode} ${routeKind} must not ask for evidence outside the notes`,
+      );
+    }
+  }
 }
 
 console.log("intervention-v2 checks passed");

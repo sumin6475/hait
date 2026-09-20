@@ -1984,6 +1984,13 @@ export function buildRouteUserContext(input: {
   if (input.routeKind === "address" || input.routeKind === "followup") {
     blocks.push(
       "Do not invent an operational scenario, causal effect, job-performance consequence, or tradeoff that is absent from the recent conversation, and do not propose an exercise, role-play, vote, or decision procedure of your own. Answer what was actually asked; where this turn's purpose is to point the discussion somewhere, point it at the candidates and what has or has not been said about them.",
+      // S-C4-003 seqs 30, 32, 34 and 36. With nothing left on its card, four
+      // consecutive replies asked the group for "concrete examples", "specific
+      // incidents" and "concrete evidence" of a trait's effect. No such thing
+      // exists in this task — the cards are all there is — so the question can
+      // only be answered by inventing something, and one participant had to say
+      // so ("We have to use what we currently have at hand").
+      "Nobody here has an example, an incident, an anecdote, a source or a witness beyond the notes on their cards, so never ask for one. If you have nothing left to add, ask what the others still hold in their own notes on a candidate instead.",
     );
   }
   if (input.routeKind === "mediation") {

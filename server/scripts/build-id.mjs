@@ -58,6 +58,10 @@ const checks = [
   ["a direct reply invents no procedure", has("src/lib/routeContext.ts", "do not propose an exercise, role-play, vote, or decision procedure of your own")],
   ["the Chair is offered the mediation move", has("src/lib/interventionEngine.ts", "mediationAvailableFor")],
   ["one name per arrogance claim", has("src/lib/poolingExtractor.ts", "SHARED_PHRASE_TRAIT_IDS")],
+  // S-C4-003.
+  ["a stray letter is not a candidate the room is on", has("src/lib/interventionRoutingV2.ts", "const dominant = [...mentions.values()]")],
+  ["nobody is asked for evidence outside the notes", has("src/lib/routeContext.ts", "Nobody here has an example, an incident, an anecdote")],
+  ["a spent card asks the group for theirs", has("src/lib/interventionJudge.ts", "A turn with nothing left of its own asks the group for theirs")],
 ];
 
 const width = Math.max(...checks.map(([label]) => label.length));
