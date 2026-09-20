@@ -702,9 +702,18 @@ fact nobody had stated.
 
 `validateExtractedTraitMentions` now reads the attribution itself: a quote whose
 sentence names a different candidate is rejected in every case, and for the
-shared-phrase pair an attribution is *required* — there, and only there, it may
-reach back to the nearest candidate named earlier in the message, because the
-alternative is crediting both.
+shared-phrase pair an attribution is *required*. It looks in three places in
+order — the name the quote itself carries, then the quote's own sentence, then
+(for that pair only) the nearest candidate named earlier in the message, because
+the alternative there is crediting both.
+
+The attribution runs **before** the duplicate-quote rule, and the ordering is the
+point. Asked about "is considered arrogant" the verifier returns both ids on one
+quote; the duplicate rule saw one quote on two ids and rejected both, so
+S-C4-003 seq 7 — Alex's own overview, saying plainly that B is considered
+arrogant — put it on the board nowhere, and it arrived five messages late at
+seq 12. The rule exists to stop one generic span being spread across several ids;
+a quote attribution has already assigned to exactly one candidate is not that.
 
 Recall is the other half, and it fails earlier: the verifier only ever sees what
 the matcher already half-found, so a paraphrase the registry does not carry dies

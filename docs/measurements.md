@@ -1467,3 +1467,22 @@ the prompt tells the Judge not to do. The replay cannot model the engine clearin
 the latch after a mediation broadcast, nor that the first mediation changes the
 conversation, so live frequency will be lower than five. **This is the number to
 watch in the next Chair session.**
+
+### Extractor on S-C4-003
+
+**Human side clean.** Two traits were stated from a participant's own card all
+session (C_n2 and C_n3, both at seq 18) and both were recorded. Nothing was
+missed: the other human lines about a candidate are inferences from what Alex had
+already said, or restate a Z-only note the speaker does not hold.
+
+**The precision fix worked live.** D_n1 was offered by the verifier at seqs 7 and
+41 for a sentence that said "considered arrogant" about B, and rejected both
+times. That is the S-C2-002 defect, caught in the field.
+
+**It also cost a true positive, now fixed.** The same sentences carry B_n5, and
+the duplicate-quote rule rejected it alongside D_n1 because both ids came back on
+one quote. Alex said B was arrogant at seq 7 and the board recorded it at seq 12.
+Attribution now runs before the duplicate count; replayed over seqs 7, 12 and 41
+of S-C4-003 and seqs 9 and 39 of S-C2-002, the pair resolves to B_n5 every time,
+an explicitly attributed D claim still counts for D, and a genuinely reused
+generic quote is still rejected for both ids.

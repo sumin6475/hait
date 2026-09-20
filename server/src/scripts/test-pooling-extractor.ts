@@ -479,6 +479,54 @@ const arrogantMention = (traitId: string) =>
 assert.deepEqual(arrogantMention("B_n5"), ["B_n5"], "the sentence names B before the phrase");
 assert.deepEqual(arrogantMention("D_n1"), [], "nobody called D arrogant in that message");
 
+// [S-C4-003 seqs 7 and 12] The attribution check and the duplicate-quote rule
+// collided on the one pair the words cannot separate. Asked about "is considered
+// arrogant", the verifier returns B_n5 and D_n1 carrying the same quote; the
+// duplicate rule saw one quote on two ids and rejected both, so B's arrogance —
+// said plainly in Alex's own overview — reached the board nowhere at seq 7 and
+// arrived five messages late at seq 12. Attribution now runs first and the
+// duplicate rule counts only what it left standing.
+const bothIdsOneQuote = (message: string, quote: string) =>
+  validateExtractedTraitMentions(
+    message,
+    [
+      { traitId: "B_n5", evidenceQuote: quote, assertionType: "asserted" as const, confidence: 0.95 },
+      { traitId: "D_n1", evidenceQuote: quote, assertionType: "asserted" as const, confidence: 0.95 },
+    ],
+    new Set(["B_n5", "D_n1"]),
+  );
+assert.deepEqual(
+  bothIdsOneQuote(
+    "Candidate B — Strengths: keeps a cool head in crisis situations. Weaknesses: is considered arrogant and is sometimes abusive in tone.\n\nCandidate D — Strengths: can concentrate very well. Weaknesses: is considered moody and has strong prejudices.",
+    "considered arrogant",
+  ),
+  ["B_n5"],
+  "the overview names B before the phrase and never calls D arrogant",
+);
+// The name the quote itself carries settles it, and must win over the letter in
+// an earlier clause: "I agree we're leaning to D. ... Candidate B is considered
+// arrogant." answered D before this.
+assert.deepEqual(
+  bothIdsOneQuote(
+    "I agree we\u2019re leaning to D. I have one more item: Candidate B is considered arrogant. Anything else the team wants to cover before we choose?",
+    "B is considered arrogant",
+  ),
+  ["B_n5"],
+);
+// The duplicate-quote rule still does the job it was written for: one generic
+// span spread across two ids is not evidence for either.
+assert.deepEqual(
+  validateExtractedTraitMentions(
+    "Candidate B is good at multitasking and keeps a cool head in crisis situations.",
+    [
+      { traitId: "B_p4", evidenceQuote: "Candidate B", assertionType: "asserted" as const, confidence: 0.95 },
+      { traitId: "B_p1", evidenceQuote: "Candidate B", assertionType: "asserted" as const, confidence: 0.95 },
+    ],
+    new Set(["B_p1", "B_p4"]),
+  ),
+  [],
+);
+
 // The same check must not cost a trait the message does attribute.
 assert.deepEqual(
   validateExtractedTraitMentions(

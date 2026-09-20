@@ -422,6 +422,20 @@ function attributedCandidateForQuote(
     const index = haystack.indexOf(needle, offset);
     if (index < 0) break;
     if (firstIndex < 0) firstIndex = index;
+    // The name the quote itself carries settles the question before anything
+    // around it is read. "Candidate B is considered arrogant" otherwise reached
+    // `reachBack` below, which looked left, found the D of an earlier clause and
+    // answered D. Overlap rather than containment, because the quote usually
+    // starts at the letter and leaves the word "Candidate" just outside it.
+    const inside = [
+      ...new Set(
+        mentions
+          .filter((mention) => mention.end > index && mention.start < index + quote.length)
+          .map((mention) => mention.candidate),
+      ),
+    ];
+    if (inside.length === 1) return inside[0];
+    if (inside.length > 1) return undefined;
     const withinSentence = candidateAtEvidence(messageText, mentions, index, quote.length);
     if (withinSentence) return withinSentence;
     offset = index + Math.max(quote.length, 1);
@@ -436,19 +450,38 @@ export function validateExtractedTraitMentions(
   allowedTraitIds?: ReadonlySet<string>,
 ): string[] {
   const message = normalizedEvidence(messageText);
+  // Attribution runs first, and the duplicate-quote rule counts only what it
+  // left standing. The two collided on the one pair of traits whose words are
+  // identical: asked about "is considered arrogant", the verifier returns B_n5
+  // and D_n1 with the same quote, the duplicate rule saw one quote on two ids
+  // and rejected *both* — so S-C4-003 seq 7 put B's arrogance on the board
+  // nowhere, and it reached the board five messages late at seq 12. The rule is
+  // there to stop one generic quote being spread across several ids; a quote
+  // that attribution has already assigned to exactly one candidate is not that.
+  const attributedFor = (m: ExtractedTraitMention): Cand | undefined =>
+    attributedCandidateForQuote(messageText, m.evidenceQuote, SHARED_PHRASE_TRAIT_IDS.has(m.traitId));
+  const attributionFits = (m: ExtractedTraitMention): boolean => {
+    const trait = TRAIT_BY_ID.get(m.traitId);
+    if (!trait) return false;
+    const attributed = attributedFor(m);
+    if (attributed && attributed !== trait.candidate) return false;
+    // For the identical pair, silence is not agreement: an unattributed claim
+    // names neither candidate, so it names neither.
+    if (SHARED_PHRASE_TRAIT_IDS.has(m.traitId) && attributed !== trait.candidate) return false;
+    return true;
+  };
   const quoteCounts = new Map<string, number>();
-  for (const m of mentions) { const q = normalizedEvidence(m.evidenceQuote); if (q) quoteCounts.set(q, (quoteCounts.get(q) ?? 0) + 1); }
+  for (const m of mentions) {
+    if (!attributionFits(m)) continue;
+    const q = normalizedEvidence(m.evidenceQuote);
+    if (q) quoteCounts.set(q, (quoteCounts.get(q) ?? 0) + 1);
+  }
   return [...new Set(mentions.filter((m) => {
     const trait = TRAIT_BY_ID.get(m.traitId); const quote = normalizedEvidence(m.evidenceQuote);
     if (!trait || m.assertionType !== "asserted" || m.confidence < 0.8) return false;
     if (allowedTraitIds && !allowedTraitIds.has(m.traitId)) return false;
+    if (!attributionFits(m)) return false;
     if (!quote || !message.includes(quote) || GENERIC_ONLY.test(quote) || (quoteCounts.get(quote) ?? 0) > 1) return false;
-    // The verifier is handed ids and words and never a position, so it cannot
-    // see who the sentence was about. Read that here, from the message.
-    const shared = SHARED_PHRASE_TRAIT_IDS.has(m.traitId);
-    const attributed = attributedCandidateForQuote(messageText, m.evidenceQuote, shared);
-    if (attributed && attributed !== trait.candidate) return false;
-    if (shared && attributed !== trait.candidate) return false;
     // The verifier is advisory. Keep deterministic vetoes for evidence that is
     // only present inside a question, hypothetical, report, or explicit denial.
     if (evidenceOnlyAppearsInRejectedContext(message, quote, m.traitId)) return false;
