@@ -60,7 +60,8 @@ const checks = [
   ["one name per arrogance claim", has("src/lib/poolingExtractor.ts", "SHARED_PHRASE_TRAIT_IDS")],
   // S-C4-003.
   ["a stray letter is not a candidate the room is on", has("src/lib/interventionRoutingV2.ts", "const dominant = [...mentions.values()]")],
-  ["nobody is asked for evidence outside the notes", has("src/lib/routeContext.ts", "Nobody here has an example, an incident, an anecdote")],
+  ["only a note on a card may be asked for", has("src/lib/routeContext.ts", "The only thing anybody here can be asked for is a note on somebody's card")],
+  ["an empty turn has somewhere to go", has("src/lib/routeContext.ts", "say so plainly about your own notes, or ask what the others still hold")],
   ["a spent card asks the group for theirs", has("src/lib/interventionJudge.ts", "A turn with nothing left of its own asks the group for theirs")],
 ];
 

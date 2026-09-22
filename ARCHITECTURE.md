@@ -10,7 +10,7 @@ file is stale.
 
 Read §7 before changing anything that counts traits.
 
-**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`; Judge prompt v15.
+**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`; Judge prompt v16.
 
 ---
 
@@ -379,18 +379,44 @@ incidents" and "concrete evidence" that a trait had an effect. Nobody has such a
 thing, so the question can only be answered by inventing one, and a participant
 had to say so: *"We have to use what we currently have at hand"*.
 
-Two sentences close it. The Judge is told the notes are the whole world and may
-never write a brief asking for an example, incident, anecdote, source or witness;
-the same rule reaches the writer on the two direct-reply routes. And a spent card
-no longer makes the turn empty: while the coverage line still names candidates
-nobody has brought their own notes on, the brief takes up what the people just
-said **and** asks what they still hold on that candidate. The instruction to do
-that was already in the prompt — it simply had an unguarded alternative to reach
-for.
+The first version of the rule was a **list of nouns** — example, incident,
+anecdote, source, witness — and S-C4-004 reached for one that was not on it. With
+its card spent at seq 5 and the field narrowed to B and D at seq 12, eleven of the
+next twelve replies asked for "mitigation steps", "steps to manage those flaws",
+"specific, implementable measures", and seq 24 supplied its own: *formal feedback,
+coaching, behaviour codes … monitoring mood impact, diversity training*. Nobody
+holds any of that either.
 
-Replayed over S-C4-003's twenty turns, briefs asking for something outside the
-notes went from four to two, and both survivors sit on a transcript where Alex
-had already asked — the messages the fix prevents upstream.
+v16 states the principle instead: **the only thing anybody here can be asked for
+is a note on somebody's card.** Remedies, mitigations, management plans, training
+and policies are named alongside examples so the class is closed, and the turn is
+told what to do instead — put the board back in front of the group, say plainly
+that your own notes hold nothing further, or ask what they still hold. The Judge
+carries it and so does the writer on the two direct-reply routes.
+
+Measured on S-C4-003, three runs of each of nine turns (`docs/measurements.md`,
+2026-09-22). On the five turns that do not follow Alex's own earlier
+example-asking, v15 and v16 are both clean. On the four that do, both are dirty —
+the Judge is taking up a question the old build asked — and with those upstream
+messages rewritten as v16 would write them, the same four turns come back **0 of
+12** off-task. Briefs that ask the people for their own notes went from 1 of 27 to
+7 of 27.
+
+#### The two leader moves are behind a cooldown the ACI Chair never has
+
+`recap` and `mediate` are voluntary acts, so both are listed as available only
+when `cooldownAvailable` — at least two human messages since Alex last spoke. An
+ACI Chair answers a selected opportunity on almost every human message, and an
+opportunity bypasses the cooldown, so `messagesSinceLastAI` sits at 1 and the
+cooldown is shut. Counted over S-C4-003's twenty-one turns, **both moves were
+selectable on one of them** (anchor 27). Zero recaps and zero mediations appear in
+any replay of that session, at any prompt version, for this reason and not because
+the Judge declined them.
+
+So "put the board back in front of the group" is a real move on paper and an
+unreachable one in C3/C4 as the pacing stands. Ungating it changes how often Alex
+speaks, which is `docs/adr/0001` territory, so it is filed in §12 rather than
+changed.
 
 #### Where Alex's lean is decided
 
@@ -1072,6 +1098,16 @@ class of bug in §7:
   not again until the scenario stretch, so the narrowing at seq 24-34 passed
   unmediated. Whether to loosen it is a treatment question, not a defect: the
   detector was never the thing that was broken.
+- **The recap and the mediation are both behind the cooldown**, which an ACI
+  Chair almost never has: one selectable turn in twenty-one on S-C4-003. Until
+  that changes, "show the board instead of asking again" is not actually an
+  option the Judge can take. Ungating it is a pacing change.
+- **The whole card still goes in one or two turns.** S-C4-003 spent it on one
+  overview request at seq 6; S-C4-004 spent it across seqs 3 and 5, the second of
+  which ("but they also all have their offsets aswell") was not a request at all.
+  Nothing bounds how much of Alex's card a single turn may disclose —
+  `docs/adr/0010` removed the reveal budget deliberately — and everything
+  downstream in both sessions follows from the card being empty by minute three.
 - **The recap and the mediation compete for the same turn.** Both are voluntary
   leader moves gated on the cooldown, and in the S-C2-002 replay the Chair spent
   on mediation the turn it had spent on its one recap. Nothing orders them.

@@ -5632,7 +5632,7 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
 // something up, and a participant had to say so: "We have to use what we
 // currently have at hand".
 {
-  const evidenceBan = /Nobody here has an example, an incident, an anecdote, a source or a witness beyond the notes on their cards/;
+  const evidenceBan = /The only thing anybody here can be asked for is a note on somebody's card/;
   for (const routeKind of ["address", "followup"] as const) {
     for (const conditionCode of ["C1", "C2", "C3", "C4"] as const) {
       assert.match(
@@ -5652,7 +5652,50 @@ for (const relative of ["lib/routeTurn.ts", "lib/interventionEngine.ts"]) {
           anchorSeq: 12,
         }).userPrompt,
         evidenceBan,
-        `${conditionCode} ${routeKind} must not ask for evidence outside the notes`,
+        `${conditionCode} ${routeKind} must not ask for anything outside the notes`,
+      );
+      // [S-C4-004] The first version of this rule was a list of nouns, and the
+      // turn reached for one that was not on it: "mitigation steps", "steps to
+      // manage those flaws", "specific, implementable measures", eleven times in
+      // twelve replies. A remedy is as absent from the cards as an anecdote.
+      assert.match(
+        buildRouteUserContext({
+          routeKind,
+          conditionCode,
+          messages: [
+            {
+              seq: 12,
+              senderRole: "humanY",
+              speaker: "Participant Y",
+              content: "I think A's traits would affect teamwork",
+            },
+          ],
+          revealStats: tC2030PreferenceStats,
+          language: "en",
+          anchorSeq: 12,
+        }).userPrompt,
+        /not a remedy, a mitigation, a management plan, a training programme, a policy or a way of coping with a trait/,
+        `${conditionCode} ${routeKind} names remedies alongside examples`,
+      );
+      // And it says what to do instead, so the turn is not left empty.
+      assert.match(
+        buildRouteUserContext({
+          routeKind,
+          conditionCode,
+          messages: [
+            {
+              seq: 12,
+              senderRole: "humanY",
+              speaker: "Participant Y",
+              content: "I think A's traits would affect teamwork",
+            },
+          ],
+          revealStats: tC2030PreferenceStats,
+          language: "en",
+          anchorSeq: 12,
+        }).userPrompt,
+        /say so plainly about your own notes, or ask what the others still hold in their own notes/,
+        `${conditionCode} ${routeKind} offers the moves that replace an invented task`,
       );
     }
   }

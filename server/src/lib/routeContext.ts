@@ -1990,7 +1990,15 @@ export function buildRouteUserContext(input: {
       // exists in this task — the cards are all there is — so the question can
       // only be answered by inventing something, and one participant had to say
       // so ("We have to use what we currently have at hand").
-      "Nobody here has an example, an incident, an anecdote, a source or a witness beyond the notes on their cards, so never ask for one. If you have nothing left to add, ask what the others still hold in their own notes on a candidate instead.",
+      // S-C4-004 seqs 16-38. The ban was written as a list of nouns and the turn
+      // simply reached for one that was not on it: with its card spent at seq 5
+      // and the field narrowed to B and D at seq 12, eleven of the next twelve
+      // replies asked for "mitigation steps", "steps to manage those flaws",
+      // "specific, implementable measures" — and seq 24 supplied its own
+      // ("formal feedback, coaching, behaviour codes ... diversity training").
+      // Nobody holds any of that either. The rule is the principle, not the list.
+      "The only thing anybody here can be asked for is a note on somebody's card. Nobody holds anything else — not an example, an incident, a source or a witness, and not a remedy, a mitigation, a management plan, a training programme, a policy or a way of coping with a trait. Never ask for any of it and never supply one yourself.",
+      "If you have nothing left of your own to add, say so plainly about your own notes, or ask what the others still hold in their own notes on a candidate. Do not invent something for the group to work on instead.",
     );
   }
   if (input.routeKind === "mediation") {

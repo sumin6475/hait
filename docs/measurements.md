@@ -1486,3 +1486,60 @@ Attribution now runs before the duplicate count; replayed over seqs 7, 12 and 41
 of S-C4-003 and seqs 9 and 39 of S-C2-002, the pair resolves to B_n5 every time,
 an explicitly attributed D claim still counts for D, and a genuinely reused
 generic quote is still rejected for both ids.
+
+---
+
+## 2026-09-22 — S-C4-004, and the v16 wording
+
+C4, 50 messages, 20 of them Alex's. Team chose B; the pooled answer is C. Judge
+prompt v15, comparison build.
+
+**The card again went in two turns.** seq 3 carried all fifteen matches, seq 5 all
+nine misses — Alex's whole card by minute three. The second was not even a
+request: *"but they also all have their offsets aswell"*.
+
+**The ban held on its own words and not on the class.** From seq 16 to seq 38,
+eleven of twelve replies asked for "mitigation steps", "steps to manage those
+flaws", "specific, implementable measures"; seq 24 supplied its own — *formal
+feedback, coaching, behaviour codes … monitoring mood impact, diversity training,
+clear escalation paths*. None of that is on anybody's card. The v15 rule listed
+examples, incidents, anecdotes, sources and witnesses, and a remedy is none of
+those.
+
+**The closing was the Stop AI button, not the model.** `AI closed and muted
+reason=manual` at 14:49:28; seq 42 is the deterministic closing route. The 30-minute
+deadline would have fired at ~14:56 and did not. No elapsed-time or time-remaining
+signal exists anywhere in the generation context, and the Judge is told never to
+reason about elapsed time. The wrap-up tone from seq 33 on is Alex taking up the
+humans' own convergence words; every one of those turns still ended in a question.
+
+**Two leader moves were available and unused.** `recap` from seq 7 (A_n4 gave a
+non-empty human board) and `mediate` from seq 21 (the fixed detector latches
+`candidate_concentration` on the real windows from there). Neither was taken —
+see the cooldown finding below.
+
+### v15 vs v16, S-C4-003, three runs of nine turns
+
+| | off-task ask | asks for their own notes |
+|---|---|---|
+| v15 | 6 / 27 | 1 / 27 |
+| v16 | 7 / 27 | **7 / 27** |
+
+The off-task column does not move, and the reason is visible turn by turn. On
+anchors 14, 16, 18, 27 and 29 both versions are **0 of 15**. All of it sits on
+anchors 31, 33, 35 and 37 — the turns that follow Alex's own example-asking at
+seqs 30, 32, 34 and 36, which the Judge is dutifully taking up ("*They asked for
+examples of A's restlessness…*"). Rewriting those four Alex messages as v16 would
+write them and replaying the same four anchors gives **0 of 12 off-task, 5 of 12
+asking for their notes**. The tail is contamination from the build being fixed,
+not a failure of the wording.
+
+### Why no recap ever appears
+
+`recap` and `mediate` are voluntary acts and both are listed available only when
+the cooldown is open — two human messages since Alex spoke. An ACI Chair answers
+a selected opportunity on nearly every message, and an opportunity bypasses the
+cooldown, so `messagesSinceLastAI` stays at 1. Over S-C4-003's twenty-one turns
+**both moves were selectable on one** (anchor 27). Zero recaps in every replay of
+that session at every prompt version follows from the gate, not from the Judge's
+judgement. Ungating is a pacing change; filed as an open thread in `ARCHITECTURE.md`.
