@@ -1543,3 +1543,28 @@ cooldown, so `messagesSinceLastAI` stays at 1. Over S-C4-003's twenty-one turns
 **both moves were selectable on one** (anchor 27). Zero recaps in every replay of
 that session at every prompt version follows from the gate, not from the Judge's
 judgement. Ungating is a pacing change; filed as an open thread in `ARCHITECTURE.md`.
+
+### S-C2-003, 2026-09-22 — the first session where mediation fired
+
+Ten mediations, the first in any recorded session, and the humans pooled notes on
+all four candidates. Three of the ten asked for a candidate that was already
+covered, all three the same one.
+
+| seq | list at that turn | what Alex asked for |
+|---|---|---|
+| 10 | uncovered B, C | (no candidate named) |
+| 16 | uncovered C | (no candidate named) |
+| 19 | uncovered C | notes on **C and B** |
+| 22 | uncovered C | notes on **B** |
+| 26 | uncovered C | notes on **B** |
+| 29 | uncovered C | notes on C |
+| 48, 51, 54, 57 | no gap left | named A and D as the two finalists, asked for no notes |
+
+The last four are the v16 wording working: with nothing uncovered, Alex stopped
+asking for notes and mediated about where the discussion stood. Nothing was
+invented on any of the ten.
+
+`pooled` reads A2 B2 C0 D2 from seq 13 to the end. The arithmetic is correct on
+every turn in the table; what differed was which picture each side of the turn
+read. Fix and reasoning in `ARCHITECTURE.md`, "One sentence says who still owes
+notes".

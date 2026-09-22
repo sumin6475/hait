@@ -7,6 +7,8 @@ import { forceGuardsOnForTest } from "../lib/guardFlags.js";
 forceGuardsOnForTest();
 import type { Candidate } from "../types.js";
 import { ALEX_Z_IDS } from "../lib/traitData.js";
+import { coverageGapNote } from "../lib/candidateList.js";
+import { buildRouteUserContext } from "../lib/routeContext.js";
 import { replayObservedConversation } from "../eval/conversationReplay.js";
 import {
   CONVERSATION_LEDGER_VERSION,
@@ -3525,6 +3527,85 @@ assert.equal(
     ledgerJudgeRoleGoal("C2") === ledgerJudgeRoleGoal("C4"),
   true,
   "the goal varies with status only — the communication strategy is the other axis and is applied elsewhere",
+);
+
+// ── S-C2-003: both sides of the turn read one sentence ────────────────────
+// The board as it stood from seq 13 onward: X put B_n1/B_n2 on the table at
+// seq 12, so B is covered and only C is not. Alex asked for B's notes anyway
+// at seqs 19, 22 and 26 — three of that session's ten mediations. The
+// arithmetic was never wrong; the Judge overrode the sentence and the writer
+// never had it.
+{
+  const sC2_003AtSeq13 = {
+    byCandidate: {
+      A: { revealedIds: ["A_p1", "A_p2", "A_p3", "A_p4", "A_n1", "A_n2"] },
+      B: { revealedIds: ["B_n1", "B_n2"] },
+      C: { revealedIds: ["C_n1", "C_n3"] },
+      D: { revealedIds: ["D_n1", "D_n2"] },
+    },
+    aiSurfacedIds: ["A_n6", "D_p1", "D_p4", "B_p1", "B_p2", "B_p4", "C_p1", "C_p6", "C_p7"],
+  };
+  const gap = coverageGapNote(sC2_003AtSeq13);
+  assert.match(gap, /about C so far/, "C is the only candidate nobody pooled a note on");
+  assert.match(gap, /next to A, B, D/, "B was covered at seq 12 and reads as covered");
+  assert.doesNotMatch(gap, /\d/, "no number reaches either side");
+  // One source of the wording: the Judge's leader-gated wrapper and the
+  // mediation writer's block must not be able to name different gaps.
+  assert.equal(leaderCoverageNote("C2", sC2_003AtSeq13), gap);
+  assert.equal(leaderCoverageNote("C4", sC2_003AtSeq13), gap);
+  const rendered = buildRouteUserContext({
+    conditionCode: "C2",
+    routeKind: "mediation",
+    revealStats: sC2_003AtSeq13,
+    messages: [{ seq: 12, senderRole: "humanX", content: "B was nagging" } as never],
+    language: "en",
+    anchorSeq: 12,
+  }).userPrompt;
+  assert.ok(
+    rendered.includes(gap),
+    "the mediation writer is handed the same sentence, not just the visible board",
+  );
+  assert.match(
+    rendered,
+    /A candidate it names as already covered is covered/,
+    "and is told the board above cannot answer the question",
+  );
+}
+
+// The pairing `test:intervention-v2` demands for letting the writer read the
+// list: no peer prompt may carry the sentence on any route. Mediation is not a
+// peer route at all, so this is checking that nothing else picked it up.
+for (const peer of ["C1", "C3"] as const) {
+  for (const routeKind of ["address", "followup", "build_on", "long_silence", "mediation"] as const) {
+    const prompt = buildRouteUserContext({
+      conditionCode: peer,
+      routeKind: routeKind as never,
+      revealStats: {
+        byCandidate: { A: { revealedIds: ["A_n1"] }, B: { revealedIds: [] }, C: { revealedIds: [] }, D: { revealedIds: [] } },
+        aiSurfacedIds: [],
+      },
+      messages: [{ seq: 2, senderRole: "humanX", content: "A is hectic" } as never],
+      language: "en",
+      anchorSeq: 2,
+    }).userPrompt;
+    assert.doesNotMatch(
+      prompt,
+      /Who still owes notes|brought anything from their own notes/,
+      `${peer}/${routeKind}: a peer never receives the live candidate list`,
+    );
+  }
+}
+
+// The Judge is told the transcript cannot overrule the coverage line. Without
+// this, "I eliminated B and C" reads as B being uncovered.
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /the transcript never overrides it/,
+  "the mediate move binds the gap to the coverage line",
+);
+assert.match(
+  LEDGER_JUDGE_SYSTEM,
+  /a room arguing a candidate out is not a room that has left it uncovered/,
 );
 
 console.log("[conversation-ledger] deterministic reducer tests passed");

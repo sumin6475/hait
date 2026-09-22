@@ -63,6 +63,10 @@ const checks = [
   ["only a note on a card may be asked for", has("src/lib/routeContext.ts", "The only thing anybody here can be asked for is a note on somebody's card")],
   ["an empty turn has somewhere to go", has("src/lib/routeContext.ts", "say so plainly about your own notes, or ask what the others still hold")],
   ["a spent card asks the group for theirs", has("src/lib/interventionJudge.ts", "A turn with nothing left of its own asks the group for theirs")],
+  // S-C2-003.
+  ["one sentence says who still owes notes", has("src/lib/candidateList.ts", "export function coverageGapNote")],
+  ["the mediation writer reads that sentence", has("src/lib/routeContext.ts", "Who still owes notes (the only source for the coverage gap")],
+  ["the transcript does not override the coverage line", has("src/lib/interventionJudge.ts", "the transcript never overrides it")],
 ];
 
 const width = Math.max(...checks.map(([label]) => label.length));

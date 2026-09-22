@@ -2,6 +2,7 @@ import { contributesToBoard, type CommunicativeAct, type ConditionCode, type Rou
 import { guardEnabled } from "./guardFlags.js";
 import { TRIGGER_CONFIG } from "../config/triggers.js";
 import { ALEX_Z_IDS, TRAIT_BY_ID, type Cand } from "./traitData.js";
+import { coverageGapNote } from "./candidateList.js";
 import { currentTopicCandidate } from "./poolingTally.js";
 import {
   CANDIDATES,
@@ -2045,6 +2046,22 @@ export function buildRouteUserContext(input: {
     blocks.push(
       `Visible on-table coverage (human and Alex disclosures; deduplicated):\n${formatVisibleBoardCoverage(input.revealStats)}`,
     );
+    // ...but the visible board cannot answer the one question a mediation asks.
+    // It shows what has been said, not who said it, so a candidate Alex covered
+    // alone looks identical to one the room covered. [S-C2-003] The board showed
+    // five entries under B while nobody had brought a B note of their own except
+    // X at seq 12, and the writer asked for B twice more. The sentence below is
+    // the same one the Judge reads, from the same function, so the brief and the
+    // message can no longer name different gaps.
+    // Gated on the condition, not on the route, for the same reason
+    // `leaderCoverageNote` is: owning the live candidate list is the status
+    // manipulation. Mediation is already a leader-only route, so this changes
+    // nothing that runs — it closes the door a direct call could walk through.
+    if (isLeaderCondition(input.conditionCode)) {
+      blocks.push(
+        `Who still owes notes (the only source for the coverage gap; the board above cannot tell you this):\n${coverageGapNote(input.revealStats)}\nAsk only for what this sentence leaves uncovered. A candidate it names as already covered is covered, however much the room has argued about it.`,
+      );
+    }
   } else if (
     input.routeKind === "long_silence" ||
     input.routeKind === "address" ||

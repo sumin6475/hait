@@ -10,7 +10,7 @@ file is stale.
 
 Read §7 before changing anything that counts traits.
 
-**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`; Judge prompt v16.
+**Audited at** `07b0728`, 2026-09-09; dead-code sweep 2026-09-14. Prompt snapshot `1.12.0`; Judge prompt v17.
 
 ---
 
@@ -368,6 +368,36 @@ about the shape of the discussion, not its contents.
 Replayed over S-C2-002's 34 recorded turns, three flipped to `mediate` (anchors
 49, 52, 55) and no other turn changed act. One of the three took the turn the
 Chair had spent on its recap.
+
+##### One sentence says who still owes notes
+
+S-C2-003 was the first session where mediation actually fired — ten times — and
+three of those ten asked the room for notes on a candidate the room had already
+covered. At seq 12 X put "nagging" and "not very cooperative" on the table, both
+of them notes Alex does not hold, so B left the live list; from that turn on the
+list reads **A2 B2 C0 D2, uncovered: C**, and stays there. Alex asked for B's
+notes at seqs 19, 22 and 26 anyway. The arithmetic was right on every one of
+those turns: the sum was never the defect.
+
+Two different pictures were. The leader's Judge had the sentence and overrode it
+— its briefs at seqs 16, 19 and 26 name B, reading the room's "I eliminated B and
+C" as B being uncovered, which is attention, not coverage. The writer never had
+the sentence at all: its mediation block carried the visible board, where B shows
+five entries because Alex disclosed three of them at seq 7, and a board cannot
+say who put a line on it. At seq 22 the brief said only "name the one thing left
+uncovered" and the writer filled the blank with B.
+
+So the wording moved down to `coverageGapNote`, beside the list it reads.
+`leaderCoverageNote` is now the leader gate over it, and the mediation block in
+`routeContext.ts` renders the same string — behind `isLeaderCondition`, because
+owning the live candidate list is the manipulation and mediation being a
+leader-only route is not the same guarantee as saying so. The `mediate` move in
+the Judge prompt (v17) gained the other half: the coverage line is the only thing
+that says who is uncovered, and the transcript never overrides it.
+
+`test:intervention-v2` holds a list of files permitted to read the candidate
+list; `routeContext.ts` joins it with the pairing that list demands, a test that
+walks every route kind for C1 and C3 and asserts the sentence reaches neither.
 
 #### What a turn asks for when the card is spent
 

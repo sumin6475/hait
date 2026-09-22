@@ -4920,6 +4920,17 @@ const ALLOWED_CANDIDATE_LIST_READERS = new Set([
   // is one that changes what Alex does. The line below keeps that distinction
   // enforced: this file may name the field, it may not compute the list.
   "routes/sessions.ts",
+  // [S-C2-003] The mediation writer reads the same sentence the leader's Judge
+  // reads, because the two were naming different gaps: the Judge had "only C is
+  // uncovered" while the writer held the visible board, where B's five entries
+  // do not say who put them there. Mediation is a leader-only route
+  // (`mediationAvailableFor` is false for C1/C3), and the pairing this list
+  // demands is in `test:conversation-ledger`, which asserts the sentence never
+  // reaches a peer prompt on any route kind.
+  "lib/routeContext.ts",
+  // The pairing test itself, which holds both halves: leaders get the sentence,
+  // peers get it on no route.
+  "scripts/test-conversation-ledger.ts",
 ]);
 
 function sourceFiles(directory: string, prefix = ""): string[] {

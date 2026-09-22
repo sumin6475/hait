@@ -140,3 +140,30 @@ export const DERIVED_COUNTS = {
   sharedPerCandidate: SHARED_PER_CANDIDATE,
   humanOnlyPerCandidate: HUMAN_ONLY_PER_CANDIDATE,
 } as const;
+
+/**
+ * Which candidates nobody has brought their own notes on, as one sentence.
+ *
+ * It lives here, beside the list it reads, because two sides of the turn need
+ * the same words. [S-C2-003, 2026-09-22] The Judge had this sentence and the
+ * mediation writer did not: at seqs 22 and 26 the brief only said "name the one
+ * thing left uncovered", and the writer — holding the visible board, where B
+ * carries five entries — filled the gap with "any remaining participant-held
+ * notes on Candidate B", six messages after X had put B_n1 and B_n2 on the
+ * table. Four of that session's six mediations asked for a candidate the list
+ * already had as covered. The arithmetic was right on every one of those turns
+ * (`pooled` reads A2 B2 C0 D2 from seq 13 onward); only C was ever the gap.
+ *
+ * Numbers deliberately do not appear, for the reason `leaderCoverageNote`
+ * gives: a writer handed coverage integers is a writer that can leak one.
+ */
+export function coverageGapNote(revealStats: unknown): string {
+  const { live, covered } = computeCandidateList(revealStats);
+  if (!live.length) {
+    return "Every candidate now has something on the table that a participant brought from their own notes. There is no coverage gap to name.";
+  }
+  if (!covered.length) {
+    return `Nobody has brought anything from their own notes about any candidate so far: ${live.join(", ")}.`;
+  }
+  return `Nobody has brought anything from their own notes about ${live.join(" and ")} so far, next to ${covered.join(", ")}.`;
+}

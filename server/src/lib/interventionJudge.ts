@@ -4,7 +4,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { config } from "../config.js";
 import { modelRequestParams } from "./openai.js";
 import { guardEnabled } from "./guardFlags.js";
-import { computeCandidateList } from "./candidateList.js";
+import { coverageGapNote } from "./candidateList.js";
 import { CANDIDATES } from "./informationPools.js";
 import type { MainJudgeSignal } from "./routeContext.js";
 import type { Candidate, ConditionCode } from "../types.js";
@@ -541,7 +541,7 @@ export function ledgerJudgeRetryMessage(input: {
 
 export const CONVERSATION_LEDGER_JUDGE_VERSION = "conversation-ledger-judge-v8";
 export const CONVERSATION_LEDGER_JUDGE_PROMPT_VERSION =
-  "conversation-ledger-judge-prompt-v16";
+  "conversation-ledger-judge-prompt-v17";
 export const CONVERSATION_LEDGER_JUDGE_SCHEMA_VERSION =
   "conversation-ledger-judge-schema-v5";
 export const CONVERSATION_LEDGER_JUDGE_MODEL = JUDGE_MODEL;
@@ -624,7 +624,7 @@ Voluntary acts have no selectedOpportunityId:
 - contribute adds a relevant non-redundant fact, factual correction, or concrete synthesis.
 - follow takes up the point the humans just made and carries it one step further. Use it, with evidence=conversation_grounded_synthesis, when the useful move is to build directly on what was just said rather than to introduce a new fact. It needs no opportunity: follow is the act for the uptake opportunity kind when one is open, and is also available voluntarily when none is.
 - acknowledge is brief social uptake without a new fact or agenda change.
-- mediate hands the group its own discussion state back: what the room has been working on, and what it has not reached. It names no fact and picks no candidate, so take it when the useful move is about where the discussion stands rather than what is in it - the room has stayed on one or two candidates while others sit untouched, the same ground is being gone over again, or people are moving to settle before the field has been looked at. Name the state and the one thing left uncovered, and stop; it is theirs to weigh. Never turn it into a rule, a vote, a round, an exercise, or any other procedure, and never use it to tell them which candidate to choose. It is listed as available only on the turns that state is actually there. Say it once: a second mediation about the same gap is pushing, not leading.
+- mediate hands the group its own discussion state back: what the room has been working on, and what it has not reached. It names no fact and picks no candidate, so take it when the useful move is about where the discussion stands rather than what is in it - the room has stayed on one or two candidates while others sit untouched, the same ground is being gone over again, or people are moving to settle before the field has been looked at. Name the state and the one thing left uncovered, and stop; it is theirs to weigh. The coverage line is the only thing that says which candidate is uncovered, and the transcript never overrides it: a candidate it lists as already covered has been covered by somebody's own notes, so do not ask for it again however long the room has argued about it, and a room arguing a candidate out is not a room that has left it uncovered. If the coverage line says there is no gap left to name, mediate about where the discussion stands and ask for nothing. Never turn it into a rule, a vote, a round, an exercise, or any other procedure, and never use it to tell them which candidate to choose. It is listed as available only on the turns that state is actually there. Say it once: a second mediation about the same gap is pushing, not leading.
 - recap puts the board back in front of the group exactly as it stands. It writes nothing itself: the message is assembled from what has actually been said, so it adds no fact, names no trait and states no preference. Take it when the turn is better spent showing the group where the comparison currently stands than adding to it - the discussion has covered enough to be worth seeing whole, or people are weighing candidates against a picture they are holding in their heads. A spent card and a narrowed field is exactly that moment: nothing of yours is left to add, the group is deciding between two candidates from memory, and the whole board in front of them is worth more than another question. It is listed as available only while it is yours to take, and it is worth taking once.
 
 Each turn lists the moves available on it. A move listed as not available is not a choice, and selecting it is invalid. Availability is a fact about this turn's options, never a budget to spend or save. Choose reobserve only for a material conflict affecting target, opportunity identity/lifecycle, thread assignment, or floor. Low confidence alone is not enough.
@@ -1203,14 +1203,9 @@ export function leaderCoverageNote(
   revealStats: unknown,
 ): string | null {
   if (!isLeaderCondition(conditionCode)) return null;
-  const { live, covered } = computeCandidateList(revealStats);
-  if (!live.length) {
-    return "Every candidate now has something on the table that a participant brought from their own notes. There is no coverage gap to name.";
-  }
-  if (!covered.length) {
-    return `Nobody has brought anything from their own notes about any candidate so far: ${live.join(", ")}.`;
-  }
-  return `Nobody has brought anything from their own notes about ${live.join(" and ")} so far, next to ${covered.join(", ")}.`;
+  // The wording lives in `coverageGapNote`, beside the list it reads, because
+  // the mediation writer needs the same sentence and cannot import this file.
+  return coverageGapNote(revealStats);
 }
 
 /**
